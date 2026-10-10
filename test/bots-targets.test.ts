@@ -9,6 +9,7 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botSnapshot } from '../src/server/bot/tick.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { VETERAN } from '../src/server/bot/aim.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, equip, hpOf, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -19,7 +20,7 @@ const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) 
 
 function think(w: World, botId: number, seed: number, ticks: number) {
   const r = seeded(seed);
-  let mem = newBotMemory(r);
+  let mem = newBotMemory(r, { skill: VETERAN });
   for (let i = 1; i < ticks; i++) {
     mem = botThink(botSnapshot(w, botId), arenaFor(w), mem, r).mem;
     step(w, TICK_MS);
@@ -68,7 +69,7 @@ test('a bot with nobody in view shoots a crate in the clear and scores for it', 
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   addCrate(w, 1300, 1000);
   const r = seeded(1);
-  let mem = newBotMemory(r);
+  let mem = newBotMemory(r, { skill: VETERAN });
   for (let i = 0; i < 90; i++) {
     const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
     mem = d.mem;
@@ -85,7 +86,7 @@ test('a bot holds fire at a crate behind a wall', () => {
   const wall: WallView = { x: 1130, y: 900, w: 40, h: 200, built: false, material: 'concrete' };
   const r = seeded(1);
   setWalls(w, [wall]);
-  assert.ok(!botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r), r).input.fire, 'no shots into the wall');
+  assert.ok(!botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r, { skill: VETERAN }), r).input.fire, 'no shots into the wall');
 });
 
 test('a bot keeps half a magazine for enemies instead of emptying it into crates', () => {
@@ -94,7 +95,7 @@ test('a bot keeps half a magazine for enemies instead of emptying it into crates
   addCrate(w, 1300, 1000);
   if (bot.life.k === 'alive') bot.life.ammo = 5;
   const r = seeded(1);
-  const input = botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r), r).input;
+  const input = botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r, { skill: VETERAN }), r).input;
   assert.ok(!input.fire && input.reload, 'reloads rather than shooting the crate');
 });
 
@@ -175,7 +176,7 @@ test('a bot walled off from a hunted marker walks around the wall and fights ins
     equip(hunted, 'executioner');
     const fullHp = hpOf(hunted);
     const r = seeded(seed);
-    let mem = newBotMemory(r);
+    let mem = newBotMemory(r, { skill: VETERAN });
     for (let i = 1; i <= 20 * 30 && hpOf(hunted) === fullHp; i++) {
       // A bot sees by a person's 16:9 screen leaned toward its aim, as the server's bot tick gives it (`botSnapshot`): it has to come
       // round the wall's end and turn his way to see him.

@@ -76,7 +76,7 @@ test('skill is a bot\'s brain only: rookies, regulars and veterans carry a perso
   const w = createWorld('FFA', 11, 'plaza');
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
-  for (let i = 0; i < 12; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, { skill: skillOf((i % 3) * 0.4 + 0.05) }));
+  for (let i = 0; i < 12; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, { skill: skillOf([0.2, 0.6, 0.9][i % 3]!) }));
   assert.deepEqual(new Set([...mems.values()].map((m) => m.skill!.tier)), new Set(['rookie', 'regular', 'veteran']));
   const check = () => {
     for (const id of mems.keys()) {

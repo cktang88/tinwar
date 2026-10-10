@@ -5,6 +5,7 @@ import type { WallView } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import { VETERAN } from '../src/server/bot/aim.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import type { Intent, PersonalityId } from '../src/server/bot/intent.ts';
 import { MIN_TURN_BACK_MS } from '../src/server/bot/motor.ts';
@@ -19,7 +20,7 @@ function track(f: Fight): { x: number; y: number }[] {
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   const enemy = spawnAt(w, f.enemyAt?.x ?? 1400, f.enemyAt?.y ?? 1000);
   const r = seeded(f.seed);
-  let mem: BotMemory = { ...newBotMemory(r), persona: f.persona, ...(f.intent && { intent: f.intent(enemy.id) }) };
+  let mem: BotMemory = { ...newBotMemory(r, { skill: VETERAN }), persona: f.persona, ...(f.intent && { intent: f.intent(enemy.id) }) };
   const at: { x: number; y: number }[] = [];
   for (let i = 0; i < f.ticks; i++) {
     if (f.walls) setWalls(w, f.walls(i));

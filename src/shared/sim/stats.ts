@@ -130,12 +130,14 @@ export const easeDownTicks = (gun: GunId): number => Math.min(SPREAD_EASE_TICKS,
  * `SPREAD_EASE.ms`, either way. The bloom eases as the mean of its own, except that once it is falling the older ones are brought down to the
  * mean of the newest `down` (see `easeDownTicks`), so falling bloom ramps out over that many ticks instead (never at once), while rising bloom
  * (a stance that blooms more) still takes the whole window. `kick` is the bloom a shot added since last tick: it lands at once (every kept
- * bloom is raised by it). An empty history (a fresh life) starts settled on the target.
+ * bloom is raised by it). An empty history (a fresh life) starts settled on the target. `settling` (the post-sprint bloom easing out) lets a
+ * falling base land at once rather than ramp: that bloom eases out on its own curve (`postSprintSpread`) from the moment the sprint ends,
+ * with no lag before it starts to come down.
  */
-export function easeSpread(hist: readonly number[], target: number, kick = 0, base = target, down = SPREAD_EASE_TICKS): number[] {
+export function easeSpread(hist: readonly number[], target: number, kick = 0, base = target, down = SPREAD_EASE_TICKS, settling = false): number[] {
   const n = SPREAD_EASE_TICKS, bloom = Math.max(0, target - base);
   if (hist.length !== 2 * n) return [...new Array<number>(n).fill(base), ...new Array<number>(n).fill(bloom)];
-  const bases = hist.slice(1, n), blooms = hist.slice(n + 1).map((x) => x + Math.max(0, kick));
+  const bases = hist.slice(1, n).map((b) => (settling ? Math.min(b, base) : b)), blooms = hist.slice(n + 1).map((x) => x + Math.max(0, kick));
   bases.push(base);
   blooms.push(bloom);
   const k = Math.max(1, Math.min(n, down));
