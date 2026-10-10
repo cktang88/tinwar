@@ -12,7 +12,7 @@ import { damageProp, propMedals, propsInBlast } from './props.ts';
 import { blastTargets, targetHits } from './targets.ts';
 import { damageZombie } from './run.ts';
 import { blastShove, bulletShove, shovePlayer, shoveZombie } from './knock.ts';
-import { blastOnZombie, holdZombie, roundOnZombie, zombieShove } from './zomroles.ts';
+import { blastOnZombie, holdZombie, roundOnZombie, turretHit, zombieShove } from './zomroles.ts';
 import { addScore, effectiveStats, falloffMul, hasPerk, isHunted, PERK_RULES } from './stats.ts';
 import { areFriends, barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
@@ -362,7 +362,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     const d = Math.sqrt(dist2(z.x, z.y, x, y));
     if (d > radius + r || sheltered(view.walls, x, y, z.x, z.y)) continue;
     const dmg = maxDamage * (1 - Math.max(0, d - r) / radius);
-    damageZombie(w, z, by.turret ? dmg : blastOnZombie(z, gun, dmg), by.attacker, by.turret ?? 'blast');
+    damageZombie(w, z, by.turret ? dmg : blastOnZombie(z, gun, dmg, w.now), by.attacker, by.turret ?? 'blast');
     shoveZombie(z, z.x - x, z.y - y, blastShove(dmg), true);
   }
 }
@@ -447,8 +447,8 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
         t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
         apply: (x: number, y: number) => {
           // A turret's round has no gun; a player's round is judged by its gun's job against the horde (`ZombieRole`).
-          damageZombie(w, z, roundOnZombie(z, b.gun, b.damage * fell(x, y), b.piercing), owner, b.turret ?? 'hit');
-          shoveZombie(z, b.vx, b.vy, b.gun ? bulletShove(b.gun, b.damage) * zombieShove(b.gun) : b.damage * KNOCK.perDamage.assault, false);
+          damageZombie(w, z, roundOnZombie(z, b.gun, b.damage * fell(x, y), b.piercing, w.now), owner, b.turret ?? 'hit');
+          if (!turretHit(z, b.hold, w.now, b.vx, b.vy)) shoveZombie(z, b.vx, b.vy, b.gun ? bulletShove(b.gun, b.damage) * zombieShove(b.gun) : b.damage * KNOCK.perDamage.assault, false);
           holdZombie(z, b.gun, w.now);
         },
       })),

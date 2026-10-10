@@ -551,7 +551,7 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
 }
 
 const MINIMAP = { bg: 'rgba(24, 27, 33, 0.93)', block: '#454a53', built: '#6a7da6' } as const;
-const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d', scatter: '#3fd1b8', mortar: '#b98cff', tesla: '#8fb8ff', depot: '#8a9a5b', post: '#8ff0c4', spikes: '#9aa3b0' };
+const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d', scatter: '#3fd1b8', mortar: '#b98cff', tesla: '#8fb8ff', vent: '#ff8a3c', depot: '#8a9a5b', post: '#8ff0c4', spikes: '#9aa3b0', decoy: '#ff4a3a' };
 
 /** Panels drawn this frame, so edge markers drawn after them can stay clear. */
 let panels: Rect[] = [];

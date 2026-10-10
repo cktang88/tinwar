@@ -8,7 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-10',
     items: [
-      'Zombies: every gun and every building has a job against the horde, with round prices and clean upgrade steps (1.5×, 2×)',
+      'Zombies: every gun and turret has its own job (scatter shoves, mortar reaches far, tesla marks for your guns), plus a flame vent and a decoy beacon',
     ],
   },
   {

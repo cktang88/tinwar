@@ -1,4 +1,4 @@
-import { ROYALE, WORLD } from '../shared/defs.ts';
+import { isFloorKind, ROYALE, WORLD } from '../shared/defs.ts';
 import type { BuildingView, CrateView, RunView, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { paintFloor, stencil, type FloorPlan } from './floor.ts';
@@ -159,8 +159,8 @@ const WALL_SOLID: readonly SolidKind[] = ['wood', 'sandbag', 'steel'];
 
 export const buildingSolid = (b: BuildingView): Solid => ({ kind: b.kind === 'wall' ? WALL_SOLID[Math.min(WALL_SOLID.length, b.lv ?? 1) - 1]! : 'pad', ...cellRect(b.cx, b.cy), wear: 1 - b.hp / 10 });
 
-/** Spike strips lie on the floor and are walked over, so they are drawn by siege.ts and cast no shadow. */
-export const standsUp = (b: BuildingView): boolean => b.kind !== 'spikes';
+/** Spike strips and flame vents lie on the floor and are walked over, so they are drawn by siege.ts and cast no shadow. */
+export const standsUp = (b: BuildingView): boolean => !isFloorKind(b.kind);
 
 export const coreSolid = (run: RunView): Solid => ({ kind: 'core', ...coreRectAt(run.core) });
 

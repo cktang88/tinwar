@@ -1,4 +1,4 @@
-import { isTurretKind, ZOM, type BuildingKind } from '../shared/defs.ts';
+import { isFloorKind, isTurretKind, ZOM, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, Snapshot } from '../shared/protocol.ts';
 import { levelOf } from '../shared/sim/build.ts';
 import { celPart, ellipse, polygon, roundBox, TAU, type Trace } from './cel.ts';
@@ -45,7 +45,7 @@ export function noteWrecks(list: readonly Wreck[], prev: Pick<Snapshot, 'run' | 
   if (prev?.run && prev.buildings && next.buildings) {
     const night = prev.run.phase === 'night' || next.run.phase === 'night';
     for (const b of prev.buildings) {
-      if (b.kind === 'spikes' || standing.has(cellOf(b))) continue;
+      if (isFloorKind(b.kind) || standing.has(cellOf(b))) continue;
       const at = { x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell };
       const boom = next.events.some((e) => e.e === 'boom' && Math.abs(e.x - at.x) < 1 && Math.abs(e.y - at.y) < 1);
       if (!boom && !night) continue;

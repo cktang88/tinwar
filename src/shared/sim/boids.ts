@@ -39,6 +39,8 @@ export const LURE: Record<ZombieKind, { lure: number; range: number; leash: numb
 export type ZAi = {
   tgt: 'core' | 'player' | 'wall';
   pid: number;
+  /** The decoy beacon drawing it, by building id, 0 for none (see `UTILITY.decoy`). */
+  decoy?: number;
   /** The soonest a chosen player may be dropped for another or the core. */
   holdUntil: number;
   /** The last time the chosen player was in sight. */

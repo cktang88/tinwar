@@ -2,7 +2,7 @@ import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, STREAK, TO
 import type {
   AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, FloorPlateView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
-import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
+import { rankRows, ZOMBIE_FX, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS, HEAL_POLE, spotsClaymore } from './abilities.ts';
@@ -268,7 +268,10 @@ function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: num
   const zombies: ZombieView[] = [];
   for (const z of w.zombies) {
     if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
-    zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night, run.share))]);
+    const view: ZombieView = [z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night, run.share))];
+    const fx = ((z.mark ?? 0) > w.now ? ZOMBIE_FX.marked : 0) | (z.burn && z.burn.until > w.now ? ZOMBIE_FX.burning : 0);
+    if (fx) view.push(fx);
+    zombies.push(view);
   }
   const buildings = [...w.buildings, ...w.floor].map(buildingView);
   return { zombies, buildings, run: runView(w, run) };

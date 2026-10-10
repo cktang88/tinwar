@@ -1,9 +1,9 @@
-import { UTILITY, ZOM, type ZombieKind } from '../defs.ts';
+import { UTILITY, ZOM, ZOMBIES, type ZombieKind } from '../defs.ts';
 import { auraOf, levelOf, maxHpOf, reachAt, turretDef, wallTier } from './build.ts';
 import { damageZombie } from './run.ts';
 import { effectiveStats } from './stats.ts';
 import { dist2 } from './movement.ts';
-import type { Building, Run, World, Zombie } from './world.ts';
+import type { Run, Turret, Vent, World, Zombie } from './world.ts';
 
 /**
  * What the utilities do besides stand there: spike strips slow, hurt and wear under the horde that walks over them, a steel wall shrugs off part of each bite,
@@ -21,7 +21,7 @@ const everySecond = (w: World, dtMs: number) => Math.floor(w.now / 1000) !== Mat
  */
 export const spikeSlowAt = (w: World, x: number, y: number): number => {
   const cx = Math.floor(x / ZOM.cell), cy = Math.floor(y / ZOM.cell);
-  return w.floor.some((s) => s.cx === cx && s.cy === cy) ? UTILITY.spikes.slow : 1;
+  return w.floor.some((s) => s.kind === 'spikes' && s.cx === cx && s.cy === cy) ? UTILITY.spikes.slow : 1;
 };
 
 type TrapWatch = Map<Zombie, { x: number; y: number }>;
@@ -29,7 +29,8 @@ type TrapWatch = Map<Zombie, { x: number; y: number }>;
 /** Zombies standing on a spike strip, where they stand before the horde moves. Null with no strips down. */
 export function trapWatch(w: World): TrapWatch | null {
   if (w.floor.length === 0 || w.zombies.length === 0) return null;
-  const strips = new Set(w.floor.map((s) => key(s.cx, s.cy)));
+  const strips = new Set(w.floor.filter((s) => s.kind === 'spikes').map((s) => key(s.cx, s.cy)));
+  if (strips.size === 0) return null;
   const on: TrapWatch = new Map();
   for (const z of w.zombies) if (strips.has(key(Math.floor(z.x / ZOM.cell), Math.floor(z.y / ZOM.cell)))) on.set(z, { x: z.x, y: z.y });
   return on.size ? on : null;
@@ -50,6 +51,7 @@ export function tickTraps(w: World, dtMs: number, on: TrapWatch | null) {
     damageZombie(w, z, (UTILITY.spikes.dps * dtMs) / 1000, null, 'blast');
   }
   for (const strip of [...w.floor]) {
+    if (strip.kind !== 'spikes') continue;
     const worn = wear.get(key(strip.cx, strip.cy));
     if (!worn) continue;
     strip.hp -= worn;
@@ -75,13 +77,13 @@ export function tickUtilities(w: World, run: Run, dtMs: number) {
     const reach = reachAt(base, lv);
     let did = false;
     if (u.kind === 'depot') {
-      let needy: (Building & { ammo: number }) | null = null, share = 1;
-      for (const t of w.buildings) {
+      let needy: Turret | Vent | null = null, share = 1;
+      for (const t of [...w.buildings, ...w.floor]) {
         if (!('ammo' in t)) continue;
         const c = centerOf(t), max = turretDef(t.kind, levelOf(t)).ammo, f = t.ammo / max;
         if (f < share && dist2(at.x, at.y, c.x, c.y) <= reach ** 2) { needy = t; share = f; }
       }
-      if (needy && 'ammo' in needy) {
+      if (needy) {
         const def = turretDef(needy.kind, levelOf(needy));
         const per = def.scrapPerRound * UTILITY.depot.scrapShare;
         const rounds = Math.min(def.ammo * UTILITY.depot.ammoPerSec * aura * dt, def.ammo - needy.ammo, per > 0 ? run.scrap / per : Infinity);
@@ -106,5 +108,44 @@ export function tickUtilities(w: World, run: Run, dtMs: number) {
       }
     }
     if (did && say) w.events.push({ e: 'aid', kind: u.kind, x: at.x, y: at.y });
+  }
+}
+
+/** How hard a burn of `stacks` licks bites: the first lick in full, each one after it half again. */
+export const burnMul = (stacks: number) => 1 + 0.5 * (stacks - 1);
+
+/**
+ * Flame vents: while a zombie stands in a vent's flame (`range` of its centre, the zombie's own size besides) the vent puffs, one fuel, and its flame then
+ * burns on `patchMs` free. Every `fireMs` the flame licks whatever stands in it: alight for `burn.ms`, a lick more (up to `burn.stacks`) on one already burning.
+ * Each puff says so in a `turret` event, as a gun turret's shot does.
+ */
+export function tickVents(w: World) {
+  for (const v of w.floor) {
+    if (v.kind !== 'vent' || w.now < v.nextFireAt) continue;
+    const def = turretDef('vent', levelOf(v)), burn = def.burn!;
+    const at = centerOf(v);
+    const inFlame = w.zombies.filter((z) => dist2(z.x, z.y, at.x, at.y) <= (def.range + ZOMBIES[z.kind].radius) ** 2);
+    if (inFlame.length === 0) continue;
+    if (w.now >= v.flareUntil) {
+      if (v.ammo < 1) continue;
+      v.ammo--;
+      v.flareUntil = w.now + burn.patchMs;
+      w.events.push({ e: 'turret', kind: 'vent', x: at.x, y: at.y, angle: 0 });
+    }
+    v.nextFireAt = w.now + def.fireMs;
+    for (const z of inFlame) {
+      const lit = z.burn && z.burn.until > w.now ? z.burn : null;
+      z.burn = { dps: Math.max(def.damage, lit?.dps ?? 0), stacks: Math.min(burn.stacks, (lit?.stacks ?? 0) + 1), until: w.now + burn.ms, owner: v.owner };
+    }
+  }
+}
+
+/** What burns, burns: each zombie alight takes its burn's bite a tick, its kill the vent's. */
+export function tickBurns(w: World, dtMs: number) {
+  for (const z of [...w.zombies]) {
+    const b = z.burn;
+    if (!b) continue;
+    if (b.until <= w.now) { delete z.burn; continue; }
+    damageZombie(w, z, (b.dps * burnMul(b.stacks) * dtMs) / 1000, w.players.get(b.owner) ?? null, 'vent');
   }
 }

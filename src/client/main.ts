@@ -950,11 +950,10 @@ function onKeyDown(e: KeyboardEvent) {
     return;
   }
   const slot = perkSlotForKey(e.code);
-  if (slot !== null && state.phase === 'playing' && s.building) {
-    const kind = buildKindForKey(e.code);
-    if (kind) pickBuildKind(s, kind);
-    return;
-  }
+  // In build mode the number keys (and minus, past them) pick what to put up instead of a perk.
+  const buildKey = state.phase === 'playing' && s.building ? buildKindForKey(e.code) : null;
+  if (buildKey) { pickBuildKind(s, buildKey); return; }
+  if (slot !== null && state.phase === 'playing' && s.building) return;
   if (slot !== null) {
     pick(slot);
     return;

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BASTION_GUN, BUILDINGS, ZOM, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
+import { BASTION_GUN, BUILDINGS, MARK, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/defs.ts';
 import { removePlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { createWorld, newId, type Turret, type World } from '../src/shared/sim/world.ts';
+import { createWorld, newId, type Turret, type World, type Zombie } from '../src/shared/sim/world.ts';
+import { roundOnZombie } from '../src/shared/sim/zomroles.ts';
 import { scheduleEffects } from '../src/client/eventclock.ts';
 import { press, run, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -21,14 +22,14 @@ function nightWorld(): World {
   return w;
 }
 
-function addTurret(w: World, kind: TurretKind, owner: number, over: Partial<Turret> = {}): Turret {
+function addTurret(w: World, kind: Turret['kind'], owner: number, over: Partial<Turret> = {}): Turret {
   const t: Turret = { id: newId(w), kind, ...T, hp: BUILDINGS[kind].hp, owner, ammo: BUILDINGS[kind].turret.ammo, nextFireAt: 0, ...over };
   w.buildings.push(t);
   w.buildingsVersion++;
   return t;
 }
 
-function addZombie(w: World, kind: ZombieKind, x: number, y: number, hp = 1e9) {
+function addZombie(w: World, kind: ZombieKind, x: number, y: number, hp = 1e9): Zombie {
   const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
@@ -61,21 +62,85 @@ test('a cannon picks a brute in range over a nearer walker, and a sentry a walke
   }
 });
 
-function oneRound(turret: TurretKind, kind: ZombieKind): number {
+function oneRound(turret: Turret['kind'], kind: ZombieKind, d = 150): number {
   const w = nightWorld();
   addTurret(w, turret, spawnAt(w, TX, TY + 300).id, { ammo: 1 });
-  const z = addZombie(w, kind, TX, TY - 150);
+  const z = addZombie(w, kind, TX, TY - d);
   run(w, 1500);
   return 1e9 - z.hp;
 }
 
-test('plating blocks little of a cannon shell and none of a mortar\'s blast', () => {
+test('plating blocks none of a cannon shell and none of a mortar\'s blast', () => {
   assert.equal(oneRound('sentry', 'walker'), SENTRY.damage);
-  assert.ok(oneRound('cannon', 'plated') >= BUILDINGS.cannon.turret.damage * 0.9, 'a cannon shell gets through');
+  assert.equal(oneRound('cannon', 'plated'), BUILDINGS.cannon.turret.damage, 'a cannon shell goes through plate as through flesh');
   for (const kind of ['walker', 'plated'] as const) {
-    assert.ok(oneRound('mortar', kind) >= BUILDINGS.mortar.turret.lobbed!.damage * 0.9, `a mortar's burst takes nearly its full damage off a ${kind}`);
+    assert.ok(oneRound('mortar', kind, 450) >= BUILDINGS.mortar.turret.lobbed!.damage * 0.9, `a mortar's burst takes nearly its full damage off a ${kind}`);
   }
 });
+
+test('a mortar cannot aim inside its dead zone: a zombie at the wall is safe from it, one out on the approach is not', () => {
+  const min = BUILDINGS.mortar.turret.minRange!;
+  assert.equal(min, 300);
+  assert.equal(oneRound('mortar', 'walker', min - 60), 0, 'nothing comes down inside its minimum');
+  assert.ok(oneRound('mortar', 'walker', min + 150) > 0, 'out past it, the shell lands');
+});
+
+test('a cannon round goes on through a line of zombies, up to three, and takes a heavy before the light kinds', () => {
+  const w = nightWorld();
+  addTurret(w, 'cannon', spawnAt(w, TX, TY + 300).id, { ammo: 1 });
+  const line = [100, 160, 220, 280].map((d) => addZombie(w, 'walker', TX, TY - d));
+  run(w, 1000);
+  assert.deepEqual(line.map((z) => 1e9 - z.hp), [1, 1, 1, 0].map((k) => k * BUILDINGS.cannon.turret.damage), 'the first three take the round, the fourth is past its pierce');
+  const pick = nightWorld();
+  addTurret(pick, 'cannon', spawnAt(pick, TX, TY + 300).id, { ammo: 1 });
+  const walker = addZombie(pick, 'walker', TX, TY - 100);
+  const plated = addZombie(pick, 'plated', TX + 200, TY - 200);
+  run(pick, 1000);
+  assert.ok(plated.hp < 1e9 && walker.hp === 1e9, 'the plated walker farther off, not the walker in front');
+});
+
+test('a scatter\'s pellets hold a zombie to part of its pace and shove it back, but brutes and the Colossus shrug both off', () => {
+  const hold = BUILDINGS.scatter.turret.hold!;
+  for (const kind of ['walker', 'brute'] as const) {
+    const w = nightWorld();
+    addTurret(w, 'scatter', spawnAt(w, TX, TY + 300).id, { ammo: 1 });
+    const z = addZombie(w, kind, TX, TY - 100);
+    let shove = 0;
+    for (let t = 0; t < 150; t += TICK_MS) { step(w, TICK_MS); shove = Math.min(shove, z.knock?.vy ?? 0); }
+    if (kind === 'walker') {
+      assert.ok(z.slow && z.slow.mul === hold.mul && z.slow.until > w.now, 'held');
+      assert.ok(shove < -hold.shove, `shoved back along the round at ${(-shove).toFixed(0)} px/s`);
+    } else assert.ok(!z.slow && shove === 0 && 1e9 - z.hp > 0, 'a brute is hit, but takes no hold and no shove');
+  }
+  // A held zombie bites as slowly as it walks.
+  const w = nightWorld();
+  const p = spawnAt(w, TX, TY + 300);
+  const z = addZombie(w, 'walker', 0, 0);
+  z.slow = { mul: 0.5, until: Infinity };
+  const at = { x: (p.x), y: p.y - ZOMBIES.walker.radius - 20 };
+  Object.assign(z, at, { attackAt: 0 });
+  let bites = 0;
+  for (let t = 0; t < 3000; t += TICK_MS) { Object.assign(z, at); step(w, TICK_MS); bites += w.events.filter((e) => e.e === 'dmg' && e.kind === 'player').length; }
+  assert.equal(bites, Math.ceil(3000 / (ZOMBIES.walker.attackMs * 2)), `bit ${bites} times in 3 s at half pace`);
+});
+
+test('a tesla coil stuns what its arc strikes and marks it, and a marked zombie takes a quarter more from a player\'s gun', () => {
+  const w = nightWorld();
+  addTurret(w, 'tesla', spawnAt(w, TX, TY + 300).id, { ammo: 1 });
+  const z = addZombie(w, 'walker', TX, TY - 100);
+  const brute = addZombie(w, 'brute', TX + 60, TY - 100);
+  step(w, TICK_MS);
+  const def = BUILDINGS.tesla.turret;
+  assert.ok(z.slow?.mul === 0 && z.slow.until > w.now && z.slow.until <= w.now + def.mark!.stunMs, 'stunned');
+  assert.ok(!brute.slow, 'a brute shrugs the stun off');
+  assert.ok(z.mark! > w.now && brute.mark! > w.now, 'both marked');
+  assert.equal(snapshotFor(w, w.players.values().next().value!.id).zombies!.find((v) => v[0] === z.id)![5], 1, 'the mark is a bit on its snapshot entry');
+  const plain = addZombie(w, 'walker', TX + 200, TY);
+  assert.equal(roundOnZombie(z, 'assault', 40, false, w.now) / roundOnZombie(plain, 'assault', 40, false, w.now), MARK.gunMul);
+  assert.equal(roundOnZombie(z, null, 40, false, w.now), roundOnZombie(plain, null, 40, false, w.now), 'a turret\'s round takes no boost');
+  assert.equal(snapshotFor(w, w.players.values().next().value!.id).zombies!.find((v) => v[0] === plain.id)!.length, 5, 'nothing on it, nothing extra on the wire');
+});
+
 
 test('a mortar lobs its shell over map cover a sentry cannot see past, and the burst catches the crowd round its target', () => {
   for (const kind of ['sentry', 'mortar'] as const) {

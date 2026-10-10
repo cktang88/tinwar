@@ -1,4 +1,4 @@
-import { isTurretKind, ZOM, type TurretKind } from '../shared/defs.ts';
+import { isTurretKind, ZOM, type BuildingKind, type TurretKind } from '../shared/defs.ts';
 import type { BuildingView } from '../shared/protocol.ts';
 import { levelOf, maxLevelOf, turretDef, upgradeCost } from '../shared/sim/build.ts';
 import type { Rect } from '../shared/sim/movement.ts';
@@ -9,12 +9,17 @@ import type { Ghost } from './zombies.ts';
  * reach a turret picks targets within (turrets.ts), so a ring never promises what the gun cannot do. A direct-fire gun
  * (sentry, cannon, scatter) cannot shoot through the map's walls and crates, so its ring is shaded where cover hides the
  * floor from the turret's centre, by the same segment test the sim aims with; a mortar lobs over everything and a coil arcs
- * through it, so their rings are whole. No turret has a minimum range: a mortar's shell lands as close as its target.
+ * through it, so their rings are whole. A mortar cannot aim inside its `minRange`, so its ring has a hatched dead zone at its heart:
+ * once the horde is at the wall there, the mortar is no help. A flame vent burns only its own cell and has no ring.
  */
 
 /** `place`: the ghost of one about to go up; `hover`: one built, under the cursor or the one U would upgrade; `next`: its next level's reach; `squad`: the faint always-on ring of every turret at night. */
 export type RingRole = 'place' | 'hover' | 'next' | 'squad';
-export type RangeRing = { kind: TurretKind; lv: number; x: number; y: number; r: number; role: RingRole };
+/** `min` is the dead zone's radius inside which the turret cannot aim, 0 for none. */
+export type RangeRing = { kind: TurretKind; lv: number; x: number; y: number; r: number; min: number; role: RingRole };
+
+/** Whether a kind shows a range ring: every turret but the flame vent, which burns only what stands on it. */
+export const ringed = (kind: BuildingKind): kind is Exclude<TurretKind, 'vent'> => isTurretKind(kind) && kind !== 'vent';
 
 /** How a kind's rounds reach their target: `direct` is stopped by cover, `lobbed` flies over it, `arc` leaps through it. */
 export const fireOf = (kind: TurretKind): 'direct' | 'lobbed' | 'arc' => {
@@ -25,12 +30,13 @@ export const fireOf = (kind: TurretKind): 'direct' | 'lobbed' | 'arc' => {
 const centre = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
 
 export function ringOf(kind: TurretKind, lv: number, cx: number, cy: number, role: RingRole): RangeRing {
-  return { kind, lv, ...centre(cx, cy), r: turretDef(kind, lv).range, role };
+  const def = turretDef(kind, lv);
+  return { kind, lv, ...centre(cx, cy), r: def.range, min: def.minRange ?? 0, role };
 }
 
 /** A built turret's ring, and by day the next level's beside it when it can still go up. */
 function builtRings(b: BuildingView, day: boolean): RangeRing[] {
-  if (!isTurretKind(b.kind)) return [];
+  if (!ringed(b.kind)) return [];
   const lv = levelOf(b);
   const out = [ringOf(b.kind, lv, b.cx, b.cy, 'hover')];
   if (day && lv < maxLevelOf(b.kind) && upgradeCost(b.kind, lv) !== null) out.push(ringOf(b.kind, lv + 1, b.cx, b.cy, 'next'));
@@ -57,16 +63,16 @@ export function rangeRings(i: RingInput): RangeRing[] {
   if (i.ghost) {
     const taken = i.ghost.refusal === 'taken' ? at(i.ghost.cx, i.ghost.cy) : null;
     if (taken) out.push(...builtRings(taken, i.day));
-    else if (!i.ghost.line && isTurretKind(i.ghost.kind)) out.push(ringOf(i.ghost.kind, 1, i.ghost.cx, i.ghost.cy, 'place'));
+    else if (!i.ghost.line && ringed(i.ghost.kind)) out.push(ringOf(i.ghost.kind, 1, i.ghost.cx, i.ghost.cy, 'place'));
   } else if (i.day) {
     const under = i.cursor ? at(Math.floor(i.cursor.x / ZOM.cell), Math.floor(i.cursor.y / ZOM.cell)) : null;
-    const focus = under && isTurretKind(under.kind) ? under : i.upgrade && isTurretKind(i.upgrade.kind) ? i.upgrade : null;
+    const focus = under && ringed(under.kind) ? under : i.upgrade && ringed(i.upgrade.kind) ? i.upgrade : null;
     if (focus) out.push(...builtRings(focus, true));
   }
   if (i.squad) {
     const shown = new Set(out.map((r) => `${r.x},${r.y}`));
     for (const b of i.buildings) {
-      if (!isTurretKind(b.kind)) continue;
+      if (!ringed(b.kind)) continue;
       const r = ringOf(b.kind, levelOf(b), b.cx, b.cy, 'squad');
       if (!shown.has(`${r.x},${r.y}`)) out.push(r);
     }
@@ -178,6 +184,7 @@ export function drawRangeRings(ctx: CanvasRenderingContext2D, rings: readonly Ra
       ctx.lineWidth = 2.4 * px;
       ctx.strokeStyle = `rgba(${BONE}, 0.34)`;
       ctx.stroke();
+      if (ring.min > 0) drawDeadZone(ctx, ring, px, now, reduced, 0.45);
       continue;
     }
     if (ring.role === 'next') {
@@ -227,7 +234,42 @@ export function drawRangeRings(ctx: CanvasRenderingContext2D, rings: readonly Ra
     ctx.lineWidth = 1.6 * px;
     ctx.strokeStyle = `rgba(${BONE}, 0.85)`;
     ctx.stroke();
+    if (ring.min > 0) drawDeadZone(ctx, ring, px, now, reduced, 1);
   }
   ctx.setLineDash([]);
   ctx.restore();
+}
+
+/** Signal red for what a turret cannot reach, apart from the bone and amber of what it can. */
+const DEAD = '229, 72, 77';
+
+/**
+ * A mortar's dead zone: the disc inside its `min` radius, shaded and hatched across in red with a dashed red edge, so it reads at a glance that
+ * the shell cannot come down there. `k` fades it for the squad's faint night rings.
+ */
+function drawDeadZone(ctx: CanvasRenderingContext2D, ring: RangeRing, px: number, now: number, reduced: boolean, k: number) {
+  const { x, y, min } = ring, TAU = Math.PI * 2;
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(x, y, min, 0, TAU);
+  ctx.fillStyle = `rgba(${INK}, ${0.18 * k})`;
+  ctx.fill();
+  ctx.clip();
+  // Hatching: diagonal rules across the disc, drifting slowly so it reads as a warning rather than a texture.
+  const step = 18 * px, drift = reduced ? 0 : (now / 120) % step;
+  ctx.beginPath();
+  for (let d = -min * 2 - step + drift; d < min * 2; d += step) { ctx.moveTo(x + d - min, y - min); ctx.lineTo(x + d + min, y + min); }
+  ctx.lineWidth = 1.4 * px;
+  ctx.strokeStyle = `rgba(${DEAD}, ${0.32 * k})`;
+  ctx.stroke();
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(x, y, min, 0, TAU);
+  ctx.setLineDash([6 * px, 5 * px]);
+  ctx.lineDashOffset = reduced ? 0 : now / 90;
+  ctx.lineWidth = 1.8 * px;
+  ctx.strokeStyle = `rgba(${DEAD}, ${0.85 * k})`;
+  ctx.stroke();
+  ctx.setLineDash([]);
 }

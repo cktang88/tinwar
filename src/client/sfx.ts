@@ -310,6 +310,7 @@ const RAW: Record<SoundId, Recipe> = {
   'turret:cannon': [crack(900, 300, 0.7), thump(70, 380, 0.75), { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [700, 80], ms: 420, gain: 0.35 }],
   'turret:scatter': [crack(2600, 120, 0.45), { src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [2400, 600], ms: 140, gain: 0.3 }],
   'turret:mortar': [thump(120, 220, 0.6), { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [500, 120], ms: 260, gain: 0.3 }],
+  'turret:vent': [{ src: 'noise', filter: 'lowpass', q: 0.6, cutoffHz: [1800, 300], ms: 520, gain: 0.32 }, thump(90, 160, 0.3), ...crackle(6, 40, 360, 0.14, 2600)],
   'turret:tesla': [{ src: 'tone', wave: 'sawtooth', pitchHz: [2600, 180], ms: 110, gain: 0.16 }, snap(5000, 0.3, 0, 14), ...crackle(7, 10, 140, 0.22, 4200), { src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [3200, 900], ms: 150, gain: 0.2 }],
   // Building is a different knock for each stuff: hammered boards, a sandbag's soft double thud, steel's ring; a spike strip rattles down; an upgrade climbs a chime over a hammer tick.
   'build:wood': [snap(2600, 0.3, 0, 10), thump(560, 45, 0.5), { ...snap(2600, 0.3, 0, 10), delayMs: 95 }, { ...thump(500, 45, 0.5), delayMs: 95 }, { ...snap(2400, 0.25, 0, 10), delayMs: 190 }, { ...thump(440, 55, 0.5), delayMs: 190 }],

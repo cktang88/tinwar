@@ -72,7 +72,7 @@ test('a wall comes down by day for half its cost back, but not at night without 
   assert.deepEqual([w.buildings.length, w.run!.scrap - scrap], [0, BUILDINGS.wall.cost * ZOM.demolishRefund]);
 });
 
-for (const kind of TURRET_KINDS) {
+for (const kind of TURRET_KINDS.filter((k) => k !== 'vent')) {
   test(`a ${kind} goes up like a wall for its own cost, loaded and firing for its builder, blocks the way, and comes down for half back`, () => {
     const { w, p } = dayWorld();
     w.run!.scrap = BUILDINGS[kind].cost - 1;
@@ -91,6 +91,23 @@ for (const kind of TURRET_KINDS) {
     assert.deepEqual([w.buildings.length, w.run!.scrap - scrap], [0, Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund)]);
   });
 }
+
+test('a flame vent goes up on the floor for its own cost, fuelled for its builder, walked over, and comes down for half back', () => {
+  const { w, p } = dayWorld();
+  w.run!.scrap = 1000;
+  assert.equal(build(w, p.id, 'vent', CELL.cx, CELL.cy), null);
+  assert.equal(1000 - w.run!.scrap, BUILDINGS.vent.cost);
+  assert.deepEqual(w.buildings, []);
+  assert.deepEqual(w.floor.map((b) => ({ ...b, id: 0 })), [{ id: 0, kind: 'vent', cx: CELL.cx, cy: CELL.cy, hp: BUILDINGS.vent.hp, owner: p.id, ammo: BUILDINGS.vent.turret.ammo, nextFireAt: 0, flareUntil: 0 }]);
+  assert.equal(build(w, p.id, 'wall', CELL.cx, CELL.cy), 'taken');
+  press(w, p, { left: true });
+  run(w, 1000);
+  assert.ok(p.x < CELL.cx * ZOM.cell, `walked over the vent to x ${p.x.toFixed(1)}`);
+  p.x = (CELL.cx + 1.5) * ZOM.cell;
+  const scrap = w.run!.scrap;
+  assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);
+  assert.deepEqual([w.floor.length, w.run!.scrap - scrap], [0, Math.floor(BUILDINGS.vent.cost * ZOM.demolishRefund)]);
+});
 
 test('build and demolish messages carry whole grid cells only', () => {
   assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'build', kind: 'sentry', cx: 3, cy: 59 })), { t: 'build', kind: 'sentry', cx: 3, cy: 59 });
@@ -132,7 +149,7 @@ test('a worn building pays back less when taken down, and mending it costs less 
     const { w, p } = dayWorld();
     w.run!.scrap = 1e6;
     build(w, p.id, kind, CELL.cx, CELL.cy);
-    w.buildings[0]!.hp = BUILDINGS[kind].hp * 0.3;
+    (w.buildings[0] ?? w.floor[0])!.hp = BUILDINGS[kind].hp * 0.3;
     const scrap = w.run!.scrap;
     assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);
     const refund = w.run!.scrap - scrap;

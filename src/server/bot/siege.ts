@@ -1,4 +1,4 @@
-import { BUILDING_KINDS, GUNS, nightOf, rulesOf, SIDES, WORLD, ZOM, type BuildingKind, type Side } from '../../shared/defs.ts';
+import { BUILDING_KINDS, GUNS, isFloorKind, nightOf, rulesOf, SIDES, WORLD, ZOM, type BuildingKind, type Side } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
 import { cellOf, cellRect, coreRectAt, costOf, levelOf, maxLevelOf, upgradeCost } from '../../shared/sim/build.ts';
 import { circleBlocked, circleHitsRect, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
@@ -202,8 +202,8 @@ function nextBuild(run: RunView, buildings: readonly BuildingView[]): NonNullabl
   return { act: step.act, kind: step.kind, lv: step.lv, cx, cy, x: stand.x, y: stand.y, cost };
 }
 
-/** A spike strip lies on the floor: a bot walks over it. */
-const solid = (b: BuildingView) => b.kind !== 'spikes';
+/** A spike strip or a flame vent lies on the floor: a bot walks over it. */
+const solid = (b: BuildingView) => !isFloorKind(b.kind);
 const squadSolids = (core: { x: number; y: number }, buildings: readonly BuildingView[]): Rect[] => [coreRectAt(core), ...buildings.filter(solid).map((b) => cellRect(b.cx, b.cy))];
 const SQUAD_NAV = new WeakMap<BotArena, { key: string; nav: NavGrid }>();
 const MAX_EXPANSIONS = 4000;

@@ -1,5 +1,6 @@
-import { HORDE_GUN_MUL, KNOCK, ZOMBIES, zombieRole, type GunId } from '../defs.ts';
-import type { Zombie } from './world.ts';
+import { HORDE_GUN_MUL, KNOCK, MARK, ZOMBIES, zombieRole, type GunId } from '../defs.ts';
+import { addKnock } from './movement.ts';
+import type { Bullet, Zombie } from './world.ts';
 
 /**
  * Zombies only (see `ZombieRole` in defs.ts): how a player's gun treats the horde. Every caller is a path a round, blast or kill against a zombie takes,
@@ -10,17 +11,22 @@ import type { Zombie } from './world.ts';
  * What a round of `damage` from `gun` does to `z`: its plate (the share of it the gun's role leaves on, none for an armor-piercing round), then, for a player's
  * gun, `HORDE_GUN_MUL` and the role's multiplier for the kind. A turret's round (no gun) loses only the plate.
  */
-export function roundOnZombie(z: Zombie, gun: GunId | null, damage: number, piercing: boolean): number {
+export function roundOnZombie(z: Zombie, gun: GunId | null, damage: number, piercing: boolean, now = 0): number {
   const role = gun ? zombieRole(gun) : null;
   const plate = piercing ? 0 : ZOMBIES[z.kind].plate * (role?.plate ?? 1);
-  return Math.max(1, damage - plate) * (role ? HORDE_GUN_MUL * (role.vs[z.kind] ?? 1) : 1);
+  return Math.max(1, damage - plate) * (role ? HORDE_GUN_MUL * (role.vs[z.kind] ?? 1) * markMul(z, now) : 1);
 }
 
+/** Whether a tesla coil's mark is on `z` now. */
+export const isMarked = (z: Zombie, now: number): boolean => (z.mark ?? 0) > now;
+/** What a player's gun does more to a zombie a tesla coil has marked (`MARK`). */
+const markMul = (z: Zombie, now: number) => (isMarked(z, now) ? MARK.gunMul : 1);
+
 /** What a blast of `damage` from `gun` does to `z`: `HORDE_GUN_MUL`, the role's blast multiplier, and the share of it plating lets through. */
-export function blastOnZombie(z: Zombie, gun: GunId | null, damage: number): number {
+export function blastOnZombie(z: Zombie, gun: GunId | null, damage: number, now = 0): number {
   if (!gun) return damage;
   const role = zombieRole(gun);
-  return damage * HORDE_GUN_MUL * role.blast * (ZOMBIES[z.kind].plate > 0 ? role.blastPlated : 1);
+  return damage * HORDE_GUN_MUL * role.blast * (ZOMBIES[z.kind].plate > 0 ? role.blastPlated : 1) * markMul(z, now);
 }
 
 /**
@@ -29,10 +35,27 @@ export function blastOnZombie(z: Zombie, gun: GunId | null, damage: number): num
  */
 export function holdZombie(z: Zombie, gun: GunId | null, now: number) {
   const slow = gun ? zombieRole(gun).slow : null;
-  if (!slow || KNOCK.zombie[z.kind] <= 0) return;
+  if (slow) applyHold(z, slow, now);
+}
+
+/** Holds `z` to `mul` of its pace for `ms`, unless it already has a stronger hold, or is a kind no shove moves. A `mul` of 0 is a stun. */
+export function applyHold(z: Zombie, slow: { mul: number; ms: number }, now: number) {
+  if (KNOCK.zombie[z.kind] <= 0) return;
   const cur = z.slow && z.slow.until > now ? z.slow : null;
   if (cur && cur.mul < slow.mul) return;
   z.slow = { mul: slow.mul, until: Math.max(now + slow.ms, cur && cur.mul === slow.mul ? cur.until : 0) };
+}
+
+/**
+ * A turret round's hit on `z` beyond its damage: a scatter's pellet holds it (`TurretDef.hold`) and shoves it back along the round, harder than any other round.
+ * Answers false for a round that only shoves as any round does.
+ */
+export function turretHit(z: Zombie, hold: Bullet['hold'], now: number, dirX: number, dirY: number): boolean {
+  if (!hold) return false;
+  applyHold(z, hold, now);
+  const weight = KNOCK.zombie[z.kind];
+  if (weight > 0 && z.hp > 0) z.knock = addKnock(z.knock, dirX, dirY, hold.shove * weight, hold.shoveCap);
+  return true;
 }
 
 /** The share of its pace a zombie keeps now: a hold's, or all of it. */

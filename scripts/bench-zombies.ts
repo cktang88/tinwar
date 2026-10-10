@@ -177,9 +177,11 @@ sample(ringOfTurrets(3, 2));
 ringOfTurrets(2, 1);
 sample(ringOfTurrets(4, 1));
 const owner = [...sq.w.players.keys()][0]!;
+// The guns that stand on a cell: a flame vent lies in the floor and has no place in a ring of emplacements.
+const GUNS_STANDING = TURRET_KINDS.filter((k) => k !== 'vent');
 sq.w.buildings = sq.w.buildings.map((b, i) => {
-  const kind = TURRET_KINDS[i % TURRET_KINDS.length]!;
+  const kind = GUNS_STANDING[i % GUNS_STANDING.length]!;
   return { id: b.id, cx: b.cx, cy: b.cy, kind, hp: BUILDINGS[kind].hp, owner, ammo: BUILDINGS[kind].turret.ammo, nextFireAt: 0 };
 });
 sq.w.buildingsVersion++;
-sample(`the same ${sq.w.buildings.length} turrets, a quarter each of ${TURRET_KINDS.join(', ')}`);
+sample(`the same ${sq.w.buildings.length} turrets, an even share each of ${GUNS_STANDING.join(', ')}`);

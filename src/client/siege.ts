@@ -1,4 +1,4 @@
-import { isTurretKind, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
+import { isFloorKind, isTurretKind, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt, costOf, levelOf, maxLevelOf } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
@@ -14,6 +14,7 @@ import { buildingSolid, drawSolids, LIGHT, standsUp } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
 import type { Rect } from '../shared/sim/movement.ts';
 import { bakedSprite, char, dent, drawEmbers, drawPips, drawTurret, drawTurretLit, lampStutters, seeded, streaks, wearStage, type Wear } from './turretart.ts';
+import { drawDecoy, drawDecoyLamp, drawDecoyPull, drawVent, drawVentFlame, drawZombieFx } from './ventart.ts';
 import { drawRangeRings, rangeRings } from './turretrange.ts';
 
 const TAU = Math.PI * 2;
@@ -184,13 +185,14 @@ function drawPostLamp(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv:
   ctx.stroke();
 }
 
-/** What stands on a cell, drawn over its pad (centred on `cx`, `cy`): a turret's emplacement and gun turned to `angle` (turretart.ts), a coil, a depot's crates or a post's locker. */
+/** What stands on a cell, drawn over its pad (centred on `cx`, `cy`): a turret's emplacement and gun turned to `angle` (turretart.ts), a coil, a depot's crates, a post's locker or a decoy's mast (ventart.ts). */
 function drawHead(ctx: CanvasRenderingContext2D, b: { kind: BuildingKind; lv?: number; hp: number }, cx: number, cy: number, angle: number, sinceShot: number, now: number, pxPerUnit: number) {
   const lv = levelOf(b);
   if (b.kind === 'depot' || b.kind === 'post') {
     ctx.drawImage(utilitySprite(b.kind, lv, wearStage(b.hp), pxPerUnit), cx - UTILITY_HALF, cy - UTILITY_HALF, UTILITY_HALF * 2, UTILITY_HALF * 2);
     if (b.kind === 'post') drawPostLamp(ctx, cx, cy, lv, wearStage(b.hp), now);
-  } else if (isTurretKind(b.kind)) drawTurret(ctx, { kind: b.kind, lv, hp: b.hp, x: cx, y: cy, angle, sinceShot }, pxPerUnit);
+  } else if (b.kind === 'decoy') drawDecoy(ctx, cx, cy, lv, wearStage(b.hp));
+  else if (isTurretKind(b.kind) && b.kind !== 'vent') drawTurret(ctx, { kind: b.kind, lv, hp: b.hp, x: cx, y: cy, angle, sinceShot }, pxPerUnit);
 }
 
 /** A spike strip: a steel rail with a row of spikes standing up from it, ink-edged, lit on one side and shaded on the other, fewer of them as it is trampled. */
@@ -226,9 +228,12 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, b: BuildingView, now: 
   }
 }
 
-/** Floor items lie under bodies, so they are drawn before the horde and the squad. */
+/** Floor items lie under bodies, so they are drawn before the horde and the squad: spike strips and flame vents (ventart.ts). */
 export function drawFloorItems(ctx: CanvasRenderingContext2D, items: readonly BuildingView[], now: number) {
-  for (const b of items) if (b.kind === 'spikes') drawSpikes(ctx, b, now);
+  for (const b of items) {
+    if (b.kind === 'spikes') drawSpikes(ctx, b, now);
+    else if (b.kind === 'vent') drawVent(ctx, b, now);
+  }
 }
 
 export function drawSiegeTops(
@@ -281,6 +286,10 @@ export type SiegeLights = {
   reduced: boolean;
   /** How dark the night is, 0..1. */
   dark: number;
+  /** Flame vents in view: their fire is a light. */
+  floor: readonly BuildingView[];
+  /** The horde in view, for the marks and fire it carries. */
+  zombies: readonly ZombieView[];
 };
 
 /**
@@ -291,12 +300,25 @@ export type SiegeLights = {
 export function drawSiegeLights(ctx: CanvasRenderingContext2D, l: SiegeLights) {
   const rings = rangeRings({ ghost: l.ghost, buildings: l.all, day: l.day, cursor: l.cursor, upgrade: l.upgrade, squad: l.squadRings });
   if (rings.length) drawRangeRings(ctx, rings, coverOf(l.walls, l.crates), l.scale, l.now, l.reduced);
+  // In build mode each decoy shows how far it draws the horde, and one about to go up shows its own.
+  if (l.ghost) {
+    for (const b of l.all) if (b.kind === 'decoy') drawDecoyPull(ctx, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell, levelOf(b), l.now, l.scale, l.reduced);
+    const g = l.ghost;
+    if (g.kind === 'decoy' && g.refusal !== 'taken' && !g.line) drawDecoyPull(ctx, (g.cx + 0.5) * ZOM.cell, (g.cy + 0.5) * ZOM.cell, 1, l.now, l.scale, l.reduced, true);
+  }
+  for (const b of l.floor) {
+    if (b.kind !== 'vent') continue;
+    const aim = l.aims.get(`${b.cx},${b.cy}`);
+    drawVentFlame(ctx, b, aim ? l.now - aim.firedAt : Infinity, l.now, l.pxPerUnit, l.reduced, l.dark);
+  }
+  if (l.zombies.length) drawZombieFx(ctx, l.zombies, l.now, l.pxPerUnit, l.reduced);
   for (const b of l.buildings) {
     const { x, y, w, h } = cellRect(b.cx, b.cy);
     // A badly damaged wall, depot or post smoulders (a turret's embers come with its lights).
     if (!('ammo' in b) && wearStage(b.hp) === 2) drawEmbers(ctx, x + w / 2, y + h / 2, l.now, l.pxPerUnit, l.reduced, 1);
     if (b.kind === 'wall') continue;
-    if ('ammo' in b) {
+    if (b.kind === 'decoy') drawDecoyLamp(ctx, b, l.now, l.pxPerUnit, l.reduced, l.dark);
+    if ('ammo' in b && b.kind !== 'vent') {
       const aim = l.aims.get(`${b.cx},${b.cy}`);
       const angle = !aim ? awayFromCore(b, l.core) : b.kind === 'tesla' ? 0 : aim.drawn;
       drawTurretLit(ctx, { kind: b.kind, lv: levelOf(b), hp: b.hp, x: x + w / 2, y: y + h / 2, angle, sinceShot: aim ? l.now - aim.firedAt : Infinity, ammo: b.ammo }, l.now, l.pxPerUnit, l.reduced, l.dark);
@@ -342,7 +364,7 @@ export function drawCoreTop(ctx: CanvasRenderingContext2D, run: RunView, now: nu
  */
 export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], snap: Pick<Snapshot, 'run' | 'buildings' | 'players'>, flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
   const core = snap.run ? coreRectAt(snap.run.core) : null;
-  const buildingAt = new Map((snap.buildings ?? []).filter((b) => b.kind !== 'spikes').map((b) => [cellId(b.cx, b.cy), b]));
+  const buildingAt = new Map((snap.buildings ?? []).filter((b) => !isFloorKind(b.kind)).map((b) => [cellId(b.cx, b.cy), b]));
   const players = snap.players.filter((p) => p.alive).map((p) => ({ x: p.x, y: p.y, r: R }));
   animateZombies(zombies, now, snap.run?.core ?? { x: 0, y: 0 }, (kind, x, y) => biteTarget(kind, x, y, core, buildingAt, players), (st) => onStrike(siege, st, now));
   drawHorde(ctx, zombies, flashes, now, pxPerUnit);
@@ -430,6 +452,7 @@ function drawGhostCell(ctx: CanvasRenderingContext2D, ghost: Ghost, cx: number, 
     ctx.globalAlpha = 0.6;
     const at = { cx, cy, hp: 10, kind: ghost.kind, lv: ghost.lv } as BuildingView;
     if (ghost.kind === 'spikes') drawSpikes(ctx, at, now);
+    else if (ghost.kind === 'vent') drawVent(ctx, at, now);
     else {
       if (onPad(at)) drawSolids(ctx, [buildingSolid(at)]);
       if (ghost.kind !== 'wall') drawHead(ctx, at, x + w / 2, y + h / 2, awayFromCore(at, core), Infinity, now, pxPerUnit);

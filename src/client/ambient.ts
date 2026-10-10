@@ -75,7 +75,7 @@ const WHEN_ANY = 0, WHEN_DAY = 1, WHEN_NIGHT = 2;
 
 export type View = { x0: number; y0: number; x1: number; y1: number };
 export type WallLike = { x: number; y: number; w: number; h: number; pts?: readonly number[]; built?: boolean };
-export type StepInput = { horde?: readonly (readonly number[])[]; players: readonly { id: number; x: number; y: number; alive: boolean; hidden?: boolean }[]; view: View; dark: number; reduced: boolean; listener?: { x: number; y: number } };
+export type StepInput = { horde?: readonly (readonly (number | undefined)[])[]; players: readonly { id: number; x: number; y: number; alive: boolean; hidden?: boolean }[]; view: View; dark: number; reduced: boolean; listener?: { x: number; y: number } };
 
 const hashOf = (s: string): number => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; };
 export function mulberry(seed: number): () => number {
@@ -270,7 +270,7 @@ export function createAmbient() {
   const lastSound = { flutter: -1e9, caw: -1e9, gull: -1e9 };
   const lastNow = { v: 0 };
   let darkNow = 0, reducedNow = false;
-  let horde: readonly (readonly number[])[] | null = null;
+  let horde: readonly (readonly (number | undefined)[])[] | null = null;
 
   const view: View = { x0: 0, y0: 0, x1: 1, y1: 1 };
 

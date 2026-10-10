@@ -1,9 +1,9 @@
-import { WORLD, ZOM, ZOMBIES } from '../defs.ts';
+import { UTILITY, WORLD, ZOM, ZOMBIES } from '../defs.ts';
 import { damagePlayer } from './combat.ts';
 import { clamp, decayKnock, dist2, rectsOverlap, segmentBlocked, slide, type Rect } from './movement.ts';
 import { aiOf, BOID, buildGrid, LURE, personality, steer, type ZAi } from './boids.ts';
 import { MAPS } from '../maps.ts';
-import { cellRect, levelOf, wallTier } from './build.ts';
+import { cellRect, levelOf, reachAt, wallTier } from './build.ts';
 import { paceOf } from './zomroles.ts';
 import { coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
 
@@ -199,6 +199,23 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
   const dt = dtMs / 1000;
   const ccx = core.x + core.w / 2, ccy = core.y + core.h / 2;
   const avoid: Rect[] = [];
+  const decoys = w.buildings.filter((b) => b.kind === 'decoy');
+  // A beacon's own cell is no cover against the way to it.
+  const decoyCells = new Set(decoys.map((d) => `${d.cx * ZOM.cell},${d.cy * ZOM.cell}`));
+  const toDecoy = decoys.length ? sight.filter((r) => r.w !== ZOM.cell || r.h !== ZOM.cell || !decoyCells.has(`${r.x},${r.y}`)) : sight;
+  /** The nearest decoy beacon in its reach that a zombie of radius `r` could walk straight to, body and all; the Colossus pays none any mind. */
+  const decoyFor = (z: Zombie): number => {
+    if (z.kind === 'colossus') return 0;
+    let best = 0, bestD = Infinity;
+    const r = ZOMBIES[z.kind].radius * 0.8;
+    for (const d of decoys) {
+      const x = (d.cx + 0.5) * ZOM.cell, y = (d.cy + 0.5) * ZOM.cell, dist = Math.hypot(x - z.x, y - z.y);
+      if (dist > reachAt(UTILITY.decoy.reach, levelOf(d)) || dist >= bestD || dist < 1) continue;
+      const ox = (-(y - z.y) / dist) * r, oy = ((x - z.x) / dist) * r;
+      if (hasLine(toDecoy, z.x, z.y, x, y) && hasLine(toDecoy, z.x + ox, z.y + oy, x + ox, y + oy) && hasLine(toDecoy, z.x - ox, z.y - oy, x - ox, y - oy)) { best = d.id; bestD = dist; }
+    }
+    return best;
+  };
   for (let i = 0; i < w.zombies.length; i++) {
     const z = w.zombies[i]!;
     const def = ZOMBIES[z.kind], me = personality(z.id), ai = aiOf(z, w.now);
@@ -212,17 +229,27 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
       const chosen = choosePrey(w, z, ai, sight, core);
       ai.tgt = chosen ? 'player' : 'core';
       ai.pid = chosen ? chosen.id : 0;
+      ai.decoy = chosen || decoys.length === 0 ? 0 : decoyFor(z);
     }
     const prey = ai.tgt === 'player' ? w.players.get(ai.pid) : undefined;
     const near = prey;
+    const decoy = !prey && ai.decoy ? decoys.find((d) => d.id === ai.decoy) : undefined;
     if (near && Math.hypot(near.x - z.x, near.y - z.y) <= reach + WORLD.playerRadius) {
       bite = () => damagePlayer(w, near, damage, { attacker: null, team: null, label: def.name, piercing: false, via: 'bite', fromX: z.x, fromY: z.y });
     } else if (prey) goal = prey;
-    else if (distToRect(z.x, z.y, core) <= reach) bite = () => hurtCore(run, damage * (1 - ZOM.coreArmor));
+    else if (decoy) {
+      // A decoy draws it over the walls and the Bastion: it walks to the beacon and bites it like a wall in its way.
+      wall = decoy;
+      ai.tgt = 'wall';
+      if (distToRect(z.x, z.y, cellRect(decoy.cx, decoy.cy)) <= reach) bite = () => biteBuilding(w, decoy, damage * def.buildingDamageMul);
+      else goal = { x: (decoy.cx + 0.5) * ZOM.cell, y: (decoy.cy + 0.5) * ZOM.cell };
+    } else if (distToRect(z.x, z.y, core) <= reach) bite = () => hurtCore(run, damage * (1 - ZOM.coreArmor));
     else goal = pathGoal();
-    if (bite && w.now >= z.attackAt) {
+    // A held zombie bites as slowly as it walks, and a stunned one not at all.
+    const pace = paceOf(z, w.now);
+    if (bite && pace > 0 && w.now >= z.attackAt) {
       bite();
-      z.attackAt = w.now + def.attackMs;
+      z.attackAt = w.now + def.attackMs / Math.max(0.25, pace);
     }
     let sx = 0, sy = 0;
     if (goal) {
@@ -240,7 +267,7 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
     }
     const s = steer(g, i, w.now, sx, sy, avoid);
     // A hit's hold (an LMG's suppression, a shotgun's stagger) takes off its share of the pace.
-    const top = def.speed * me.speed * mul.speed * paceOf(z, w.now);
+    const top = def.speed * me.speed * mul.speed * pace;
     // A zombie that has not moved yet takes up its heading at once, so a fresh one walks in at full pace.
     const k = ai.hx === 0 && ai.hy === 0 ? 1 : Math.min(1, dt * BOID.turn);
     ai.hx += (s.wx * top - ai.hx) * k;

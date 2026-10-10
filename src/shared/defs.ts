@@ -893,14 +893,21 @@ export const zombieBounty = (gun: GunId): number => {
 /** How many of a kind listed `listed` times come for a squad with this share of the horde. */
 export const hordeCount = (kind: ZombieKind, listed: number, share: number) => (!listed || isBoss(kind) ? listed : Math.max(1, Math.round(listed * share)));
 
-export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar', 'tesla'] as const;
+/** Turrets: everything that holds a load and spends it on the horde. The flame `vent` is one that lies on the floor (`FLOOR_KINDS`) and burns fuel instead of firing rounds. */
+export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent'] as const;
 export type TurretKind = (typeof TURRET_KINDS)[number];
-/** Utility kinds: an ammo `depot` and a `post` that mends are solid like a wall, `spikes` lie on the floor and are walked over. */
-export const UTILITY_KINDS = ['depot', 'post', 'spikes'] as const;
+/**
+ * Utility kinds: an ammo `depot`, a `post` that mends and a `decoy` that draws the horde are solid like a wall, `spikes` lie on the floor and are walked over.
+ */
+export const UTILITY_KINDS = ['depot', 'post', 'spikes', 'decoy'] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 export const BUILDING_KINDS = ['wall', ...TURRET_KINDS, ...UTILITY_KINDS] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
 export const isTurretKind = (kind: BuildingKind): kind is TurretKind => (TURRET_KINDS as readonly string[]).includes(kind);
+/** What lies flat on the floor: anyone walks over it, the horde's flow ignores it, and it stands in `World.floor` rather than `World.buildings`. */
+export const FLOOR_KINDS = ['spikes', 'vent'] as const;
+export type FloorKind = (typeof FLOOR_KINDS)[number];
+export const isFloorKind = (kind: BuildingKind): kind is FloorKind => (FLOOR_KINDS as readonly string[]).includes(kind);
 export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TURRET_KINDS.map((k) => [k, f(k)])) as Record<TurretKind, T>;
 
 /**
@@ -913,7 +920,22 @@ export type TurretDef = {
   muzzle: number; bullet: { r: number; color: string }; lobbed: Blast | null;
   /** A coil's arc: it leaps from its first target to up to `jumps` more within `reach` px of the last, each hit `falloff` as hard as the one before. No round flies. */
   arc?: { jumps: number; reach: number; falloff: number };
+  /** It cannot aim at a zombie nearer than this (a mortar's shell needs room to climb and fall), so it is no help once the horde is at the wall. */
+  minRange?: number;
+  /** Its round goes through plate as through flesh and on through up to `pierce` more zombies in a line. */
+  pierce?: number;
+  /** Each hit holds a zombie to `mul` of its pace for `ms` and shoves it `shove` px/s back along the round (up to `shoveCap`); brutes and the Colossus shrug off both. */
+  hold?: { mul: number; ms: number; shove: number; shoveCap: number };
+  /** Each zombie it strikes is stunned for `stunMs` (brutes and the Colossus shrug that off) and marked for `markMs`: a marked zombie takes `MARK.gunMul` from players' guns. */
+  mark?: { stunMs: number; markMs: number };
+  /**
+   * A floor vent: each `fireMs` it puffs while a zombie stands within `range` (one fuel a puff), and its flame keeps the floor alight `patchMs` after the last puff.
+   * Whatever stands in the flame burns `damage` a second for `ms`, each fresh lick adding a stack up to `stacks`.
+   */
+  burn?: { ms: number; stacks: number; patchMs: number };
 };
+/** A tesla coil's mark: players' guns (rounds and blasts) hit a marked zombie this much harder. */
+export const MARK = { gunMul: 1.25 } as const;
 /**
  * A wall comes in three tiers, each an upgrade of the one below: `armor` is the share of each bite's damage it shrugs off (a wall always stops the zombie;
  * the hover reads it "takes 10% less bite damage"), `blast` scales a bloater's burst on it and `repairMul` how fast holding use mends it.
@@ -944,27 +966,34 @@ export const UPGRADE = {
  * Utilities: the ammo `depot` tops up every turret within `reach` px, `ammoPerSec` as a share of a turret's load a second, for `scrapShare` of a round's price, and reloads a squad player's gun at once there.
  * The `post` mends every squad player within `reach` px `playerHp` health a second and every building there `buildingHp`, free.
  * `spikes` slow a zombie on them to `slow` of its speed, hurt it `dps` a second, and wear `wear` hp a second per zombie, `heavyWear` per heavy one (brute, bloater, colossus).
+ * The `decoy` draws every zombie within `reach` px (scaled by level like any utility's) that has a clear way to it and no player to chase: it goes for the beacon instead of the walls and the Bastion. The Colossus pays it no mind.
  */
 export const UTILITY = {
   depot: { reach: 175, ammoPerSec: 0.1, scrapShare: 0.6 },
   post: { reach: 175, playerHp: 4, buildingHp: 20 },
   spikes: { slow: 0.45, dps: 14, wear: 7, heavyWear: 24 },
+  decoy: { reach: 300 },
 } as const;
 type BuildingDef = { name: string; cost: number; hp: number };
 /**
- * Every buildable is the best buy somewhere and none dominates another (scripts/bench-zombie-builds.ts measures the horde health each takes off a scrap,
- * its ammo and mending counted; test/zombies-buildvalue.test.ts holds it): the sentry is the cheap turret with the most health a scrap; the scatter
- * the runner killer; the cannon the heavy killer (brutes, the Colossus); the mortar the plated killer with the longest reach; the tesla coil the best
- * against the night's own mix, its arc blind to plate and cover, at the shortest range. The depot feeds turrets, the post mends, spikes slow.
+ * Every buildable has its own job, so none is a better buy than another everywhere (scripts/bench-zombie-builds.ts measures each on the axes of its job;
+ * test/zombies-buildvalue.test.ts holds it): the sentry is the cheap all-rounder; the scatter buys time, shoving and slowing packs off the walls;
+ * the cannon is the heavy killer, one round through plate and on through a line of them; the mortar thins packs and pops bloaters far out but cannot
+ * hit inside `minRange`; the tesla coil stuns and marks what its arc strikes for the squad's guns; the flame vent sets alight what walks over it,
+ * best at a chokepoint. The depot feeds turrets, the post mends, spikes slow, and the decoy draws the horde off the walls.
  */
 export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> & Record<UtilityKind, BuildingDef & { turret: null }> = {
   wall: { name: WALL_TIERS[0].name, cost: WALL_TIERS[0].cost, hp: WALL_TIERS[0].hp, turret: null },
   depot: { name: 'Ammo depot', cost: 80, hp: 900, turret: null },
   post: { name: 'Repair post', cost: 100, hp: 800, turret: null },
   spikes: { name: 'Spike strip', cost: 10, hp: 450, turret: null },
+  decoy: { name: 'Decoy beacon', cost: 50, hp: 1600, turret: null },
   tesla: {
     name: 'Tesla coil', cost: 140, hp: 900,
-    turret: { prefers: 'walker', range: 230, fireMs: 1000, damage: 30, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 0.6, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null, arc: { jumps: 4, reach: 120, falloff: 0.85 } },
+    turret: {
+      prefers: 'walker', range: 230, fireMs: 1000, damage: 14, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 0.6, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null,
+      arc: { jumps: 4, reach: 120, falloff: 0.85 }, mark: { stunMs: 400, markMs: 4000 },
+    },
   },
   sentry: {
     name: 'Sentry', cost: 60, hp: 1000,
@@ -972,17 +1001,27 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
   },
   cannon: {
     name: 'Cannon', cost: 100, hp: 1100,
-    turret: { prefers: 'brute', range: 560, fireMs: 2000, damage: 200, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 1, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null },
+    turret: { prefers: 'brute', range: 560, fireMs: 5000, damage: 210, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 1.2, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null, pierce: 2 },
   },
   scatter: {
     name: 'Scatter', cost: 80, hp: 1100,
-    turret: { prefers: 'runner', range: 260, fireMs: 650, damage: 10, pellets: 7, bulletSpeed: 1600, spread: 0.22, ammo: 40, scrapPerRound: 0.5, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null },
+    turret: {
+      prefers: 'runner', range: 260, fireMs: 650, damage: 6, pellets: 7, bulletSpeed: 1600, spread: 0.36, ammo: 40, scrapPerRound: 0.5, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null,
+      hold: { mul: 0.4, ms: 900, shove: 200, shoveCap: 600 },
+    },
   },
   mortar: {
     name: 'Mortar', cost: 120, hp: 600,
     turret: {
-      prefers: 'plated', range: 750, fireMs: 2600, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 8, scrapPerRound: 2.5, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
-      lobbed: { radius: 120, damage: 26 },
+      prefers: 'bloater', range: 750, minRange: 300, fireMs: 2400, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 12, scrapPerRound: 1.2, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
+      lobbed: { radius: 120, damage: 90 },
+    },
+  },
+  vent: {
+    name: 'Flame vent', cost: 70, hp: 700,
+    turret: {
+      prefers: 'walker', range: 24, fireMs: 250, damage: 7, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 50, scrapPerRound: 0.6, muzzle: 0, bullet: { r: 2, color: '#ff7a2a' }, lobbed: null,
+      burn: { ms: 4000, stacks: 3, patchMs: 1200 },
     },
   },
 };

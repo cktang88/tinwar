@@ -1,4 +1,4 @@
-import { BARREL, ZOM } from '../shared/defs.ts';
+import { BARREL, isFloorKind, ZOM } from '../shared/defs.ts';
 import type { InputState, Snapshot, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { propViewRect } from '../shared/sim/propview.ts';
@@ -47,7 +47,7 @@ export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crate
   // A standing barrel (lit or not) stops a body, as `barrelRect`.
   ...(snap?.barrels ?? []).map(([, x, y]) => ({ x: x - BARREL.size / 2, y: y - BARREL.size / 2, w: BARREL.size, h: BARREL.size })),
   // A spike strip lies on the floor and is walked over.
-  ...(snap?.buildings ?? []).filter((b) => b.kind !== 'spikes').map((b) => cellRect(b.cx, b.cy)),
+  ...(snap?.buildings ?? []).filter((b) => !isFloorKind(b.kind)).map((b) => cellRect(b.cx, b.cy)),
   ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
 ];
 

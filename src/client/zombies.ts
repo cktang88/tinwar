@@ -1,4 +1,4 @@
-import { BUILDING_KINDS, BUILDINGS, hordeCount, isEndless, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, UPGRADE, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, isTurretKind, type BuildingKind } from '../shared/defs.ts';
+import { BUILDINGS, hordeCount, isEndless, MARK, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, UPGRADE, UTILITY, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, isTurretKind, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
 import { buildRefusal, buildsNow, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
@@ -202,8 +202,12 @@ export function upgradeGains(kind: BuildingKind, lv: number): string {
   }
   const U = UPGRADE;
   const hp = `${times(U.hp[j])} hp`;
-  const gains = isTurretKind(kind)
-    ? [`${times(U.damage[j])} dmg`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
+  // A scatter's level grips and shoves harder rather than hitting harder; a vent's is its burn and its fuel; a coil's arc leaps further.
+  const gains = kind === 'scatter' ? [`${times(U.damage[j])} shove`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
+    : kind === 'vent' ? [`${times(U.damage[j])} burn`, `${times(1 / U.fireMs[j])} rate`, `${times(U.ammo[j])} fuel`, hp]
+    : kind === 'tesla' ? [`${times(U.damage[j])} dmg`, `+${j} jump${j > 1 ? 's' : ''}`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
+    : isTurretKind(kind) ? [`${times(U.damage[j])} dmg`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
+    : kind === 'decoy' ? [`${plus(U.reach[j])} pull reach`, hp]
     : [`${times(U.aura[j])} ${kind === 'depot' ? 'resupply' : 'repair'}`, `${plus(U.reach[j])} reach`, hp];
   return `${name}: ${gains.join(' · ')}`;
 }
@@ -260,29 +264,54 @@ export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize
   const taken = site.buildings.find((b) => b.cx === cx && b.cy === cy);
   if (refusal === 'taken' && taken) {
     const hover = hoverOf(taken), upgrade = upgradeRefusal(site, cx, cy);
+    const role = roleOf(taken.kind);
     return {
       kind, lv: level, cx, cy, refusal, hover, upgrade,
       label: `${hover.name}${hover.top > 1 ? ` · level ${hover.lv}/${hover.top}` : ''} · health ${hover.hpPct}%`,
-      detail: `${upgradeLine(hover, upgrade)} · Right click: take down +${hover.refund}${hover.next?.gains ? `\n${hover.next.gains}` : ''}`,
+      detail: `${upgradeLine(hover, upgrade)} · Right click: take down +${hover.refund}${hover.next?.gains ? `\n${hover.next.gains}` : ''}${role ? `\n${role}` : ''}`,
     };
   }
-  return { kind, lv: level, cx, cy, refusal, hover: null, upgrade: null, detail: null, label: refusal ? refusalText(refusal, kind, level) : `${nameAt(kind, level)} · ${costOf(kind, level)} scrap` };
+  return { kind, lv: level, cx, cy, refusal, hover: null, upgrade: null, detail: roleOf(kind), label: refusal ? refusalText(refusal, kind, level) : `${nameAt(kind, level)} · ${costOf(kind, level)} scrap` };
 }
 
 /** One chip on the build bar: what its key or a tap on it picks (a wall at a tier, a turret, a utility), or `upgrade` for the hovered building. */
 export type BuildChip = { kind: BuildingKind; lv?: number } | { upgrade: true };
 export type HintChip = { key: string; what: string; pick?: BuildChip };
-/** Build mode's keys, in order: the number keys pick these kinds from 1 (a wall takes the tier last chosen, and its key again steps to the next tier). */
-export const BUILD_KEYS: readonly BuildingKind[] = BUILDING_KINDS;
+/**
+ * Build mode's keys, in order: the number keys pick these kinds from 1, then 0 and minus past 9 (a wall takes the tier last chosen, and its key again
+ * steps to the next tier). The flame vent and the decoy came last, so they take the keys past the utilities and every older key stays where it was.
+ */
+export const BUILD_KEYS: readonly BuildingKind[] = ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes', 'vent', 'decoy'];
+const KEY_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus'] as const;
+/** The label on a kind's build key: 1 to 9, 0, then minus. */
+export const buildKeyLabel = (kind: BuildingKind): string => { const code = KEY_CODES[BUILD_KEYS.indexOf(kind)]; return code === 'Minus' ? '-' : code?.slice(5) ?? ''; };
 export const TIER_KEYS = ['I', 'II', 'III'] as const;
+
+/**
+ * What each buildable is for, in one short line, under its name when build mode hovers it: each turret has its own job rather than its own
+ * stat line (defs.ts `BUILDINGS`), so the line says the job.
+ */
+export const BUILD_ROLES: Record<Exclude<BuildingKind, 'wall'>, string> = {
+  sentry: 'Sentry: cheap all-rounder',
+  scatter: 'Scatter: shoves and slows packs',
+  cannon: 'Cannon: one huge round through plate and a line of zombies',
+  mortar: `Mortar: long range, can't hit inside ${BUILDINGS.mortar.turret.minRange} px`,
+  tesla: `Tesla: stuns and marks — +${Math.round((MARK.gunMul - 1) * 100)}% gun damage to marked`,
+  vent: 'Flame vent: sets alight what walks over it, best at a chokepoint',
+  depot: 'Ammo depot: refills turrets and guns nearby',
+  post: 'Repair post: mends buildings and squadmates nearby',
+  spikes: 'Spike strip: slows and cuts what crosses it',
+  decoy: `Decoy beacon: draws the horde within ${UTILITY.decoy.reach} px off the walls`,
+};
+export const roleOf = (kind: BuildingKind): string | null => (kind === 'wall' ? null : BUILD_ROLES[kind]);
 
 /** The build bar's rows from the top, each a category with its chips; the one picked is lit by the HUD. */
 export function buildRows(): { label: string; chips: HintChip[] }[] {
-  const chip = (kind: BuildingKind): HintChip => ({ key: `${BUILD_KEYS.indexOf(kind) + 1}`, what: `${BUILDINGS[kind].name} ${costOf(kind)}`, pick: { kind } });
+  const chip = (kind: BuildingKind): HintChip => ({ key: buildKeyLabel(kind), what: `${BUILDINGS[kind].name} ${costOf(kind)}`, pick: { kind } });
   return [
     { label: 'WALLS', chips: WALL_TIERS.map((t, i) => ({ key: TIER_KEYS[i]!, what: `${t.name} ${t.cost}`, pick: { kind: 'wall' as const, lv: i + 1 } })) },
     { label: 'TURRETS', chips: TURRET_KINDS.map(chip) },
-    { label: 'UTILITY', chips: (['depot', 'post', 'spikes'] as const).map(chip) },
+    { label: 'UTILITY', chips: (['depot', 'post', 'spikes', 'decoy'] as const).map(chip) },
   ];
 }
 
@@ -295,8 +324,8 @@ export const BUILD_CONTROLS: readonly HintChip[] = [
   { key: 'B', what: 'done' },
 ];
 
-/** In build mode the number keys pick what to put up, in `BUILD_KEYS` order from 1. */
-export const buildKindForKey = (code: string): BuildingKind | null => BUILD_KEYS.find((_, i) => code === `Digit${i + 1}`) ?? null;
+/** In build mode the number keys pick what to put up, in `BUILD_KEYS` order from 1, then 0 and minus. */
+export const buildKindForKey = (code: string): BuildingKind | null => BUILD_KEYS[(KEY_CODES as readonly string[]).indexOf(code)] ?? null;
 
 /** What build mode picks stepping through everything in bar order, walls by tier first: the wheel's list. */
 export const BUILD_ITEMS: readonly { kind: BuildingKind; lv: number }[] = [

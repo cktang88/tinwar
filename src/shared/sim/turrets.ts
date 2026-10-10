@@ -3,13 +3,17 @@ import { levelOf, turretDef } from './build.ts';
 import { MODES } from './modes.ts';
 import { dist2, segmentBlocked, type Rect } from './movement.ts';
 import { damageZombie } from './run.ts';
+import { applyHold } from './zomroles.ts';
 import { coverRects, newId, rand, type Run, type Shooter, type World, type Zombie } from './world.ts';
 
-const plateTooThick = (def: TurretDef, z: Zombie) => !def.lobbed && !def.arc && ZOMBIES[z.kind].plate > def.damage / 2;
+const HEAVY: ReadonlySet<string> = new Set(['brute', 'plated', 'colossus']);
+const plateTooThick = (def: TurretDef, z: Zombie) => !def.lobbed && !def.arc && !def.pierce && ZOMBIES[z.kind].plate > def.damage / 2;
 
 function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number, y: number, def: TurretDef): Zombie | null {
-  const rank = (z: Zombie) => (z.kind === def.prefers ? 0 : 1);
-  const inRange = zombies.filter((z) => !plateTooThick(def, z)).map((z) => ({ z, d: dist2(x, y, z.x, z.y) })).filter((c) => c.d <= def.range ** 2).sort((a, b) => rank(a.z) - rank(b.z) || a.d - b.d);
+  // A piercing gun (the cannon) wastes its round on the light kinds: after the kind it prefers it takes any heavy one before them.
+  const rank = (z: Zombie) => (z.kind === def.prefers ? 0 : def.pierce && HEAVY.has(z.kind) ? 1 : 2);
+  const near = (def.minRange ?? 0) ** 2;
+  const inRange = zombies.filter((z) => !plateTooThick(def, z)).map((z) => ({ z, d: dist2(x, y, z.x, z.y) })).filter((c) => c.d <= def.range ** 2 && c.d >= near).sort((a, b) => rank(a.z) - rank(b.z) || a.d - b.d);
   return inRange.find(({ z }) => def.lobbed || def.arc || !segmentBlocked(cover, x, y, z.x - x, z.y - y))?.z ?? null;
 }
 
@@ -31,15 +35,15 @@ function fire(w: World, def: TurretDef, by: { owner: number; label: string; turr
     const a = aim + (def.pellets === 1 ? (rand(w) - 0.5) * def.spread * 2 : pelletOffset(i, def.pellets, def.spread));
     w.bullets.push({
       id: newId(w), owner: by.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * def.muzzle, y: y + Math.sin(aim) * def.muzzle,
-      vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: reach, damage: def.damage, piercing: false,
-      label: by.label, gun: null, turret: by.turret, lobbed: def.lobbed !== null, penetrate: 0, passed: [], blast: def.lobbed,
+      vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: reach, damage: def.damage, piercing: !!def.pierce,
+      label: by.label, gun: null, turret: by.turret, lobbed: def.lobbed !== null, penetrate: def.pierce ?? 0, passed: [], blast: def.lobbed, ...(def.hold && { hold: def.hold }),
     });
   }
   if (by.turret !== 'bastion') w.events.push({ e: 'turret', kind: by.turret, x, y, angle: Math.round(aim * 100) / 100, ...(def.lobbed && { reach: Math.round(reach) }) });
 }
 
 /** A coil's arc: from the coil to its target, then on to the nearest zombie within the arc's reach of the last, each jump hitting `falloff` as hard. Cover does not stop it, and plate does not blunt it. */
-function zap(w: World, def: TurretDef & { arc: NonNullable<TurretDef['arc']> }, by: { owner: number; turret: TurretKind }, target: Zombie, x: number, y: number) {
+function zap(w: World, def: TurretDef & { arc: NonNullable<TurretDef['arc']> }, by: { owner: number; turret: Shooter }, target: Zombie, x: number, y: number) {
   const attacker = w.players.get(by.owner) ?? null;
   const pts = [x, y, target.x, target.y];
   const hit = new Set<Zombie>([target]);
@@ -59,7 +63,13 @@ function zap(w: World, def: TurretDef & { arc: NonNullable<TurretDef['arc']> }, 
     from = next;
   }
   w.events.push({ e: 'coil', x, y, p: pts.map(Math.round) });
-  for (const [z, dmg] of struck) damageZombie(w, z, dmg, attacker, by.turret);
+  for (const [z, dmg] of struck) {
+    damageZombie(w, z, dmg, attacker, by.turret);
+    if (!def.mark || z.hp <= 0) continue;
+    // A stun is a hold to nothing, which brutes and the Colossus shrug off as they do any hold; the mark sticks to every kind.
+    applyHold(z, { mul: 0, ms: def.mark.stunMs }, w.now);
+    z.mark = Math.max(z.mark ?? 0, w.now + def.mark.markMs);
+  }
 }
 
 const nextShot = (at: number, now: number, dtMs: number, gapMs: number) => (now - at < dtMs ? at : now) + gapMs;

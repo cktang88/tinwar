@@ -4,7 +4,7 @@ import { MAX_LEVEL, TURRET_KINDS, ZOM, type TurretKind } from '../src/shared/def
 import type { BuildingView } from '../src/shared/protocol.ts';
 import { turretDef } from '../src/shared/sim/build.ts';
 import { segmentBlocked, type Rect } from '../src/shared/sim/movement.ts';
-import { blindSpots, fireOf, openArcs, rangeRings, ringOf } from '../src/client/turretrange.ts';
+import { blindSpots, fireOf, openArcs, rangeRings, ringed, ringOf } from '../src/client/turretrange.ts';
 import { drawTurret, headBucket, HEAD_BUCKETS, kickOf, turretBakes, wearStage } from '../src/client/turretart.ts';
 import { drawSiegeLights, onPad } from '../src/client/siege.ts';
 import { sanitize } from '../src/client/settings.ts';
@@ -30,6 +30,8 @@ const levels = Array.from({ length: MAX_LEVEL }, (_, i) => i + 1);
 const built = (kind: TurretKind, lv: number, cx = 30, cy = 33): BuildingView => ({ kind, cx, cy, hp: 10, ammo: 10, ...(lv > 1 && { lv }) }) as BuildingView;
 const ghost = (kind: Ghost['kind'], cx: number, cy: number, refusal: Ghost['refusal'] = null): Ghost => ({ kind, lv: 1, cx, cy, refusal, label: '', detail: null, hover: null, upgrade: null });
 const none = { ghost: null, buildings: [], day: true, cursor: null, upgrade: null, squad: false };
+/** Every turret but the flame vent, which burns only its own cell, has a range ring. */
+const RINGED = TURRET_KINDS.filter(ringed);
 
 test('every turret kind at every level rings exactly the range the sim aims within, centred on its cell', () => {
   for (const kind of TURRET_KINDS) for (const lv of levels) {
@@ -41,19 +43,20 @@ test('every turret kind at every level rings exactly the range the sim aims with
   for (const kind of TURRET_KINDS) assert.ok(turretDef(kind, 3).range > turretDef(kind, 2).range && turretDef(kind, 2).range > turretDef(kind, 1).range);
 });
 
-test('the placement ghost of a turret shows its first level\'s ring; a wall, a utility or a dragged line shows none', () => {
-  for (const kind of TURRET_KINDS) {
+test('the placement ghost of a turret shows its first level\'s ring; a wall, a utility, a flame vent or a dragged line shows none', () => {
+  for (const kind of RINGED) {
     const rings = rangeRings({ ...none, ghost: ghost(kind, 12, 14) });
     assert.deepEqual(rings.map((r) => [r.role, r.r, r.x, r.y]), [['place', turretDef(kind, 1).range, 12.5 * ZOM.cell, 14.5 * ZOM.cell]], kind);
     // A refused cell still shows the reach, so the player sees what the gun would cover there.
     assert.equal(rangeRings({ ...none, ghost: ghost(kind, 12, 14, 'outOfReach') })[0]?.r, turretDef(kind, 1).range);
   }
-  for (const kind of ['wall', 'depot', 'post', 'spikes'] as const) assert.deepEqual(rangeRings({ ...none, ghost: ghost(kind, 12, 14) }), []);
+  for (const kind of ['wall', 'depot', 'post', 'spikes', 'decoy', 'vent'] as const) assert.deepEqual(rangeRings({ ...none, ghost: ghost(kind, 12, 14) }), []);
   assert.deepEqual(rangeRings({ ...none, ghost: { ...ghost('sentry', 12, 14), line: [{ cx: 12, cy: 14, refusal: null }] } }), []);
 });
 
 test('a built turret under the ghost or the cursor shows its own ring and, by day, the next level\'s; at its top level, or by night, only its own', () => {
-  for (const kind of TURRET_KINDS) for (const lv of levels) {
+  assert.deepEqual(rangeRings({ ...none, buildings: [built('vent', 1)], ghost: ghost('wall', 30, 33, 'taken') }), [], 'a flame vent has no ring');
+  for (const kind of RINGED) for (const lv of levels) {
     const b = built(kind, lv);
     const expect = lv < MAX_LEVEL ? [['hover', turretDef(kind, lv).range], ['next', turretDef(kind, lv + 1).range]] : [['hover', turretDef(kind, lv).range]];
     const viaGhost = rangeRings({ ...none, buildings: [b], ghost: ghost('wall', b.cx, b.cy, 'taken') });
@@ -79,7 +82,7 @@ test('at night with the setting on every turret gets a faint ring of its true ra
 });
 
 test('a direct-fire turret\'s blind spots are exactly where the sim\'s line of sight is blocked by cover; a mortar and a coil have none', () => {
-  assert.deepEqual(TURRET_KINDS.map(fireOf), ['direct', 'direct', 'direct', 'lobbed', 'arc']);
+  assert.deepEqual(RINGED.map(fireOf), ['direct', 'direct', 'direct', 'lobbed', 'arc']);
   const x = 1000, y = 1000, r = turretDef('sentry', 2).range;
   const cover: Rect[] = [{ x: 1080, y: 950, w: 40, h: 120 }, { x: 860, y: 860, w: 60, h: 30 }, { x: 990, y: 1150, w: 200, h: 20 }, { x: 2000, y: 2000, w: 50, h: 50 }];
   const spots = blindSpots(x, y, r, cover);
@@ -122,15 +125,17 @@ test('the night\'s rings draw only the outer edge of what a kind covers together
   assert.deepEqual(openArcs(a, [{ x: 500, y: 0, r: 100 }]), [[0, Math.PI * 2]], 'apart, it draws whole');
 });
 
-test('the ghost draws the ring: the lit pass strokes a circle of the turret\'s range round the ghost\'s cell', () => {
-  for (const kind of TURRET_KINDS) {
+test('the ghost draws the ring: the lit pass strokes a circle of the turret\'s range round the ghost\'s cell, and a mortar\'s dead zone inside it', () => {
+  for (const kind of RINGED) {
     const { ctx, calls } = fakeCanvas();
     drawSiegeLights(ctx, {
       buildings: [], all: [], aims: new Map(), core: { x: 0, y: 0 }, day: true, ghost: ghost(kind, 20, 22), cursor: null, upgrade: null, squadRings: false,
-      walls: [{ x: 1200, y: 1000, w: 30, h: 30 }], crates: [], now: 0, pxPerUnit: 2, scale: 1, reduced: true, dark: 0,
+      walls: [{ x: 1200, y: 1000, w: 30, h: 30 }], crates: [], now: 0, pxPerUnit: 2, scale: 1, reduced: true, dark: 0, floor: [], zombies: [],
     });
     const circles = calls.filter((c) => c.name === 'arc' && c.args[0] === 20.5 * ZOM.cell && c.args[1] === 22.5 * ZOM.cell).map((c) => c.args[2]);
-    assert.ok(circles.length > 0 && circles.every((r) => r === turretDef(kind, 1).range), `${kind}: ${circles.join(',')}`);
+    const def = turretDef(kind, 1);
+    assert.ok(circles.length > 0 && circles.every((r) => r === def.range || r === def.minRange), `${kind}: ${circles.join(',')}`);
+    assert.equal(circles.includes(def.minRange), kind === 'mortar', `${kind}: only a mortar has a dead zone`);
     assert.ok(calls.some((c) => c.name === 'setLineDash' && (c.args[0] as number[]).length > 0), 'dashed');
   }
 });

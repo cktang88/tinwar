@@ -61,13 +61,18 @@ test('deferred effects release exactly when the render clock reaches their tick'
 });
 
 test('a turret\'s shot draws its round on the render clock from the barrel tip to the first zombie on its line, or to its range', () => {
-  const shot: GameEvent = { e: 'turret', kind: 'cannon', x: 100, y: 200, angle: Math.PI / 2 };
-  const { muzzle, range } = BUILDINGS.cannon.turret;
+  const shot: GameEvent = { e: 'turret', kind: 'sentry', x: 100, y: 200, angle: Math.PI / 2 };
+  const { muzzle, range } = BUILDINGS.sentry.turret;
   const later = scheduleEffects(snapWith([shot]), 700);
   const open = later[0]!.fx;
   assert.ok(open.kind === 'tracer' && Math.abs(open.x - 100) < 1e-9 && open.y === 200 + muzzle && open.reach === range, JSON.stringify(open));
-  const blocked = scheduleEffects({ ...snapWith([shot]), zombies: [[7, 0, 100, 400, 10], [8, 0, 100, 300, 10]] }, 700)[0]!.fx;
+  const line: [number, number, number, number, number][] = [[7, 0, 100, 400, 10], [8, 0, 100, 300, 10]];
+  const blocked = scheduleEffects({ ...snapWith([shot]), zombies: line }, 700)[0]!.fx;
   assert.ok(blocked.kind === 'tracer' && Math.abs(blocked.reach - (300 - ZOMBIES.walker.radius - 200 - muzzle)) < 1e-6, JSON.stringify(blocked));
+  // A cannon's round goes on through the line, so its trail runs its whole reach; a vent's puff is its flame, with no round at all.
+  const through = scheduleEffects({ ...snapWith([{ ...shot, kind: 'cannon' }]), zombies: line }, 700)[0]!.fx;
+  assert.ok(through.kind === 'tracer' && through.reach === BUILDINGS.cannon.turret.range, JSON.stringify(through));
+  assert.deepEqual(scheduleEffects(snapWith([{ ...shot, kind: 'vent' }]), 700), []);
 });
 
 test('a hit on a zombie names it for the hit flash; a range target\'s hit is left to the target art; a zombie kill splats', () => {

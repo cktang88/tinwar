@@ -8,7 +8,7 @@ import { auraOf, costOf, investedOf, levelOf, maxHpOf, repairScrapPerHp, turretD
 import { damageZombie, build, demolish, upgrade } from '../src/shared/sim/run.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { tickTurrets } from '../src/shared/sim/turrets.ts';
-import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
+import { createWorld, newId, type World, type Zombie } from '../src/shared/sim/world.ts';
 import { nextBuildStep } from '../src/server/bot/siege.ts';
 import { hpOf, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -31,7 +31,7 @@ function nightWorld(): World {
   return w;
 }
 
-const zombieAt = (w: World, x: number, y: number, kind: 'walker' | 'brute' | 'plated' | 'bloater' = 'walker', hp = 1e9) => {
+const zombieAt = (w: World, x: number, y: number, kind: 'walker' | 'brute' | 'plated' | 'bloater' = 'walker', hp = 1e9): Zombie => {
   const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
@@ -104,7 +104,9 @@ test('a turret has three levels: each costs its build price again, raises damage
     const base = BUILDINGS[kind].turret;
     const [l1, l2, l3] = [1, 2, 3].map((lv) => turretDef(kind, lv)) as [typeof base, typeof base, typeof base];
     assert.equal(l1, base, `${kind} level 1 is the base`);
-    if (base.damage > 0) assert.deepEqual([l2.damage / base.damage, l3.damage / base.damage], [UPGRADE.damage[1], UPGRADE.damage[2]], `${kind} damage`);
+    // A scatter's level grips and shoves harder rather than hitting harder.
+    if (base.damage > 0 && !base.hold) assert.deepEqual([l2.damage / base.damage, l3.damage / base.damage], [UPGRADE.damage[1], UPGRADE.damage[2]], `${kind} damage`);
+    if (base.hold) assert.deepEqual([l2.damage, l3.damage, l2.hold!.shove / base.hold.shove, l3.hold!.shove / base.hold.shove], [base.damage, base.damage, UPGRADE.damage[1], UPGRADE.damage[2]], `${kind} shove`);
     assert.deepEqual([l2.fireMs / base.fireMs, l3.fireMs / base.fireMs], [UPGRADE.fireMs[1], UPGRADE.fireMs[2]], `${kind} fire rate`);
     assert.ok(l1.range < l2.range && l2.range < l3.range && l1.ammo < l2.ammo && l2.ammo < l3.ammo, `${kind} range and load grow`);
     if (base.lobbed) assert.equal(l3.lobbed!.damage, base.lobbed.damage * UPGRADE.damage[2], 'a lobbed shell\'s blast scales with it');
@@ -113,7 +115,7 @@ test('a turret has three levels: each costs its build price again, raises damage
     assert.deepEqual([maxHpOf(kind, 2), maxHpOf(kind, 3)], [2 * BUILDINGS[kind].hp, 3 * BUILDINGS[kind].hp], `${kind}'s health keeps pace with what is put in`);
     const { w, p } = dayWorld();
     build(w, p.id, kind, CELL.cx, CELL.cy);
-    const t = w.buildings[0]!;
+    const t = (w.buildings[0] ?? w.floor[0])!;
     assert.equal('ammo' in t && t.ammo, base.ammo);
     t.hp = maxHpOf(kind, 1) / 2;
     if ('ammo' in t) t.ammo = base.ammo / 2;
@@ -178,7 +180,7 @@ test('a steel wall turns aside a share of every bite, the lower tiers less, and 
 });
 
 test('a higher level turret deals more and fires faster: a level 3 sentry out-damages a level 1 over the same seconds', () => {
-  const dealt = (lv: number, kind: TurretKind = 'sentry') => {
+  const dealt = (lv: number, kind: Exclude<TurretKind, 'vent'> = 'sentry') => {
     const w = nightWorld();
     const x = 1325, y = 1525;
     const z = zombieAt(w, x + 200, y, 'brute', 1e9);
@@ -295,6 +297,66 @@ test('spikes can kill: a weak zombie crossing a long field does not live to the 
   assert.equal(w.run!.scrap - scrap, ZOMBIES.walker.scrap, 'and its scrap came to the bank');
 });
 
+test('a flame vent sets alight what walks over it for a fuel a puff: the fire burns on after it, stacks a little, and its kills are the vent\'s', () => {
+  const def = BUILDINGS.vent.turret, burn = def.burn!;
+  const lane = (vent: boolean, ammo = def.ammo) => {
+    const w = nightWorld();
+    w.run!.bastionFireAt = Infinity;
+    const owner = spawnAt(w, 1150, 1600);
+    if (vent) w.floor.push({ id: newId(w), kind: 'vent', cx: 29, cy: 37, hp: BUILDINGS.vent.hp, owner: owner.id, ammo, nextFireAt: 0, flareUntil: 0 });
+    // The core's cell is the goal; a zombie due south walks straight north, over the vent.
+    const z = zombieAt(w, 1475, 1950);
+    return { w, z, owner };
+  };
+  const { w, z } = lane(true);
+  let lit = false;
+  for (let t = 0; t < 1500 && !lit; t += TICK_MS) { step(w, TICK_MS); lit = !!z.burn; }
+  assert.ok(lit && z.burn!.dps === def.damage, 'it caught fire on the vent');
+  const vent = w.floor[0]!;
+  assert.ok('ammo' in vent && vent.ammo === def.ammo - 1, 'for one fuel');
+  assert.equal(snapshotFor(w, w.players.values().next().value!.id).zombies!.find((v) => v[0] === z.id)![5], 2, 'the fire is a bit on its snapshot entry');
+  run(w, 1000);
+  assert.ok(z.burn && z.burn.stacks > 1 && z.burn.stacks <= burn.stacks, `licked again on the way over: ${z.burn?.stacks} stacks`);
+  const left = z.hp;
+  run(w, 1000);
+  assert.ok(Math.hypot(z.x - 1475, z.y - 1875) > def.range + 40 && left - z.hp > def.damage * 0.9, 'it burns on past the vent');
+  run(w, burn.ms + 200);
+  assert.equal(z.burn, undefined, 'and goes out after its burn');
+  // Dry, it puffs no more.
+  const dry = lane(true, 0);
+  run(dry.w, 3000);
+  assert.ok(!dry.z.burn && dry.z.hp === 1e9, 'a dry vent sets nothing alight');
+  // A walker that burns to death is the vent's kill.
+  const kill = lane(true);
+  kill.z.hp = ZOMBIES.walker.hp;
+  zombieAt(kill.w, 60, 60);
+  run(kill.w, 8000);
+  assert.equal(kill.w.run!.turretKills.vent.walker, 1);
+});
+
+test('a decoy beacon draws zombies in its reach off the core and the walls to bite it instead, but not the Colossus nor one out of reach', () => {
+  const reach = UTILITY.decoy.reach;
+  const lane = (kind: 'walker' | 'colossus', dx: number) => {
+    const w = nightWorld();
+    w.buildings.push({ id: newId(w), kind: 'decoy', cx: 33, cy: 37, hp: BUILDINGS.decoy.hp });
+    w.buildingsVersion++;
+    const z = { id: newId(w), kind, x: 1475 + dx, y: 1900, hp: 1e9, attackAt: 0, vx: 0, vy: 0 };
+    w.zombies.push(z);
+    run(w, 6000);
+    return { w, z, decoy: w.buildings.find((b) => b.kind === 'decoy')! };
+  };
+  const pulled = lane('walker', 0);
+  const at = cellCenter(33, 37);
+  assert.ok(Math.hypot(pulled.z.x - at.x, pulled.z.y - at.y) < 60, `it went to the beacon, ${Math.hypot(pulled.z.x - at.x, pulled.z.y - at.y).toFixed(0)} px off`);
+  assert.ok(pulled.decoy.hp < BUILDINGS.decoy.hp, 'and bit it');
+  assert.equal(pulled.w.run!.core.hp, 1e9, 'not the core');
+  assert.ok(Math.hypot(1475 - at.x, 1900 - at.y) < reach, 'it started in reach');
+  const far = lane('walker', -500);
+  assert.equal(far.decoy.hp, BUILDINGS.decoy.hp, 'one out of reach goes for the core');
+  const boss = lane('colossus', 0);
+  assert.equal(boss.decoy.hp, BUILDINGS.decoy.hp, 'the Colossus pays it no mind');
+});
+
 test('an ammo depot tops up the neediest turret in reach slowly for part of the scrap, none out of reach, and reloads a squad player beside it at once', () => {
   const w = nightWorld();
   const owner = spawnAt(w, 1475, 1900);
@@ -382,7 +444,7 @@ test('every kind has a price the economy can carry: a night\'s scrap buys the ch
   assert.ok(costOf('tesla') > costOf('cannon') && costOf('tesla') <= costOf('cannon') * 1.6, 'the coil costs more than the cannon, but not by far');
   for (const kind of TURRET_KINDS) assert.equal(investedOf(kind, 3), costOf(kind) * 3, `${kind} fully upgraded costs three of them`);
   for (const kind of BUILDING_KINDS) assert.equal(costOf(kind) % 5, 0, `${kind} has a round price`);
-  assert.deepEqual(BUILDING_KINDS, ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes']);
+  assert.deepEqual(BUILDING_KINDS, ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent', 'depot', 'post', 'spikes', 'decoy']);
 });
 
 test('squad bots by day step the ring up and out: turrets, the one facing the night first upgraded, then depot and post, sandbags across the way, spikes, steel, level 3', () => {

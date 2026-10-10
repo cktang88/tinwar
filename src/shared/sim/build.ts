@@ -1,4 +1,4 @@
-import { BUILDINGS, MAX_LEVEL, UPGRADE, WALL_TIERS, ZOM, zombieRole, type BuildingKind, type GunId, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
+import { BUILDINGS, isFloorKind, MAX_LEVEL, UPGRADE, WALL_TIERS, ZOM, zombieRole, type BuildingKind, type GunId, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
 import type { BuildingView } from '../protocol.ts';
 import { circleHitsRect, dist2, rectsOverlap, type Rect } from './movement.ts';
 import type { Building, FloorItem } from './world.ts';
@@ -41,7 +41,7 @@ export function investedOf(kind: BuildingKind, lv = 1): number {
 }
 
 const defs = new Map<string, TurretDef>();
-/** A turret's stats at `lv`: damage, rate, range and load scaled by `UPGRADE` (a lobbed round's blast with its damage). */
+/** A turret's stats at `lv`: damage, rate, range and load scaled by `UPGRADE` (a lobbed round's blast with its damage and range, a scatter's hold and a coil's reach and mark besides). */
 export function turretDef(kind: TurretKind, lv = 1): TurretDef {
   const base = BUILDINGS[kind].turret;
   const i = Math.min(Math.max(1, lv), MAX_LEVEL) - 1;
@@ -50,8 +50,13 @@ export function turretDef(kind: TurretKind, lv = 1): TurretDef {
   let def = defs.get(key);
   if (!def) {
     defs.set(key, def = {
-      ...base, damage: base.damage * UPGRADE.damage[i]!, fireMs: base.fireMs * UPGRADE.fireMs[i]!, range: Math.round(base.range * UPGRADE.range[i]!), ammo: Math.round(base.ammo * UPGRADE.ammo[i]!),
-      lobbed: base.lobbed && { ...base.lobbed, damage: base.lobbed.damage * UPGRADE.damage[i]! },
+      // A scatter buys time, not kills: a level makes its pellets grip and shove harder, not hit harder.
+      ...base, damage: base.damage * (base.hold ? 1 : UPGRADE.damage[i]!), fireMs: base.fireMs * UPGRADE.fireMs[i]!, range: Math.round(base.range * UPGRADE.range[i]!), ammo: Math.round(base.ammo * UPGRADE.ammo[i]!),
+      lobbed: base.lobbed && { radius: Math.round(base.lobbed.radius * UPGRADE.range[i]!), damage: base.lobbed.damage * UPGRADE.damage[i]! },
+      // A scatter's hold grips harder and shoves farther, and a coil's arc leaps to one more zombie and marks for longer, at each level.
+      ...(base.hold && { hold: { ...base.hold, mul: base.hold.mul / UPGRADE.damage[i]! ** 2, shove: base.hold.shove * UPGRADE.damage[i]!, shoveCap: base.hold.shoveCap * UPGRADE.damage[i]! } }),
+      ...(base.arc && { arc: { ...base.arc, jumps: base.arc.jumps + i } }),
+      ...(base.mark && { mark: { ...base.mark, markMs: base.mark.markMs * UPGRADE.damage[i]! } }),
     });
   }
   return def;
@@ -91,8 +96,8 @@ export function buildRefusal(site: BuildSite, kind: BuildingKind, cx: number, cy
   const cell = cellRect(cx, cy);
   if (site.cover.some((r) => rectsOverlap(r, cell))) return 'cover';
   if (rectsOverlap(core, cell)) return 'core';
-  // A spike strip lies flat, so anyone may stand on its cell.
-  if (kind !== 'spikes' && site.bodies.some((b) => circleHitsRect(b.x, b.y, b.r, cell))) return 'body';
+  // A spike strip or a flame vent lies flat, so anyone may stand on its cell.
+  if (!isFloorKind(kind) && site.bodies.some((b) => circleHitsRect(b.x, b.y, b.r, cell))) return 'body';
   if (site.scrap < costOf(kind, lv)) return 'scrap';
   return null;
 }

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  BUILD_CONTROLS, buildKindForKey, buildRows, buildsByNight, canBuildNow, hoverOf, nextTier, stepItem, upgradeLine, upgradeTarget, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, upgradeGains, useHint, withSquad,
+  BUILD_CONTROLS, BUILD_ROLES, buildKindForKey, buildRows, buildsByNight, canBuildNow, hoverOf, nextTier, stepItem, upgradeLine, upgradeTarget, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, upgradeGains, useHint, withSquad,
 } from '../src/client/zombies.ts';
 import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
 import { aimTurrets, nextCoreHitAt, type TurretAim } from '../src/client/siege.ts';
@@ -62,10 +62,14 @@ test('the ghost judges each kind as the server would build it, and names what it
   }
   const site = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
   assert.equal(ghostAt(site, 'sentry', at(26, 30), MAPS[w.map].size).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
+  // Each turret's hover says its job in one short line.
+  const role = (kind: 'scatter' | 'mortar' | 'tesla') => ghostAt(site, kind, at(26, 30), MAPS[w.map].size).detail;
+  assert.deepEqual([role('scatter'), role('mortar'), role('tesla')], ['Scatter: shoves and slows packs', "Mortar: long range, can't hit inside 300 px", 'Tesla: stuns and marks — +25% gun damage to marked']);
   const worn = ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size);
   assert.deepEqual([worn.label, worn.hover?.refund], [`Cannon · level 1/3 · health 10%`, Math.floor(BUILDINGS.cannon.cost / 20)], 'the refund is the standing building\'s, for the tenth of it left');
   assert.ok(worn.detail?.split('\n')[0]!.endsWith(`Right click: take down +${Math.floor(BUILDINGS.cannon.cost / 20)}`), worn.detail ?? '');
   assert.equal(worn.detail?.split('\n')[1], 'Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
+  assert.equal(worn.detail?.split('\n')[2], BUILD_ROLES.cannon, 'and its job under that');
   w.buildings[0]!.hp = BUILDINGS.cannon.hp;
   const whole = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
   assert.equal(ghostAt(whole, 'wall', at(26, 31), MAPS[w.map].size).hover?.refund, BUILDINGS.cannon.cost / 2, 'half back for a whole one');
@@ -73,31 +77,34 @@ test('the ghost judges each kind as the server would build it, and names what it
   assert.equal(ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'cannon', at(26, 30), MAPS[w.map].size).label, `Cannon needs ${BUILDINGS.cannon.cost} scrap`);
 });
 
-test('in build mode 1 to 9 pick wall, the turrets and the utilities, and the hint bar lists them by category with their costs', () => {
-  assert.deepEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyB'].map(buildKindForKey),
-    ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes', null, null]);
+test('in build mode 1 to 9, 0 and minus pick wall, the turrets and the utilities, and the hint bar lists them by category with their costs', () => {
+  assert.deepEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'KeyB'].map(buildKindForKey),
+    ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes', 'vent', 'decoy', null]);
   const rows = buildRows();
   assert.deepEqual(rows.map((r) => r.label), ['WALLS', 'TURRETS', 'UTILITY']);
   assert.deepEqual(rows[0]!.chips.map((c) => [c.key, c.what, c.pick]), WALL_TIERS.map((t, i) => [['I', 'II', 'III'][i], `${t.name} ${t.cost}`, { kind: 'wall', lv: i + 1 }]));
   assert.deepEqual(rows[1]!.chips.map((c) => [c.key, c.what, c.pick]), [
     ['2', `Sentry ${BUILDINGS.sentry.cost}`, { kind: 'sentry' }], ['3', `Cannon ${BUILDINGS.cannon.cost}`, { kind: 'cannon' }], ['4', `Scatter ${BUILDINGS.scatter.cost}`, { kind: 'scatter' }],
-    ['5', `Mortar ${BUILDINGS.mortar.cost}`, { kind: 'mortar' }], ['6', `Tesla coil ${BUILDINGS.tesla.cost}`, { kind: 'tesla' }],
+    ['5', `Mortar ${BUILDINGS.mortar.cost}`, { kind: 'mortar' }], ['6', `Tesla coil ${BUILDINGS.tesla.cost}`, { kind: 'tesla' }], ['0', `Flame vent ${BUILDINGS.vent.cost}`, { kind: 'vent' }],
   ]);
   assert.deepEqual(rows[2]!.chips.map((c) => [c.key, c.what, c.pick]), [
     ['7', `Ammo depot ${BUILDINGS.depot.cost}`, { kind: 'depot' }], ['8', `Repair post ${BUILDINGS.post.cost}`, { kind: 'post' }], ['9', `Spike strip ${BUILDINGS.spikes.cost}`, { kind: 'spikes' }],
+    ['-', `Decoy beacon ${BUILDINGS.decoy.cost}`, { kind: 'decoy' }],
   ]);
+  // Every price sits in one tight band, so nothing goes unbuilt for its price.
+  for (const kind of ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent', 'depot', 'post', 'decoy'] as const) assert.ok(BUILDINGS[kind].cost >= 50 && BUILDINGS[kind].cost <= 150, kind);
   assert.ok(BUILD_CONTROLS.some((c) => c.key === 'U' && c.pick && 'upgrade' in c.pick), 'the controls row has the upgrade chip');
 });
 
 test('a wall key steps the tier and the wheel steps every item, both wrapping round', () => {
   assert.deepEqual([1, 2, 3].map(nextTier), [2, 3, 1]);
   assert.deepEqual(stepItem({ kind: 'wall', lv: 3 }, 1), { kind: 'sentry', lv: 1 });
-  assert.deepEqual(stepItem({ kind: 'wall', lv: 1 }, -1), { kind: 'spikes', lv: 1 });
+  assert.deepEqual(stepItem({ kind: 'wall', lv: 1 }, -1), { kind: 'decoy', lv: 1 });
   assert.deepEqual(stepItem({ kind: 'wall', lv: 1 }, 1), { kind: 'wall', lv: 2 });
   let at = { kind: 'wall' as const, lv: 1 };
   const seen = new Set<string>();
-  for (let i = 0; i < 11; i++) { at = stepItem(at, 1) as typeof at; seen.add(`${at.kind}${at.lv}`); }
-  assert.equal(seen.size, 11, 'eleven steps visit eleven different items, ending where they began');
+  for (let i = 0; i < 13; i++) { at = stepItem(at, 1) as typeof at; seen.add(`${at.kind}${at.lv}`); }
+  assert.equal(seen.size, 13, 'thirteen steps visit thirteen different items, ending where they began');
 });
 
 test('hovering a building in build mode names its level, health and what upgrading costs, and the ghost judges the upgrade as the server does', () => {
@@ -162,9 +169,9 @@ test('a turret\'s barrel takes the angle of its last shot, and its aim is forgot
 });
 
 test('the report sums the squad\'s turret kills by kind and the Bastion\'s, and leaves the line off when they killed none', () => {
-  const report = { night: 4, won: false, survivors: 0, durationMs: 1, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
+  const report = { night: 4, won: false, survivors: 0, durationMs: 1, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0, vent: 0 }, bastionKills: 0 };
   assert.equal(turretLine(report), null);
-  assert.equal(turretLine({ ...report, turretKills: { sentry: 41, cannon: 7, scatter: 0, mortar: 3, tesla: 0 }, bastionKills: 12 }), 'Defense kills · Sentry 41 · Cannon 7 · Mortar 3 · Bastion 12');
+  assert.equal(turretLine({ ...report, turretKills: { sentry: 41, cannon: 7, scatter: 0, mortar: 3, tesla: 0, vent: 0 }, bastionKills: 12 }), 'Defense kills · Sentry 41 · Cannon 7 · Mortar 3 · Bastion 12');
   assert.equal(turretLine({ ...report, bastionKills: 2 }), 'Defense kills · Bastion 2');
 });
 
@@ -215,7 +222,7 @@ test('the phase line counts the day down to night, the night\'s wave down to daw
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: null, waveLeft: 12 }), 19_000), 'Night 3 · 12 left');
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: 109_000, waveLeft: 4 }), 19_000), 'Night 3 · 4 left · first light in 1:30', 'once the last pack is in, first light counts down');
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000 }), 16_000), 'The Bastion fell · next run in 0:14');
-  const held = { night: 13, won: true, survivors: 0, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
+  const held = { night: 13, won: true, survivors: 0, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0, vent: 0 }, bastionKills: 0 };
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000, report: held }), 16_000), 'The Bastion fell · the Tide held · next run in 0:14');
   assert.equal(phaseLine(runView({ phase: 'night', night: 12, phaseEndsAt: null, waveLeft: 80 }), 19_000), 'Night 12 · Endless · 80 left', 'past the Tide the nights go on');
   assert.equal(phaseLine(runView({ night: 11 }), null), 'Day 11 · Endless');
@@ -285,7 +292,7 @@ test('the fall clears every callout, so none shows through behind the report', (
 test('the run report ranks the squad by kills, then revives, and marks you', () => {
   const report = { night: 4, won: false, survivors: 0, durationMs: 372_000, players: [
     { name: 'Bo', kills: 12, revives: 0, built: 9 }, { name: 'Ann', kills: 30, revives: 1, built: 0 }, { name: 'Cy', kills: 12, revives: 4, built: 7 },
-  ], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
+  ], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0, vent: 0 }, bastionKills: 0 };
   assert.deepEqual(reportRows(report, 'Cy').map((r) => [r.name, r.you]), [['Ann', false], ['Cy', true], ['Bo', false]]);
   assert.equal(reportTitle(report), 'The Bastion fell on night 4');
   assert.equal(reportTitle({ ...report, night: 14, won: true }), 'The Tide held. The Bastion fell on night 14, 4 past the Tide.');
@@ -375,7 +382,11 @@ test('by night a pistol holder\'s preview, U target and build gate open, and clo
 
 test('the hover names the next level and what it brings in round steps against the first level, and a wall tier in health and bite damage', () => {
   assert.equal(upgradeGains('sentry', 1), 'Sentry II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
-  assert.equal(upgradeGains('tesla', 2), 'Tesla coil III: 2× dmg · 1.5× rate · +20% range · 2× ammo · 3× hp');
+  assert.equal(upgradeGains('tesla', 2), 'Tesla coil III: 2× dmg · +2 jumps · 1.5× rate · +20% range · 2× ammo · 3× hp');
+  assert.equal(upgradeGains('cannon', 1), 'Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
+  assert.equal(upgradeGains('scatter', 1), 'Scatter II: 1.5× shove · 1.25× rate · +10% range · 1.5× ammo · 2× hp', 'a scatter grips harder, not hits harder');
+  assert.equal(upgradeGains('vent', 1), 'Flame vent II: 1.5× burn · 1.25× rate · 1.5× fuel · 2× hp');
+  assert.equal(upgradeGains('decoy', 2), 'Decoy beacon III: +50% pull reach · 3× hp');
   assert.equal(upgradeGains('depot', 1), 'Ammo depot II: 2× resupply · +25% reach · 2× hp');
   assert.equal(upgradeGains('post', 2), 'Repair post III: 3× repair · +50% reach · 3× hp');
   assert.equal(upgradeGains('wall', 1), 'Sandbag wall: 3× hp · takes 10% less bite damage');

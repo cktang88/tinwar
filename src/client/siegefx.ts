@@ -1,4 +1,4 @@
-import { ZOM, ZOMBIES } from '../shared/defs.ts';
+import { isFloorKind, ZOM, ZOMBIES } from '../shared/defs.ts';
 import type { BuildingView, RunView, Snapshot } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { coreCracks, coreStage, drawCoreLight, glowSprite } from './coreart.ts';
@@ -161,7 +161,7 @@ export function updateBuildings(fx: SiegeFx, buildings: readonly BuildingView[],
   if (reduced) return;
   for (const b of buildings) {
     const wear = wearStage(b.hp);
-    if (!wear || b.kind === 'spikes') continue;
+    if (!wear || isFloorKind(b.kind)) continue;
     const r = cellRect(b.cx, b.cy);
     if (r.x > view.x1 || r.x + r.w < view.x0 || r.y > view.y1 || r.y + r.h < view.y0) continue;
     const key = `${b.cx},${b.cy}`;

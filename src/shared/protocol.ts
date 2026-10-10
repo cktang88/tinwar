@@ -161,8 +161,12 @@ export type ZoneView = { id: number; x: number; y: number; r: number; owner: Tea
 
 export type Dash = { dirX: number; dirY: number; leftMs: number };
 
-/** `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB. */
-export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number];
+/**
+ * `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB.
+ * `fx`, only on a zombie with something on it, is a bit set of `ZOMBIE_FX`: marked by a tesla coil, alight from a flame vent.
+ */
+export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number, fx?: number];
+export const ZOMBIE_FX = { marked: 1, burning: 2 } as const;
 /**
  * `hp` is tenths of full health, 1..10, and a turret's `ammo` tenths of a full load, 0 once it cannot fire.
  * A turret's aim is not here: it turns only to fire, and each `turret` event carries its angle, so this sticky field stays unchanged while it fires.

@@ -126,6 +126,8 @@ export type Bullet = {
   gun: GunId | null;
   /** The turret or the Bastion's survivors that fired it, null for a player's own round. */
   turret: Shooter | null;
+  /** A scatter's pellet: what it does to a zombie it hits beyond its damage, at the level of the scatter that fired it (`TurretDef.hold`). */
+  hold?: { mul: number; ms: number; shove: number; shoveCap: number };
   /** A lobbed round flies over everything and bursts where it comes down. */
   lobbed: boolean;
   /** Players it can still pass through, and the ones it already has. */
@@ -189,15 +191,17 @@ export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restart
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
 /** `vx`, `vy` is how fast it moved last tick, in px a second. */
-export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number; /** A shove from a hit, in px/s (see `KNOCK`); brutes and the colossus take none. */ knock?: Knock | null; /** Zombies only: a player's hit holding it to `mul` of its pace until `until` (see `ZombieRole.slow`). */ slow?: { mul: number; until: number }; /** The pack it walked in with, and its steering and target state (see `boids.ts`); neither goes on the wire. */ pack?: number; ai?: ZAi };
+export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number; /** A shove from a hit, in px/s (see `KNOCK`); brutes and the colossus take none. */ knock?: Knock | null; /** Zombies only: a player's hit holding it to `mul` of its pace until `until` (see `ZombieRole.slow`). */ slow?: { mul: number; until: number }; /** Marked by a tesla coil until then: players' guns hit it harder (`MARK`). */ mark?: number; /** Alight from a flame vent: `stacks` licks of the vent's `dps` each until `until`, its kills the vent's builder's. */ burn?: { dps: number; stacks: number; until: number; owner: number }; /** The pack it walked in with, and its steering and target state (see `boids.ts`); neither goes on the wire. */ pack?: number; ai?: ZAi };
 
 /** `lv` is the upgrade level, 1 to `MAX_LEVEL`; a building without one is level 1 (a wall's tier, a turret's or utility's level). */
 type Cell = { id: number; cx: number; cy: number; hp: number; lv?: number };
 /** A turret fires for `owner`, its builder, who gets the score for its kills. */
-export type Turret = Cell & { kind: TurretKind; owner: number; ammo: number; nextFireAt: number };
-/** What stands on a cell and blocks the way: a wall, a turret, a depot or a post. Spike strips are floor, in `World.floor`, and are walked over. */
-export type Building = (Cell & { kind: 'wall' | 'depot' | 'post' }) | Turret;
-export type FloorItem = Cell & { kind: 'spikes' };
+export type Turret = Cell & { kind: Exclude<TurretKind, 'vent'>; owner: number; ammo: number; nextFireAt: number };
+/** A flame vent: a turret on the floor, its load its fuel; its flame burns on until `flareUntil` after its last puff. */
+export type Vent = Cell & { kind: 'vent'; owner: number; ammo: number; nextFireAt: number; flareUntil: number };
+/** What stands on a cell and blocks the way: a wall, a turret, a depot, a post or a decoy. Spike strips and flame vents are floor, in `World.floor`, and are walked over. */
+export type Building = (Cell & { kind: 'wall' | 'depot' | 'post' | 'decoy' }) | Turret;
+export type FloorItem = (Cell & { kind: 'spikes' }) | Vent;
 
 /** `n` zombies of one kind that walk in together from one side. */
 export type HordeUnit = { kind: ZombieKind; side: Side; n: number };

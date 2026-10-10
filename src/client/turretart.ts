@@ -48,6 +48,7 @@ export const TURRET_LOOK: Record<TurretKind, { body: string; accent: string }> =
   scatter: { body: '#78808c', accent: '#5fa595' },
   mortar: { body: '#5f6b50', accent: '#9a86c4' },
   tesla: { body: RUST, accent: '#8fb8ff' },
+  vent: { body: '#5a5f68', accent: '#ffb347' },
 };
 
 /**
@@ -478,7 +479,8 @@ export function muzzlesOf(kind: TurretKind, lv: number, bend = 0): { x: number; 
     case 'cannon': return [{ x: 34, y: 0, a: 0 }];
     case 'scatter': return scatterFan(lv).map((a) => ({ x: Math.cos(a) * 23.5, y: Math.sin(a) * 23.5, a }));
     case 'mortar': return mortarTubes(lv).map(([y]) => ({ x: 15, y, a: 0 }));
-    case 'tesla': return [];
+    case 'tesla':
+    case 'vent': return [];
   }
 }
 const sentryRows = (lv: number) => (lv <= 1 ? [-3.2, 3.2] : lv === 2 ? [-4.6, 0, 4.6] : [-6, -2, 2, 6]);
@@ -710,7 +712,7 @@ function paintHead(g: CanvasRenderingContext2D, kind: TurretKind, lv: number, we
 
 /** How long a shot kicks the gun back and how far, by kind: snap back, then ease home. */
 const KICK: Record<TurretKind, { ms: number; px: number }> = {
-  sentry: { ms: 70, px: 1.8 }, cannon: { ms: 260, px: 6 }, scatter: { ms: 150, px: 3.5 }, mortar: { ms: 180, px: 2.6 }, tesla: { ms: 1, px: 0 },
+  sentry: { ms: 70, px: 1.8 }, cannon: { ms: 260, px: 6 }, scatter: { ms: 150, px: 3.5 }, mortar: { ms: 180, px: 2.6 }, tesla: { ms: 1, px: 0 }, vent: { ms: 1, px: 0 },
 };
 /** How far back a gun sits `ms` after a shot: the full kick at once, eased home (cubic). */
 export function kickOf(kind: TurretKind, ms: number): number {
@@ -740,7 +742,7 @@ export function drawTurret(ctx: CanvasRenderingContext2D, t: TurretDraw, pxPerUn
 
 // ---- the lit layer, over the night ----
 
-const FLASH: Record<TurretKind, number> = { sentry: 60, cannon: 130, scatter: 90, mortar: 150, tesla: 160 };
+const FLASH: Record<TurretKind, number> = { sentry: 60, cannon: 130, scatter: 90, mortar: 150, tesla: 160, vent: 1 };
 const LAMP = '#ffb347';
 const COIL = '#8fc4ff';
 

@@ -100,7 +100,7 @@ function interpolateZombies(prev: ZombieView[] | undefined, next: ZombieView[] |
   const before = new Map(prev.map((z) => [z[0], z]));
   return next.map((z) => {
     const a = before.get(z[0]);
-    return a ? [z[0], z[1], lerp(a[2], z[2], t), lerp(a[3], z[3], t), z[4]] : z;
+    return a ? (z.length > 5 ? [z[0], z[1], lerp(a[2], z[2], t), lerp(a[3], z[3], t), z[4], z[5]] : [z[0], z[1], lerp(a[2], z[2], t), lerp(a[3], z[3], t), z[4]]) : z;
   });
 }
 

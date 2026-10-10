@@ -1,10 +1,10 @@
-import { ARMORS, hordeCount, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, zombieBounty, zombieRole, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
+import { ARMORS, hordeCount, isFloorKind, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, zombieBounty, zombieRole, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
 import { buildingView, buildRefusal, buildsNow, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
-import { tickTraps, tickUtilities, trapWatch } from './utility.ts';
+import { tickBurns, tickTraps, tickUtilities, tickVents, trapWatch } from './utility.ts';
 import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { tickDowned } from './downed.ts';
@@ -34,7 +34,7 @@ function tickSquadmate(w: World, run: Run, p: Player, dtMs: number, revivers: Se
 
 function service(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
-  const target = serviceTarget(p, { ...core, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp }, w.buildings.map((b) => ({ ...buildingView(b), b })));
+  const target = serviceTarget(p, { ...core, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp }, [...w.buildings, ...w.floor].map((b) => ({ ...buildingView(b), b })));
   if (!target) return;
   // A sidearm leaves the hands free: its holder mends buildings and reloads turrets faster (`ZombieRole.mend`), but the core at the plain rate.
   const hands = target.on === 'core' ? 1 : zombieRole(p.gun).mend;
@@ -95,8 +95,9 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
   run.scrap -= costOf(kind, level);
   const at = { id: newId(w), cx, cy, hp: maxHpOf(kind, level), ...(level > 1 && { lv: level }) };
   if (kind === 'spikes') w.floor.push({ ...at, kind });
+  else if (kind === 'vent') w.floor.push({ ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0, flareUntil: 0 });
   else {
-    w.buildings.push(kind === 'wall' || kind === 'depot' || kind === 'post' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0 });
+    w.buildings.push(kind === 'wall' || kind === 'depot' || kind === 'post' || kind === 'decoy' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0 });
     w.buildingsVersion++;
   }
   statsFor(run, p).built++;
@@ -144,7 +145,7 @@ export function demolish(w: World, id: number, cx: number, cy: number): boolean 
   if (!p || !run || !building || !buildsNow(run.phase.k, p.gun) || p.life.k !== 'alive') return false;
   const at = cellCenter(cx, cy);
   if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return false;
-  if (building.kind === 'spikes') w.floor = w.floor.filter((b) => b !== building);
+  if (isFloorKind(building.kind)) w.floor = w.floor.filter((b) => b !== building);
   else {
     w.buildings = w.buildings.filter((b) => b !== building);
     w.buildingsVersion++;
@@ -338,6 +339,8 @@ export function tickRun(w: World, dtMs: number) {
   const traps = trapWatch(w);
   tickHorde(w, run, dtMs);
   tickTraps(w, dtMs, traps);
+  tickVents(w);
+  tickBurns(w, dtMs);
   tickUtilities(w, run, dtMs);
   tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);

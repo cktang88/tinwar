@@ -221,6 +221,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
       buildings: all.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), all, aims: s.turretAims, core: snap.run.core, day, ghost: f.ghost ?? null,
       cursor: day && !f.ghost ? f.cursor ?? null : null, upgrade: day && !f.ghost ? upgradeTarget(snap, s.lastSelf)?.b ?? null : null, squadRings: dark > 0.5 && turretRangesOn(),
       walls: s.walls, crates: snap.crates, now, pxPerUnit: k, scale: cam.scale, reduced: reducedMotion(), dark,
+      floor: all.filter((b) => b.kind === 'vent' && inView(view, b.cx * ZOM.cell - ZOM.cell, b.cy * ZOM.cell - ZOM.cell * 2, ZOM.cell * 3, ZOM.cell * 3)), zombies,
     });
   }
   if (rangeLayout && reach && mine && snap.targets) {

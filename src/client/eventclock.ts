@@ -17,6 +17,8 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind, by: ev.by };
     case 'turret': {
+      // A vent's puff is its flame, drawn from the puff's time with the vent (ventart.ts): no round flies.
+      if (ev.kind === 'vent') return null;
       const def = BUILDINGS[ev.kind].turret;
       if (ev.reach !== undefined) {
         const x = ev.x + Math.cos(ev.angle) * def.muzzle, y = ev.y + Math.sin(ev.angle) * def.muzzle;
@@ -27,7 +29,8 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
         const x = ev.x + Math.cos(angle) * def.muzzle, y = ev.y + Math.sin(angle) * def.muzzle;
         const dx = Math.cos(angle) * def.range, dy = Math.sin(angle) * def.range;
         const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]].radius) ?? 1));
-        return { kind: 'tracer', turret: ev.kind, x, y, angle, reach: hit * def.range };
+        // A cannon's round goes on through the line it strikes, so its trail runs the gun's whole reach.
+        return { kind: 'tracer', turret: ev.kind, x, y, angle, reach: def.pierce ? def.range : hit * def.range };
       });
     }
     case 'shot':

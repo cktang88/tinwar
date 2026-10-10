@@ -5,9 +5,11 @@
 // buildable just inside the south face, packs of the real horde streaming in from the south for 90 s at nights 3, 5 and 7 (and packs of one kind at a time
 // at night 5). A turret's value a scrap is the horde health it takes off over three such nights over its price plus three nights' ammo and mending; a level's
 // step is set beside building another level-I copy. Walls are bitten with nothing shooting; spikes, the depot and the post are measured by what they add.
+// Then each buildable's job (`buildMatrix`): the walk its holds and stuns cost the horde, the marks it keeps on, the harm it does far out and through a
+// one-cell gap in the wall, what it spares a steel wall and how far a decoy draws the horde, with what each wins and any buildable another dominates.
 import { BUILDINGS, TURRET_KINDS, UTILITY, WALL_TIERS, ZOM, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
 import { investedOf, turretDef, upgradeCost } from '../src/shared/sim/build.ts';
-import { NIGHTS_LIFE, playFort, valuePerScrap, type FortRun, type FortSetup } from './lib/zombiebuilds.ts';
+import { AXES, buildMatrix, dominatedPairs, NIGHTS_LIFE, playFort, valuePerScrap, winsOf, type Axis, type FortRun, type FortSetup } from './lib/zombiebuilds.ts';
 
 const seeds = (process.argv[2] ?? '1,2').split(',').map(Number);
 const NIGHTS = [3, 5, 7];
@@ -51,6 +53,15 @@ for (const [i, z] of KINDS.entries()) {
   const best = TURRET_KINDS.map((k) => [k, perKind.get(`${k}1`)![i]!] as const).sort((a, b) => b[1] - a[1]);
   console.log(`best level-I buy against ${z}: ${best.map(([k, v]) => `${k} ${f(v, 1)}`).join(', ')}`);
 }
+
+console.log(`\nJobs: value a scrap at each turret's job, nights ${NIGHTS.join(',')}, seeds ${seeds.join(',')}`);
+const JOBS: Axis[] = ['vsMix', 'vsHeavy', 'pierce', 'range', 'farHarm', 'timeBought', 'wallSaved', 'gunBoost', 'chokepoint', 'aggroPull'];
+const rows = buildMatrix({ seeds, nights: NIGHTS });
+console.log(`buildable     | ${JOBS.map((a) => a.padStart(10)).join(' | ')}`);
+for (const r of rows.filter((r) => r.group !== 'wall')) console.log(`${r.name.padEnd(13)} | ${JOBS.map((a) => f(r.at[a], r.at[a] < 10 ? 2 : 1).padStart(10)).join(' | ')}`);
+for (const [name, axes] of winsOf(rows)) console.log(`${name.padEnd(13)} wins ${axes.join(', ') || 'nothing'}`);
+const dominated = dominatedPairs(rows);
+console.log(dominated.length ? `dominated: ${dominated.map(([a, b]) => `${a} by ${b}`).join('; ')}` : `no buildable is dominated on all ${AXES.length} axes`);
 
 if (quick) process.exit(0);
 console.log(`\nWalls: the south face at one tier, nothing shooting, nights ${NIGHTS.join(',')}, 90 s`);
