@@ -9,7 +9,7 @@ export const CHANGELOG: ChangelogDay[] = [
     date: '2026-10-10',
     items: [
       'Every perk, attachment and ability now earns its slot in Zombies too, with its own line on the pick panel',
-      'Zombies: every gun and turret has its own job, plus an aimable flamer, a decoy beacon, a salvage yard and a medic post that revives; turret ammo is free and restocks at dawn',
+      'Zombies: every gun and turret has its own job, plus an aimable flamer, a decoy beacon, a salvage yard, a medic post that revives and a dawn receipt of who dealt what; turret ammo is free and restocks at dawn',
     ],
   },
   {

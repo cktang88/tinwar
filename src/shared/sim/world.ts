@@ -246,6 +246,8 @@ export type Run = {
   salvaged?: Map<number, number>;
   /** How many turrets and vents this dawn's restock filled, until night falls; absent when none needed it. */
   restocked?: number;
+  /** Tonight's damage to the horde and kills, by source (`receiptKey`): a player's id, or the kind of building or blast that dealt it. Read only at dawn (`takeReceipt`). */
+  tally?: Map<number | string, [dealt: number, kills: number]>;
 };
 
 export type Ring =

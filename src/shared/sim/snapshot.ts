@@ -230,7 +230,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   if (w.run) minimap.push(...zombieMarks(w, me, heatPx));
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
   // A medal, and what a pickup gave, is news only to the player who earned it.
-  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'airdrop' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id) || (e.e === 'gain' && e.id === me.id)
+  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'receipt' || e.e === 'airdrop' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id) || (e.e === 'gain' && e.id === me.id)
     || (e.e === 'radar' && inView(e.x, e.y, e.r))
     || (e.e !== 'medal' && e.e !== 'gain' && inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 

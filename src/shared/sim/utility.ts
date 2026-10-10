@@ -48,7 +48,7 @@ export function tickTraps(w: World, dtMs: number, on: TrapWatch | null) {
     z.vy *= UTILITY.spikes.slow;
     const at = key(Math.floor(from.x / ZOM.cell), Math.floor(from.y / ZOM.cell));
     wear.set(at, (wear.get(at) ?? 0) + ((heavy.has(z.kind) ? UTILITY.spikes.heavyWear : UTILITY.spikes.wear) * dtMs) / 1000);
-    damageZombie(w, z, (UTILITY.spikes.dps * dtMs) / 1000, null, 'blast');
+    damageZombie(w, z, (UTILITY.spikes.dps * dtMs) / 1000, null, 'blast', 'spikes');
   }
   for (const strip of [...w.floor]) {
     if (strip.kind !== 'spikes') continue;
