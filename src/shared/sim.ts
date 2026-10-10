@@ -121,7 +121,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const shot = fired ? life.spray : life.spray + 1;
   const spreadAt = (sprayShot: number) => spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), sprayShot, life.suppression, settleShare(life.settleLeft, stats.settleMs), isDeployed(p.gun, sinceMove));
   const target = spreadAt(shot);
-  life.spreadHist = easeSpread(life.spreadHist, target, shot > life.spreadShot && life.spreadHist.length > 0 ? target - spreadAt(life.spreadShot) : 0, spreadAt(0), easeDownTicks(p.gun));
+  life.spreadHist = easeSpread(life.spreadHist, target, shot > life.spreadShot && life.spreadHist.length > 0 ? target - spreadAt(life.spreadShot) : 0, spreadAt(0), easeDownTicks(p.gun), !sprinting && life.settleLeft > 0);
   life.spreadShot = shot;
   if (fired) {
     life.shieldUntil = -Infinity;

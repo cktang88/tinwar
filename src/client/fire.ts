@@ -46,7 +46,7 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   const shot = fired ? g.spray : g.spray + 1;
   const spreadAt = (sprayShot: number) => spreadFor(g.gun, g.perks, isSteady(g.gun, sinceMove), sprayShot, g.suppression, settleShare(g.settleLeft, g.settleMs), isDeployed(g.gun, sinceMove));
   const target = spreadAt(shot);
-  g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0, spreadAt(0), easeDownTicks(g.gun));
+  g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0, spreadAt(0), easeDownTicks(g.gun), !sprinting && g.settleLeft > 0);
   g.spreadShot = shot;
   if (fired) g.fired++;
   return { t: g, fired };

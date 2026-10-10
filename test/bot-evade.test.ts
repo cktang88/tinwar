@@ -10,6 +10,7 @@ import { arenaFor } from '../src/server/bot/arena.ts';
 import { dangerOf, dodgeHeading, dodgeLeg, dodgeStyle, nextDodge, type Dodge } from '../src/server/bot/evade.ts';
 import { PERSONALITIES, type IntentCtx, type PersonalityId } from '../src/server/bot/intent.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import { VETERAN } from '../src/server/bot/aim.ts';
 import { emptyWorld, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
@@ -25,7 +26,7 @@ function faceOff(opts: { weapon: WeaponId; foe: GunId; persona: PersonalityId; r
   const foe: Player = spawnAt(w, at.x + opts.range, at.y, { loadout: { weapon: 'pistol' } });
   foe.gun = opts.foe;
   const r = seeded(opts.seed);
-  let mem: BotMemory = { ...newBotMemory(r), persona: opts.persona };
+  let mem: BotMemory = { ...newBotMemory(r, { skill: VETERAN }), persona: opts.persona };
   const out: Tick[] = [];
   for (let i = 0; i < opts.ticks; i++) {
     for (const p of [bot, foe]) if (p.life.k === 'alive') p.life.hp = 100;
@@ -162,7 +163,7 @@ function sniperRun(seed: number): number {
   const bot = spawnAt(w, 2000, 2000, { loadout: { weapon: 'sniper' } });
   const foe = spawnAt(w, 2650, 2000);
   const r = seeded(seed);
-  let mem: BotMemory = { ...newBotMemory(r), persona: 'cautious' };
+  let mem: BotMemory = { ...newBotMemory(r, { skill: VETERAN }), persona: 'cautious' };
   const shots: { moving: boolean; movedAfter: number }[] = [];
   const track: { x: number; y: number }[] = [];
   for (let i = 0; i < 300; i++) {

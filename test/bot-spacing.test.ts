@@ -7,6 +7,7 @@ import type { Player, World } from '../src/shared/sim/world.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { freshAwareness, perceive } from '../src/server/bot/awareness.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import { VETERAN } from '../src/server/bot/aim.ts';
 import { bandFor, nextIntent, PERSONALITIES, startIntent, type IntentCtx, type Plan } from '../src/server/bot/intent.ts';
 import { createWorld } from '../src/shared/sim/world.ts';
 import { emptyWorld, setWalls, spawnAt, TICK_MS } from './helpers.ts';
@@ -18,7 +19,7 @@ const gap = (a: Player, b: Player) => Math.hypot(a.x - b.x, a.y - b.y);
 function play(w: World, bots: readonly Player[], persona: 'aggressive' | 'cautious' | 'marksman', ticks: number, onTick?: (i: number) => void, intents?: (Plan | null)[]) {
   const r = seeded(11);
   const mems = new Map<number, BotMemory>(bots.map((b, i) => {
-    const mem = { ...newBotMemory(r), persona };
+    const mem = { ...newBotMemory(r, { skill: VETERAN }), persona };
     return [b.id, intents?.[i] ? { ...mem, intent: startIntent(intents[i]!, { tick: 0, persona: PERSONALITIES[persona] } as IntentCtx) } : mem];
   }));
   for (let i = 0; i < ticks; i++) {
