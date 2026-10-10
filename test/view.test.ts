@@ -11,7 +11,7 @@ import { emptyWorld, spawnAt } from './helpers.ts';
 const close = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps;
 const VIEW_PERKS = PERK_TIERS[1].concat(PERK_TIERS[2] as never).filter((perk) => viewBonuses('pistol', { 1: perk } as never).length > 0) as PerkId[];
 
-/** The widest view a gun can reach: its scope with every view perk, each on its own tier (Optics is tier 1, Recon tier 2). */
+/** The widest view a gun can reach: its scope with every view perk (only Optics, a tier-1 attachment, since Recon became an intel perk). */
 function maxKit(gun: GunId, anyAttachment: boolean): Partial<Record<Tier, PerkId>> {
   const kit: Partial<Record<Tier, PerkId>> = {};
   for (const perk of VIEW_PERKS) {
@@ -55,11 +55,12 @@ test('every view bonus is below its class cap, so none saturates the view alone,
     const cap = VIEW.cap[GUNS[id].base];
     for (const b of viewBonuses(id, maxKit(id, true))) assert.ok(b > 0 && b < cap * 0.85, `${id}: bonus ${b} against cap ${cap}`);
   }
-  // Optics and Recon are worth their face value on a gun with no scope.
+  // Optics is worth its face value on a gun with no scope; it is the one view pick, so Recon (intel) gives none.
   assert.ok(close(viewMulFor('pistol', { 1: 'optics' }), 1.12));
-  assert.ok(close(viewMulFor('smg', { 2: 'recon' }), 1.08));
+  assert.deepEqual(VIEW_PERKS, ['optics']);
+  assert.equal(viewMulFor('smg', { 2: 'recon' }), 1);
   assert.match(PERK_INFO.optics.desc, /\+12% view/);
-  assert.match(PERK_INFO.recon.desc, /\+8% view/);
+  assert.doesNotMatch(PERK_INFO.recon.desc, /view/);
 });
 
 test('per-class caps: a sniper with everything sees 1.35 to 1.45 times the base view, any other class at most about 1.15 to 1.18', () => {
@@ -83,19 +84,19 @@ test('per-class caps: a sniper with everything sees 1.35 to 1.45 times the base 
   const [bolt, longshot, piercer] = (['sniper', 'longshot', 'piercer'] as const).map((id) => viewMulFor(id, {}));
   assert.ok(bolt! < longshot! && longshot! < piercer!);
   // An upgrade stacked on the widest scope still counts for something.
-  assert.ok(viewMulFor('piercer', { 2: 'recon' }) - piercer! >= 0.01);
+  assert.ok(viewMulFor('piercer', { 1: 'optics' }) - piercer! >= 0.01);
 });
 
 test('the worst-case stacks, in px', () => {
   const px = (gun: GunId, perks: Partial<Record<Tier, PerkId>> = {}) => Math.round(WORLD.viewRadius * viewMulFor(gun, perks));
   assert.equal(px('pistol'), WORLD.viewRadius);
-  assert.ok(px('piercer', { 1: 'optics', 2: 'recon' }) <= 1100, 'the range-only Piercer, Optics and Recon was 2153 px');
-  assert.ok(px('piercer', { 2: 'recon' }) <= 1080, 'Piercer and Recon was 1656 px');
-  assert.ok(px('scout', { 1: 'optics', 2: 'recon' }) <= 920, 'Scout, Optics and Recon was 1749 px');
+  assert.ok(px('piercer', { 1: 'optics' }) <= 1100, 'the range-only Piercer and Optics (with Recon, before it lost its view bonus) was 2153 px');
+  assert.ok(px('piercer') <= 1080, 'the Piercer in play (with Recon, before) was 1656 px');
+  assert.ok(px('scout', { 1: 'optics' }) <= 920, 'Scout and Optics (with Recon, before) was 1749 px');
 });
 
 test("the server's interest, the client's camera and a bot's sight all use the same stacked view", () => {
-  for (const [gun, perks] of [['pistol', {}], ['sniper', {}], ['piercer', { 1: 'optics', 2: 'recon' }], ['scout', { 1: 'optics', 2: 'recon' }]] as const) {
+  for (const [gun, perks] of [['pistol', {}], ['sniper', {}], ['piercer', { 1: 'optics' }], ['scout', { 1: 'optics' }]] as const) {
     const w = emptyWorld();
     const me = spawnAt(w, 2000, 2000);
     const bot = spawnAt(w, 2000, 4000, { kind: 'bot' });

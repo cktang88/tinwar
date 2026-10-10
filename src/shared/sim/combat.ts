@@ -13,7 +13,8 @@ import { blastTargets, targetHits } from './targets.ts';
 import { damageZombie } from './run.ts';
 import { blastShove, bulletShove, shovePlayer, shoveZombie } from './knock.ts';
 import { blastOnZombie, holdZombie, roundOnZombie, turretHit, zombieShove } from './zomroles.ts';
-import { addScore, effectiveStats, falloffMul, hasPerk, isHunted, PERK_RULES } from './stats.ts';
+import { addScore, effectiveStats, falloffMul, falloffStretchFor, hasPerk, isHunted, PERK_RULES } from './stats.ts';
+import { braceShoveMul, sneakMul, topUp } from './zomperks.ts';
 import { areFriends, barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
@@ -59,7 +60,8 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (!w.run && w.now < life.shieldUntil) return;
   const before = life.hp;
   const stats = effectiveStats(victim);
-  if (stats.shield && src.via === 'bullet') {
+  // A shield turns rounds, and in a zombies run bites too, from the way its holder faces.
+  if (stats.shield && (src.via === 'bullet' || src.via === 'bite')) {
     const incoming = Math.atan2(src.fromY - victim.y, src.fromX - victim.x);
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
@@ -77,6 +79,8 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (a && a.id !== victim.id) {
     life.hits.push({ by: a.id, at: w.now, dealt });
     perkOnHit(w, a, felt, amount > 0 ? dealt / amount : 0, victim);
+    // Recon shows whoever hurt its holder on their minimap, as a Tracker mark does; a Ninja never shows.
+    if (hasPerk(victim, 'recon') && !hasPerk(a, 'ninja')) life.tracks[a.id] = w.now + PERK_RULES.recon.ms;
   }
   if (life.hp > 0 && !life.windUsed && hasPerk(victim, 'secondWind') && life.hp < PERK_RULES.secondWind.belowHp * stats.maxHp) {
     life.windUsed = true;
@@ -88,11 +92,11 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (life.hp <= 0) kill(w, victim, a, src.label, { gun: src.via === 'bullet' ? src.gun ?? null : null, oneHit: fromFull, pinned, ...(src.chain !== undefined && { chain: src.chain }), ...(src.medal && { medal: src.medal }) });
 }
 
-/** Bloodlust heals the attacker by a share of the damage that landed, and Tracker marks the victim on their minimap. */
+/** Bloodlust heals the attacker by a share of the damage that landed, and Tracker marks the victim on their minimap (never a Ninja). */
 function perkOnHit(w: World, a: Player, felt: number, landed: number, victim: Player) {
   if (a.life.k !== 'alive') return;
   if (hasPerk(a, 'bloodlust')) a.life.hp = Math.min(effectiveStats(a).maxHp, a.life.hp + PERK_RULES.bloodlust.healShare * felt * landed);
-  if (hasPerk(a, 'tracker')) a.life.tracks[victim.id] = w.now + PERK_RULES.tracker.ms;
+  if (hasPerk(a, 'tracker') && !hasPerk(victim, 'ninja')) a.life.tracks[victim.id] = w.now + PERK_RULES.tracker.ms;
 }
 
 /** Shoves `victim` by what a bullet or blast of `felt` damage lands with, and returns the shove's heading in radians (for the hit's flinch), or null when it moved nothing. */
@@ -163,6 +167,7 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   if (chain) { chain.kills++; payChain(w, chain); }
   refuel(credited);
   if (credited.life.k === 'alive' && hasPerk(credited, 'adrenaline')) credited.life.rushUntil = w.now + PERK_RULES.adrenaline.ms;
+  if (hasPerk(credited, 'fastHands')) topUp(credited, PERK_RULES.fastHands.killShare);
   MODES[w.mode].onKill(w, credited, victim);
 }
 
@@ -363,7 +368,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     if (d > radius + r || sheltered(view.walls, x, y, z.x, z.y)) continue;
     const dmg = maxDamage * (1 - Math.max(0, d - r) / radius);
     damageZombie(w, z, by.turret ? dmg : blastOnZombie(z, gun, dmg, w.now), by.attacker, by.turret ?? 'blast');
-    shoveZombie(z, z.x - x, z.y - y, blastShove(dmg), true);
+    shoveZombie(z, z.x - x, z.y - y, blastShove(dmg) * braceShoveMul(by.turret ? null : by.attacker), true);
   }
 }
 
@@ -412,7 +417,8 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
   /** What a hit at (x, y) this step keeps of the round's damage once it has flown that far (`GunRules.falloff`). */
-  const fell = (x: number, y: number) => (b.gun ? falloffMul(b.gun, from + Math.hypot(x - b.x, y - b.y)) : 1);
+  const stretch = owner && b.turret === null ? falloffStretchFor(owner.perks) : 1;
+  const fell = (x: number, y: number) => (b.gun ? falloffMul(b.gun, from + Math.hypot(x - b.x, y - b.y), stretch) : 1);
   const candidates: BulletHit[] = [
     // Only the walls the step enters, in wall order: the same hits, ties and all, as testing every wall.
     ...segmentHits(view.walls, b.x, b.y, dx, dy, 'nb').filter(({ b: wall }) => !roundPasses(wall, dx, dy)).map(({ t, b: wall }) => ({ t, victim: null, apply: (x: number, y: number) => {
@@ -447,8 +453,9 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
         t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
         apply: (x: number, y: number) => {
           // A turret's round has no gun; a player's round is judged by its gun's job against the horde (`ZombieRole`).
-          damageZombie(w, z, roundOnZombie(z, b.gun, b.damage * fell(x, y), b.piercing, w.now), owner, b.turret ?? 'hit');
-          if (!turretHit(z, b.hold, w.now, b.vx, b.vy)) shoveZombie(z, b.vx, b.vy, b.gun ? bulletShove(b.gun, b.damage) * zombieShove(b.gun) : b.damage * KNOCK.perDamage.assault, false);
+          const own = b.turret === null ? owner : null;
+          damageZombie(w, z, roundOnZombie(z, b.gun, b.damage * fell(x, y), b.piercing, w.now) * (b.gun ? sneakMul(z, own) : 1), owner, b.turret ?? 'hit');
+          if (!turretHit(z, b.hold, w.now, b.vx, b.vy)) shoveZombie(z, b.vx, b.vy, b.gun ? bulletShove(b.gun, b.damage) * zombieShove(b.gun) * braceShoveMul(own) : b.damage * KNOCK.perDamage.assault, false);
           holdZombie(z, b.gun, w.now);
         },
       })),

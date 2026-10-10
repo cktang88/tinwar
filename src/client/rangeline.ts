@@ -2,7 +2,7 @@ import { GUNS, PERK_INFO, rulesOf, type GunId, type PerkId, type Tier } from '..
 import { TARGETS, targetAim, targetBody, targetPos, type RangeLayout, type TargetKind } from '../shared/range.ts';
 import { segmentEntersCapsuleAt } from '../shared/sim/movement.ts';
 import { MUZZLE_PX } from '../shared/sim/ballistics.ts';
-import { rangeFor } from '../shared/sim/stats.ts';
+import { falloffStretchFor, rangeFor } from '../shared/sim/stats.ts';
 import { INK } from './palette.ts';
 import { reducedMotion } from './screenfx.ts';
 
@@ -45,11 +45,13 @@ export function reachOf(gun: GunId, perks: Partial<Record<Tier, PerkId>>): Reach
 function measure(gun: GunId, perks: Partial<Record<Tier, PerkId>>): Reach {
   const range = rangeFor(gun, perks);
   const reach = MUZZLE_PX + range;
-  const f = rulesOf(GUNS[gun]).falloff;
+  const base = rulesOf(GUNS[gun]).falloff, k = falloffStretchFor(perks);
+  // Long range moves the falloff out with the reach (`falloffMul`'s stretch).
+  const f = base && { startPx: base.startPx * k, endPx: base.endPx * k, minMul: base.minMul };
   const falloff = f && f.startPx < range ? { startPx: f.startPx, endPx: Math.min(f.endPx, range), minMul: f.minMul, start: MUZZLE_PX + f.startPx, end: MUZZLE_PX + Math.min(f.endPx, range) } : null;
   const stretch = (Object.values(perks) as PerkId[]).find((p) => rangeFor(gun, { 1: p }) !== GUNS[gun].range);
   const title = `MAX RANGE ${Math.round(range)} · ${GUNS[gun].name.toUpperCase()}${stretch ? ` · ${PERK_INFO[stretch].name.toUpperCase()}` : ''}`;
-  const sub = falloff ? `FALLOFF ${falloff.startPx}–${Math.round(falloff.endPx)} → ${Math.round(falloff.minMul * 100)}% DMG` : null;
+  const sub = falloff ? `FALLOFF ${Math.round(falloff.startPx)}–${Math.round(falloff.endPx)} → ${Math.round(falloff.minMul * 100)}% DMG` : null;
   return { gun, range, reach, falloff, title, sub };
 }
 

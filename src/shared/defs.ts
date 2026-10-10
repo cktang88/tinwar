@@ -370,42 +370,49 @@ export type Tier = keyof typeof PERK_TIERS;
 export type PerkId = (typeof PERK_TIERS)[Tier][number];
 export type AbilityId = (typeof PERK_TIERS)[3][number];
 
-export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
+/**
+ * What each pick says on the pick panel, its loadout tile and its hover card: `desc` in the versus modes, and `zom`, where a pick does something
+ * of its own against the horde, in Zombies instead (a pick with no `zom` works the same in every mode). Each is one short line.
+ */
+export const PERK_INFO: Record<PerkId, { name: string; desc: string; zom?: string }> = {
   optics: { name: 'Optics', desc: '+12% view radius (view bonuses stack with diminishing returns)' },
-  thermal: { name: 'Thermal', desc: 'Reveal hidden enemies' },
-  ghillie: { name: 'Ghillie suit', desc: 'Nearly invisible while still' },
-  piercing: { name: 'AP rounds', desc: 'Bullets ignore armor' },
+  thermal: { name: 'Thermal', desc: 'See hidden enemies and traps, and anyone just past your screen on your minimap', zom: 'Zombies up to half a screen past your view show on your minimap' },
+  ghillie: { name: 'Ghillie suit', desc: 'Nearly invisible while still', zom: 'Standing still, zombies lose track of you unless they bump into you' },
+  piercing: { name: 'AP rounds', desc: 'Bullets ignore armor', zom: 'Bullets ignore zombie plating' },
   extended: { name: 'Extended mag', desc: '+50% magazine' },
   grip: { name: 'Grip', desc: '-40% spread' },
-  silencer: { name: 'Silencer', desc: 'Your shots are heard only up close' },
+  silencer: { name: 'Silencer', desc: 'Your shots are heard only up close', zom: 'Your rounds deal +20% to zombies not chasing you' },
   lightweight: { name: 'Lightweight', desc: '+25% move speed' },
-  longRange: { name: 'Long range', desc: '+40% bullet range' },
+  longRange: { name: 'Long range', desc: '+40% bullet range, and damage falls off 40% later' },
   quickReload: { name: 'Quick reload', desc: 'Reload 35% faster' },
   choke: { name: 'Choke', desc: '-25% pellet spread' },
-  shield: { name: 'Shield', desc: 'Blocks 33% of bullet damage from the front' },
+  shield: { name: 'Shield', desc: 'Blocks 33% of bullet damage from the front', zom: 'Blocks 33% of bite damage from the front' },
   thickSkin: { name: 'Thick skin', desc: '+40 health: outlast a one- or two-hit gun' },
   firstAid: { name: 'First aid', desc: 'Regenerate health 3x faster, starting 1.6s after a hit' },
   marathon: { name: 'Marathon', desc: 'Sprint 15% faster, and your gun settles 50% sooner after a sprint' },
   steadyHands: { name: 'Steady hands', desc: 'Spray bloom builds 40% slower and recovers 60% faster; the post-sprint settle is 25% shorter' },
   secondWind: { name: 'Second wind', desc: 'Once a life, dropping under 25% health gives 2s of +30% speed and half damage taken' },
-  adrenaline: { name: 'Adrenaline', desc: 'A kill grants +20% move speed for 3s' },
-  bloodlust: { name: 'Bloodlust', desc: 'Heal 15% of the damage you deal to players' },
-  recon: { name: 'Recon', desc: '+8% view radius (view bonuses stack with diminishing returns), and enemies in view show a mark while they reload' },
-  ninja: { name: 'Ninja', desc: 'Your sprint makes no noise, and while hunted your shots never ping you on enemy minimaps' },
+  adrenaline: { name: 'Adrenaline', desc: 'A kill grants +20% move speed for 3s', zom: 'Every zombie you kill grants +20% move speed for 3s' },
+  bloodlust: { name: 'Bloodlust', desc: 'Heal 15% of the damage you deal to players', zom: 'Heal 4% of the damage you deal to zombies' },
+  recon: { name: 'Recon', desc: 'See enemies reload, and whoever hurts you shows on your minimap for 4s', zom: 'Your minimap shows the sides and kinds of the next packs to walk in' },
+  ninja: { name: 'Ninja', desc: 'Silent sprint, and no radar, Tracker, Recon, Thermal or hunted shot puts you on enemy minimaps', zom: 'Zombies notice you only at 60% of their usual reach, so fewer turn on you' },
   overclock: { name: 'Overclock', desc: 'Ability cooldown 30% shorter' },
   demolitions: { name: 'Demolitions', desc: 'Your blasts hit 30% harder and 30% wider; you take 30% less blast damage' },
-  fastHands: { name: 'Fast hands', desc: 'Reload 25% faster, and an evolution refills your magazine' },
-  tracker: { name: 'Tracker', desc: 'Enemies you damage show on your minimap for 4s' },
-  brace: { name: 'Brace', desc: 'Take 60% less knockback and deal 15% more' },
+  fastHands: { name: 'Fast hands', desc: 'Reload 25% faster, and each kill puts 30% of your magazine back', zom: 'Reload 25% faster, and each zombie you kill puts 10% of your magazine back' },
+  tracker: { name: 'Tracker', desc: 'Enemies you damage show on your minimap for 4s', zom: 'Zombies you hit are marked 4s: +15% from the squad\'s guns, and on every minimap' },
+  brace: { name: 'Brace', desc: 'Take 60% less knockback and deal 15% more', zom: 'Your hits shove zombies 75% harder' },
   fragGrenade: { name: 'Frag grenade', desc: 'Explodes into shrapnel' },
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
-  claymore: { name: 'Claymore', desc: 'A trap facing your aim: anyone stepping in front of it eats a fan of shrapnel. Enemies only spot it looking right at it up close. Two at a time' },
-  knife: { name: 'Knife', desc: 'Lunge melee strike' },
-  engineer: { name: 'Shield', desc: 'A one-way energy wall where you aim, 10s: you shoot out through it, nothing shoots in' },
+  claymore: { name: 'Claymore', desc: 'A trap facing your aim: anyone stepping in front of it eats a fan of shrapnel. Enemies only spot it looking right at it up close. Two at a time', zom: 'A trap facing your aim: the first zombie in front of it sets off a fan of shrapnel. Two at a time' },
+  knife: { name: 'Knife', desc: 'Lunge and stab for 50, through armor', zom: 'Lunge and stab for triple, grown with the night: kills a walker or runner outright and stuns the rest' },
+  engineer: { name: 'Shield wall', desc: 'A one-way energy wall where you aim, 10s: you shoot out through it, nothing shoots in', zom: 'A wall where you aim for 10s: zombies must walk round it while you shoot through' },
   dash: { name: 'Dash', desc: 'Burst of speed' },
-  radar: { name: 'Radar', desc: 'Throw a sensor: every enemy in a wide ring shows on everyone\'s minimap for 30s' },
+  radar: { name: 'Radar', desc: 'Throw a sensor: every enemy in a wide ring shows on everyone\'s minimap for 30s', zom: 'Throw a sensor: zombies in a wide ring are marked 6s, +15% from the squad\'s guns' },
   healPole: { name: 'Heal pole', desc: 'Plant a pole that heals you, your team and friends close by for 8s' },
 };
+
+/** The line a pick shows: its Zombies line in a zombies run, where it has one, else its own. */
+export const perkLine = (perk: PerkId, zombies: boolean): string => (zombies && PERK_INFO[perk].zom) || PERK_INFO[perk].desc;
 
 export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
   fragGrenade: 7000, gasGrenade: 8000, claymore: 9000, knife: 4000, engineer: 30000, dash: 3500, radar: 15000, healPole: 16000,

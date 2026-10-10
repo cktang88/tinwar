@@ -165,9 +165,9 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const threats = shooting.size ? [...visible].sort((a, b) => shoots(b.p) - shoots(a.p)) : visible;
   const shooters = threats.filter((t) => shooting.has(t.p.id)).map((t) => t.p.id);
   const heard = [...heardNow, ...prev.heard.filter((h) => (tick - h.tick) * TICK_MS < HEARD_MS && !heardNow.some((n) => dist(n, h) < HEARD_SAME_PX))];
-  // Enemy marks on the minimap (a Tracker mark, a hunted ping, a radar tag) are leads like heard gunfire.
+  // Enemy marks on the minimap (a Tracker or Recon mark, a hunted ping, a radar tag, a Thermal blip) are leads like heard gunfire; a zombie's is not.
   const marks: Lead[] = snap.minimap
-    .filter((m) => me.team === null || m.team !== me.team)
+    .filter((m) => !m.zombie && (me.team === null || m.team !== me.team))
     .map((m) => ({ x: m.x, y: m.y, tick, hunted: m.pingAge !== null }));
   const leads = [...marks, ...heard];
   const nearest = (xs: readonly Lead[]) => xs.reduce<Lead | null>((best, l) => (best && dist(best, me) <= dist(l, me) ? best : l), null);

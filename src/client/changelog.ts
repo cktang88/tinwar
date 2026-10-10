@@ -8,6 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-10',
     items: [
+      'Every perk, attachment and ability now earns its slot in Zombies too, with its own line on the pick panel',
       'Zombies: every gun and turret has its own job, plus a flame vent, a decoy beacon, a salvage yard and a medic post that revives; turret ammo is free and restocks at dawn',
     ],
   },
@@ -41,8 +42,7 @@ export const CHANGELOG: ChangelogDay[] = [
     items: [
       'Polygon walls, doors and roofs, with six new or reworked maps',
       'Levels, 98 cosmetics, and daily and weekly challenges',
-      'Killcam, slow-mo, emotes, celebrations, barrels and airdrops',
-      'Medals, player profiles and a mastery track for every weapon',
+      'Killcam, slow-mo, emotes, celebrations, barrels and airdrops, plus medals and profiles',
     ],
   },
 ];

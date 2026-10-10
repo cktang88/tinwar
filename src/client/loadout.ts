@@ -1,4 +1,4 @@
-import { GUNS, LEVELS, PERK_INFO, type AbilityId, type GunId, type PendingPick, type PerkId, type Tier, zombieBounty } from '../shared/defs.ts';
+import { GUNS, LEVELS, PERK_INFO, perkLine, type AbilityId, type GunId, type PendingPick, type PerkId, type Tier, zombieBounty } from '../shared/defs.ts';
 import { bountyChip, zombieGunLine } from '../shared/roles.ts';
 
 /**
@@ -28,12 +28,12 @@ const SHORT: Partial<Record<PerkId, string>> = {
   extended: 'Ext. mag', quickReload: 'Q. reload', longRange: 'Range', lightweight: 'Light', piercing: 'AP rounds',
   thickSkin: 'Thick skin', firstAid: 'First aid', steadyHands: 'Steady', secondWind: '2nd wind', demolitions: 'Demo',
   fastHands: 'Fast hands', fragGrenade: 'Frag', gasGrenade: 'Gas', claymore: 'Claymore', radar: 'Radar', healPole: 'Heal',
-  ghillie: 'Ghillie', overclock: 'Overclock', adrenaline: 'Adrenaline',
+  ghillie: 'Ghillie', overclock: 'Overclock', adrenaline: 'Adrenaline', engineer: 'Wall',
 };
 export const shortLabel = (id: PerkId): string => SHORT[id] ?? PERK_INFO[id].name;
 
-const perkSlot = (kind: SlotKind, perk: PerkId, kindLabel: string): LoadoutSlot =>
-  ({ kind, key: `${kind}:${perk}`, name: PERK_INFO[perk].name, label: shortLabel(perk), kindLabel, desc: PERK_INFO[perk].desc, perk });
+const perkSlot = (kind: SlotKind, perk: PerkId, kindLabel: string, zombies: boolean): LoadoutSlot =>
+  ({ kind, key: `${kind}:${perk}`, name: PERK_INFO[perk].name, label: shortLabel(perk), kindLabel, desc: perkLine(perk, zombies), perk });
 
 /**
  * The slots for a life, in strip order: gun, attachment, perk, ability. Empty until the first pick, except in Zombies, where the gun's tile is there from
@@ -50,10 +50,10 @@ export function loadoutSlots(gun: GunId, perks: Partial<Record<Tier, PerkId>>, a
       ...(bounty && { bounty }),
     });
   }
-  if (perks[1]) slots.push(perkSlot('attachment', perks[1], 'Attachment'));
-  if (perks[2]) slots.push(perkSlot('perk', perks[2], 'Perk'));
+  if (perks[1]) slots.push(perkSlot('attachment', perks[1], 'Attachment', zombies));
+  if (perks[2]) slots.push(perkSlot('perk', perks[2], 'Perk', zombies));
   const ab = ability ?? (perks[3] as AbilityId | undefined) ?? null;
-  if (ab) slots.push(perkSlot('ability', ab, abilityKey ? `Ability · press ${abilityKey}` : 'Ability'));
+  if (ab) slots.push(perkSlot('ability', ab, abilityKey ? `Ability · press ${abilityKey}` : 'Ability', zombies));
   return slots;
 }
 

@@ -46,9 +46,12 @@ const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right:
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
-/** Bots do not read the minimap or sprint much, so Recon, Ninja and Tracker are rarer picks; fights reward Bloodlust, Second Wind and Fast Hands. */
+/**
+ * Bots read minimap marks only as leads and do not sprint much, so Recon, Ninja and Tracker are rarer picks; fights reward Bloodlust, Second Wind and
+ * Fast Hands. A bot never holds still long enough for a Ghillie suit.
+ */
 const PERK_WEIGHT: Partial<Record<PerkId, number>> = {
-  ghillie: 0, longRange: 0, quickReload: 1.5, choke: 2,
+  ghillie: 0, quickReload: 1.5, choke: 2,
   recon: 0.4, ninja: 0.4, tracker: 0.4, marathon: 0.6, demolitions: 0.7, brace: 0.8, steadyHands: 0.4, bloodlust: 1.5, secondWind: 1.5, fastHands: 1.5, adrenaline: 1.2,
 };
 const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = {

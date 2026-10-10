@@ -31,20 +31,40 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   marathon: { sprintMul: 1.15, settleMul: 0.5 },
   steadyHands: { bloomBuildMul: 0.6, bloomRecoverMul: 1.6, settleMul: 0.75 },
   secondWind: {}, adrenaline: {}, bloodlust: {}, ninja: {}, demolitions: {}, tracker: {}, brace: {},
-  recon: { viewMul: 1.08 },
+  recon: {},
   overclock: { cooldownMul: 0.7 },
   fastHands: { reloadMul: 0.75 },
   fragGrenade: {}, gasGrenade: {}, claymore: {}, knife: {}, engineer: {}, dash: {}, radar: {}, healPole: {},
 };
 
-/** Tuning for the perks that act on events rather than stats. */
+/**
+ * Tuning for the perks that act on events rather than stats, and for what the picks that do nothing against the horde do in Zombies instead
+ * (`PERK_INFO.zom`; see `zomperks.ts`).
+ */
 export const PERK_RULES = {
   adrenaline: { speedMul: 1.2, ms: 3000 },
   secondWind: { belowHp: 0.25, speedMul: 1.3, ms: 2000, damageMul: 0.5 },
-  bloodlust: { healShare: 0.15 },
+  /** `zombieShare` of the damage dealt to zombies, which take far more of it than players do. */
+  bloodlust: { healShare: 0.15, zombieShare: 0.04 },
   demolitions: { dealtMul: 1.3, radiusMul: 1.3, takenMul: 0.7 },
-  tracker: { ms: 4000 },
-  brace: { takenMul: 0.4, dealtMul: 1.15 },
+  /** A zombie you hit stays marked `ms`: every squad player's gun deals it `zombieMul` (on top of a tesla coil's mark) and it shows on the squad's minimaps. */
+  tracker: { ms: 4000, zombieMul: 1.15 },
+  /** `zombieShove` scales the shove your rounds and blasts give a zombie. */
+  brace: { takenMul: 0.4, dealtMul: 1.15, zombieShove: 1.75 },
+  /** Whoever hurts a Recon holder shows on their minimap this long. */
+  recon: { ms: 4000 },
+  /** A kill puts this share of the magazine back (on top of the kill's own refuel), a zombie kill `zombieShare`. */
+  fastHands: { killShare: 0.3, zombieShare: 0.1 },
+  /** Long range moves a gun's damage falloff out by this much (its range by `PERK_MODS.longRange.rangeMul`). */
+  longRange: { falloffMul: 1.4 },
+  /** The Silencer's rounds deal this to a zombie that is not chasing their shooter. */
+  silencer: { unawareMul: 1.2 },
+  /** Standing still this long, a Ghillie suit hides you from enemies, and from any zombie farther off than `zombieFindPx`. */
+  ghillie: { stillMs: 600, zombieFindPx: 110 },
+  /** A zombie's pull toward a Ninja reaches this share of its usual range. */
+  ninja: { zombieNoticeMul: 0.6 },
+  /** Thermal shows what is within this many view radii on your minimap. */
+  thermal: { heatViewMul: 1.35 },
 } as const;
 
 export const hasPerk = (p: Pick<Player, 'perks'>, perk: PerkId): boolean => Object.values(p.perks).includes(perk);
@@ -148,11 +168,11 @@ export const isDeployed = (gun: GunId, sinceMoveMs: number): boolean => {
   return deploy !== null && sinceMoveMs > 0 && sinceMoveMs >= deploy.ms;
 };
 
-/** How much of its damage a round of `gun` keeps after flying `flownPx` (`GunRules.falloff`): 1 out to the fade's start, then down to its floor. */
-export function falloffMul(gun: GunId, flownPx: number): number {
+/** How much of its damage a round of `gun` keeps after flying `flownPx` (`GunRules.falloff`): 1 out to the fade's start, then down to its floor; `stretch` moves the whole fade out (Long range). */
+export function falloffMul(gun: GunId, flownPx: number, stretch = 1): number {
   const { falloff } = rulesOf(GUNS[gun]);
-  if (!falloff || flownPx <= falloff.startPx) return 1;
-  const k = Math.min(1, (flownPx - falloff.startPx) / Math.max(1, falloff.endPx - falloff.startPx));
+  if (!falloff || flownPx <= falloff.startPx * stretch) return 1;
+  const k = Math.min(1, (flownPx - falloff.startPx * stretch) / Math.max(1, (falloff.endPx - falloff.startPx) * stretch));
   return 1 - (1 - falloff.minMul) * k;
 }
 
@@ -161,6 +181,10 @@ export const reloadMsFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): n
 
 /** The most any one perk stretches a gun's range. */
 export const MAX_RANGE_MUL = Math.max(...Object.values(PERK_MODS).map((m) => m.rangeMul ?? 1));
+
+/** How far out Long range moves the damage falloff of a round fired with `perks`. */
+export const falloffStretchFor = (perks: Partial<Record<Tier, PerkId>>): number =>
+  Object.values(perks).includes('longRange') ? PERK_RULES.longRange.falloffMul : 1;
 
 export const rangeFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((range, perk) => range * (PERK_MODS[perk].rangeMul ?? 1), GUNS[gun].range);
@@ -314,7 +338,7 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   const oldMag = effectiveStats(p).mag;
   p.gun = gun;
   reopenUselessAttachment(p);
-  p.life.ammo = hasPerk(p, 'fastHands') ? effectiveStats(p).mag : Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
+  p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
   p.life.burstLeft = 0;
   p.life.spray = 0;
   p.life.spin = 0;

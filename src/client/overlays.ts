@@ -1,4 +1,4 @@
-import { GUN_IDS, GUNS, isPerkId, PERK_INFO, pickOptions, STREAK, type GunId, type PendingPick, type PerkId } from '../shared/defs.ts';
+import { GUN_IDS, GUNS, isPerkId, PERK_INFO, perkLine, pickOptions, STREAK, type GunId, type PendingPick, type PerkId } from '../shared/defs.ts';
 import type { ClientMsg, Loadout, Snapshot } from '../shared/protocol.ts';
 import { deathAct, deathGist, deathView, firstStep, quickRespawn, type DeathAct, type DeathButton, type DeathCtx, type DeathStep } from './deathflow.ts';
 import { selfOf } from './derive.ts';
@@ -23,7 +23,7 @@ const PERK_SHORT: Record<PerkId, string> = {
   optics: 'Optics', thermal: 'Thermal', ghillie: 'Ghillie', piercing: 'Piercing', extended: 'Ext. mag',
   grip: 'Grip', silencer: 'Silencer', lightweight: 'Light', longRange: 'Range', quickReload: 'Reload', choke: 'Choke', shield: 'Shield', thickSkin: 'Thick skin',
   firstAid: 'First aid', fragGrenade: 'Frag', gasGrenade: 'Gas', claymore: 'Claymore', knife: 'Knife',
-  engineer: 'Shield', dash: 'Dash', radar: 'Radar', healPole: 'Heal pole',
+  engineer: 'Wall', dash: 'Dash', radar: 'Radar', healPole: 'Heal pole',
   marathon: 'Marathon', steadyHands: 'Steady', secondWind: '2nd wind', adrenaline: 'Rush', bloodlust: 'Bloodlust', recon: 'Recon', ninja: 'Ninja',
   overclock: 'Overclock', demolitions: 'Demo', fastHands: 'Hands', tracker: 'Tracker', brace: 'Brace',
 };
@@ -86,8 +86,10 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
   let objectiveSeen = NO_OBJECTIVE_SEEN;
   let deathAt = -Infinity;
 
-  const perkTile = (perk: PerkId) => {
-    const { name, desc } = PERK_INFO[perk];
+  /** A pick's tile: in Zombies, the line of what it does against the horde where it has one (`PERK_INFO.zom`). */
+  const perkTile = (perk: PerkId, zombies: boolean) => {
+    const { name } = PERK_INFO[perk];
+    const desc = perkLine(perk, zombies);
     const icon = iconSvg(PERK_ICONS[perk], 'perk-icon');
     const label = document.createElement('b');
     label.textContent = PERK_SHORT[perk];
@@ -156,7 +158,7 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
     const list = document.createElement('div');
     list.className = 'perk-list';
     options.forEach((option, slot) => {
-      const tile = isPerkId(option) ? perkTile(option) : gunTile(option, zombies);
+      const tile = isPerkId(option) ? perkTile(option, zombies) : gunTile(option, zombies);
       const b = document.createElement('button');
       b.type = 'button';
       b.className = tile.className;
