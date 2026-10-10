@@ -244,6 +244,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
     ...(w.range && { targets: targetViews(w), range: rangeView(w, me.id) }),
     ...(me.kind === 'bot' && { heard: heardShots(w, me, events) }),
+    ...(me.kind === 'bot' && w.run?.wanted?.some((c) => c.until > w.now) && { wanted: w.run.wanted.filter((c) => c.until > w.now).map(({ cx, cy }) => ({ cx, cy })) }),
   };
 }
 

@@ -675,7 +675,8 @@ function buildClick(s: Session, e: MouseEvent) {
   if (e.button === 2 && drag) { drag = null; return; }
   // A press on an open cell with a wall or spike strip picked starts a line; letting go builds it (`finishDrag`), a press let go where it began builds the one.
   if (e.button === 0 && linesOf(ghost.kind) && ghost.refusal !== 'taken') { drag = { cx: ghost.cx, cy: ghost.cy }; return; }
-  if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, ...(ghost.kind === 'wall' && ghost.lv > 1 && { lv: ghost.lv }), ...(ghost.dir !== undefined && { dir: ghost.dir }) });
+  // A cell refused only for someone standing on it is still asked for: the server notes the wish, and a squad bot on it steps off for the next click.
+  if (e.button === 0 && (ghost.refusal === null || ghost.refusal === 'body')) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, ...(ghost.kind === 'wall' && ghost.lv > 1 && { lv: ghost.lv }), ...(ghost.dir !== undefined && { dir: ghost.dir }) });
   else if (e.button === 0 && ghost.refusal === 'taken' && ghost.upgrade === null) send(s.ws, { t: 'upgrade', cx: ghost.cx, cy: ghost.cy });
   else if (e.button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
   else return;
@@ -686,7 +687,7 @@ function buildClick(s: Session, e: MouseEvent) {
 function finishDrag() {
   const s = sessionOf(state), line = drag && ghost?.line;
   drag = null;
-  if (!s || state.phase !== 'playing' || !s.building || !ghost || !line?.some((c) => c.refusal === null)) return;
+  if (!s || state.phase !== 'playing' || !s.building || !ghost || !line?.some((c) => c.refusal === null || c.refusal === 'body')) return;
   const lv = ghost.kind === 'wall' && ghost.lv > 1 ? { lv: ghost.lv } : {};
   if (line.length === 1) send(s.ws, { t: 'build', kind: ghost.kind, cx: line[0]!.cx, cy: line[0]!.cy, ...lv });
   else send(s.ws, { t: 'build', kind: ghost.kind, cells: line.map((c): [number, number] => [c.cx, c.cy]), ...lv });

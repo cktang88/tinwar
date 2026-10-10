@@ -246,6 +246,11 @@ export type Run = {
   salvaged?: Map<number, number>;
   /** How many turrets and vents this dawn's restock filled, until night falls; absent when none needed it. */
   restocked?: number;
+  /**
+   * Cells someone tried to build on and was refused only for a body in the way, until when the wish stands (`WANTED_MS`): a squad bot on one
+   * steps off it, and takes no post on it, so a bot never stands for good where the next building should go. Absent until a build is first refused so.
+   */
+  wanted?: { cx: number; cy: number; until: number }[];
 };
 
 export type Ring =

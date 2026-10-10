@@ -392,6 +392,8 @@ export type Snapshot = {
   range?: RangeView;
   /** Bots only, never on the wire: enemy gunfire it heard since it last thought, placed roughly (`heardShots`). A person hears it instead. */
   heard?: HeardShot[];
+  /** Squad bots only, never on the wire: cells a build was lately refused on for a body in the way (`Run.wanted`), which a bot steps off. */
+  wanted?: { cx: number; cy: number }[];
 };
 
 /** Where a bot heard a shot come from: blurred by distance, not where it was fired. */

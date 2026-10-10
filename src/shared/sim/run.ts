@@ -84,6 +84,16 @@ function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
   return { canBuild: buildsNow(run.phase.k, p.gun), builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: [...w.buildings, ...w.floor].map(buildingView), scrap: run.scrap };
 }
 
+/** How long a cell refused for a body in the way stays wanted (`Run.wanted`): long enough for the bot on it to step off and the builder to try again. */
+export const WANTED_MS = 5000;
+
+/** Notes that someone wants to build on a cell a body stands on, so a squad bot there steps off it (`Run.wanted`). */
+function want(w: World, run: Run, cx: number, cy: number) {
+  const until = w.now + WANTED_MS;
+  const kept = (run.wanted ?? []).filter((c) => c.until > w.now && (c.cx !== cx || c.cy !== cy));
+  run.wanted = [...kept, { cx, cy, until }];
+}
+
 /** Puts `kind` up on a cell for its price; a wall goes up at tier `lv` (1 to 3), anything else at its first level. */
 export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number, lv = 1, dir?: VentDir): BuildRefusal | null {
   const p = w.players.get(id);
@@ -92,7 +102,9 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
   if (!p || !run || !core) return 'notDay';
   const level = kind === 'wall' ? Math.min(WALL_TIERS.length, Math.max(1, Math.floor(lv))) : 1;
   const refusal = buildRefusal(siteFor(w, run, p, core), kind, cx, cy, level);
+  if (refusal === 'body') want(w, run, cx, cy);
   if (refusal) return refusal;
+  if (run.wanted?.some((c) => c.cx === cx && c.cy === cy)) run.wanted = run.wanted.filter((c) => c.cx !== cx || c.cy !== cy);
   run.scrap -= costOf(kind, level);
   const at = { id: newId(w), cx, cy, hp: maxHpOf(kind, level), ...(level > 1 && { lv: level }) };
   if (kind === 'spikes') w.floor.push({ ...at, kind });

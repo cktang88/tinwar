@@ -188,7 +188,7 @@ export function nextBuildStep(night: number, buildings: readonly BuildingView[],
     ?? first(line(3)) ?? first(faced(3));
 }
 
-function nextBuild(run: RunView, buildings: readonly BuildingView[]): NonNullable<Watch['next']> & { cost: number } | null {
+function nextBuild(run: RunView, buildings: readonly BuildingView[], keepClear: readonly Rect[] = []): NonNullable<Watch['next']> & { cost: number } | null {
   const step = nextBuildStep(run.night, buildings, run.core);
   if (!step) return null;
   const { cx, cy } = step.cell;
@@ -198,7 +198,9 @@ function nextBuild(run: RunView, buildings: readonly BuildingView[]): NonNullabl
   const rx = (x - run.core.x) / d, ry = (y - run.core.y) / d;
   const solids = [coreRectAt(run.core), ...buildings.filter(solid).map((b) => cellRect(b.cx, b.cy))];
   const spots = [[-ry, rx], [ry, -rx], [-rx, -ry], [rx, ry]].map(([ux, uy]) => ({ x: x + ux! * BUILD_STANDOFF, y: y + uy! * BUILD_STANDOFF }));
-  const stand = spots.find((p) => !circleBlocked(solids, p.x, p.y, WORLD.playerRadius)) ?? spots[0]!;
+  // Nor on a cell someone wants to build on, which it would only be sent off again.
+  const free = (p: { x: number; y: number }) => !circleBlocked(solids, p.x, p.y, WORLD.playerRadius);
+  const stand = spots.find((p) => free(p) && !circleBlocked(keepClear, p.x, p.y, WORLD.playerRadius)) ?? spots.find(free) ?? spots[0]!;
   return { act: step.act, kind: step.kind, lv: step.lv, cx, cy, x: stand.x, y: stand.y, cost };
 }
 
@@ -240,14 +242,43 @@ function clearWalk(base: NavGrid, solids: readonly Rect[], a: Point, b: Point): 
   return true;
 }
 
-function postFor(core: { x: number; y: number }, bearing: number, buildings: readonly BuildingView[]): { x: number; y: number } {
+/**
+ * Where a bot holds by its bearing from the core: as far out as it goes before a building, short of `POST_RADIUS`, and never on a cell kept clear
+ * (`keepClear`: the squad's next building, or one someone was refused for a body in the way), so a bot never stands where a building should go.
+ */
+function postFor(core: { x: number; y: number }, bearing: number, buildings: readonly BuildingView[], keepClear: readonly Rect[] = []): { x: number; y: number } {
   const at = (d: number) => ({ x: core.x + Math.cos(bearing) * d, y: core.y + Math.sin(bearing) * d });
   const innermost = ZOM.coreHalf + WORLD.playerRadius + 1;
+  const clear = (p: { x: number; y: number }) => !keepClear.some((r) => circleHitsRect(p.x, p.y, WORLD.playerRadius, r));
+  let last: { x: number; y: number } | null = null;
   for (let d = innermost; d <= POST_RADIUS; d += 5) {
-    const { x, y } = at(d);
-    if (buildings.some((b) => solid(b) && circleHitsRect(x, y, WORLD.playerRadius, cellRect(b.cx, b.cy)))) return at(Math.max(innermost, d - 5));
+    const p = at(d);
+    if (buildings.some((b) => solid(b) && circleHitsRect(p.x, p.y, WORLD.playerRadius, cellRect(b.cx, b.cy)))) return last ?? at(innermost);
+    if (clear(p)) last = p;
   }
-  return at(POST_RADIUS);
+  return last ?? at(POST_RADIUS);
+}
+
+const STEP_OFF_PX = [45, 60, 80, 100, 130];
+const STEP_OFF_TURNS = 16;
+/**
+ * The nearest spot, a full step away so the bot surely moves (`DEAD_ZONE`), where it no longer touches any cell in `keepClear` and can walk
+ * straight to; away from the cells it is on first. Null when it touches none.
+ */
+function stepOffFrom(me: { x: number; y: number }, keepClear: readonly Rect[], walk: (to: { x: number; y: number }) => boolean): { x: number; y: number } | null {
+  const on = keepClear.filter((r) => circleHitsRect(me.x, me.y, WORLD.playerRadius, r));
+  if (!on.length) return null;
+  const cx = on.reduce((a, r) => a + r.x + r.w / 2, 0) / on.length, cy = on.reduce((a, r) => a + r.y + r.h / 2, 0) / on.length;
+  const away = Math.atan2(me.y - cy, me.x - cx);
+  // Turns taken nearest the way out first: 0, then +1, -1, +2, -2... sixteenths of a circle off it.
+  const turns = Array.from({ length: STEP_OFF_TURNS }, (_, i) => (i % 2 ? 1 : -1) * Math.ceil(i / 2) * ((2 * Math.PI) / STEP_OFF_TURNS));
+  for (const d of STEP_OFF_PX) {
+    for (const t of turns) {
+      const p = { x: me.x + Math.cos(away + t) * d, y: me.y + Math.sin(away + t) * d };
+      if (!keepClear.some((r) => circleHitsRect(p.x, p.y, WORLD.playerRadius, r)) && walk(p)) return p;
+    }
+  }
+  return { x: me.x + Math.cos(away) * STEP_OFF_PX[0]!, y: me.y + Math.sin(away) * STEP_OFF_PX[0]! };
 }
 
 function swingTo(prev: Engagement | null, zombie: NonNullable<Watch['zombie']>, tick: number, rand: () => number): Engagement {
@@ -278,16 +309,27 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     .filter((b) => solid(b) && guarded(b) && (b.hp < WHOLE_TENTHS || ('ammo' in b && b.ammo <= (started(b) ? WHOLE_TENTHS - 1 : LOW_TENTHS)))).map(at);
   // Reloading is free, so a dry turret is worth the walk whatever the bank holds.
   const dry = spends ? (snap.buildings ?? []).filter((b) => guarded(b) && 'ammo' in b && b.ammo <= DRY_TENTHS).map(at) : [];
-  const plan = humansBank || !spends ? null : nextBuild(run, snap.buildings ?? []);
+  // Cells someone was lately refused for a body in the way (`Snapshot.wanted`): a bot keeps off them.
+  const asked = (snap.wanted ?? []).map((c) => cellRect(c.cx, c.cy));
+  const plan = humansBank || !spends ? null : nextBuild(run, snap.buildings ?? [], asked);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
-  const post = postFor(run.core, me.id, snap.buildings ?? []);
+  // No post on those, nor on the cell the squad's plan puts up next, whoever builds it.
+  const planned = plan ?? nextBuild(run, snap.buildings ?? []);
+  const keepClear = planned && planned.act === 'build' && !isFloorKind(planned.kind) ? [...asked, cellRect(planned.cx, planned.cy)] : asked;
+  const post = postFor(run.core, me.id, snap.buildings ?? [], keepClear);
   const solids = squadSolids(run.core, snap.buildings ?? []);
   const watch: Watch = {
     me, core: run.core, post, zombie, zombies: siege.zombies, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), tending, clear: (to) => clearWalk(arena.nav, solids, me, to), kiting: !!mem.motor.siegeStep?.kite, kiteTo: mem.motor.siegeStep?.kite ? mem.motor.siegeStep.to : null, next: buildable,
     coreMendable: spends && run.core.hp < run.core.maxHp && run.scrap > 0 && (coreInDanger || (spare && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0))),
   };
-  const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
+  const chosen = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
+  // A bot that would stay on a cell someone wants to build on (standing to mend or shoot, or with its errand on the cell) steps off it first;
+  // one only passing over it is let go on its way, since turning it back would leave it shuttling at the cell's edge.
+  const lingers = chosen.use || (Math.abs(chosen.x - me.x) <= DEAD_ZONE && Math.abs(chosen.y - me.y) <= DEAD_ZONE)
+    || asked.some((r) => circleHitsRect(chosen.x, chosen.y, WORLD.playerRadius, r));
+  const stepOff = lingers && !downed ? stepOffFrom(me, asked, (to) => clearWalk(arena.nav, solids, me, to)) : null;
+  const errand: Errand = stepOff ? { ...stepOff, use: false } : chosen;
   const tended = [watch.needsTending, watch.dry, watch.coreMendable ? run.core : null].find((t) => t?.x === errand.x && t?.y === errand.y);
   const builds = buildable && errand.x === buildable.x && errand.y === buildable.y && Math.hypot(buildable.x - me.x, buildable.y - me.y) <= 2 * DEAD_ZONE;
 

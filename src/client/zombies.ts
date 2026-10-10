@@ -174,7 +174,7 @@ function refusalText(refusal: BuildRefusal, kind: BuildingKind, lv: number): str
     case 'outOfReach': return 'Out of reach';
     case 'cover': return 'Blocked';
     case 'core': return 'That is the Bastion';
-    case 'body': return 'Someone is in the way';
+    case 'body': return 'Someone is in the way · click and a bot steps aside';
     case 'taken': return 'Taken';
     case 'scrap': return `${nameAt(kind, lv)} needs ${costOf(kind, lv)} scrap`;
   }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, ZOM } from '../src/shared/defs.ts';
+import { BUILDINGS, WORLD, ZOM } from '../src/shared/defs.ts';
+import { build } from '../src/shared/sim/run.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -223,4 +224,28 @@ test('the squad bots\' plan stands as far from the core on every side', () => {
   assert.equal(w.buildings.length, 12, 'the whole plan went up');
   const offsets = new Set(w.buildings.flatMap((b) => [Math.abs((b.cx + 0.5) * ZOM.cell - CORE.x), Math.abs((b.cy + 0.5) * ZOM.cell - CORE.y)]));
   assert.deepEqual([...offsets].sort((a, b) => a - b), [25, 175, 225]);
+});
+
+test('a squad bot standing where a human builds steps off the cell within a second, and the build then goes up', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  w.run!.phase = { k: 'day', endsAt: Infinity };
+  w.run!.scrap = 500;
+  const bot = spawnAt(w, CORE.x - 250, CORE.y + 40);
+  // With a human in the squad the bot leaves the scrap to them; it walks to its post and stands there.
+  const human = spawnAt(w, CORE.x - 120, CORE.y - 120, { kind: 'human' });
+  play(w, [bot], 6000, () => false);
+  const { cx, cy } = { cx: Math.floor(bot.x / ZOM.cell), cy: Math.floor(bot.y / ZOM.cell) };
+  const at = { x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell };
+  const out = Math.atan2(at.y - CORE.y, at.x - CORE.x) + Math.PI / 2;
+  human.x = at.x + Math.cos(out) * 150;
+  human.y = at.y + Math.sin(out) * 150;
+  assert.equal(build(w, human.id, 'wall', cx, cy), 'body', 'the bot stands on the cell');
+  let left = -1;
+  const ms = 1000;
+  play(w, [bot], ms, () => { left = build(w, human.id, 'wall', cx, cy) === null ? w.tick : -1; return left >= 0; });
+  assert.ok(left >= 0, `the bot stepped off within ${ms} ms (it stands at ${bot.x.toFixed(0)}, ${bot.y.toFixed(0)}, the cell is ${cx}, ${cy})`);
+  assert.ok(w.buildings.some((b) => b.kind === 'wall' && b.cx === cx && b.cy === cy), 'the wall stands');
+  // It keeps clear of the wall it made way for, and holds a fresh spot rather than shuttling.
+  play(w, [bot], 3000, () => false);
+  assert.ok(Math.hypot(bot.x - at.x, bot.y - at.y) > ZOM.cell / 2 + WORLD.playerRadius - 1);
 });

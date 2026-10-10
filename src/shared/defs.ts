@@ -1036,7 +1036,7 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
     },
   },
   vent: {
-    name: 'Flame vent', cost: 80, hp: 700,
+    name: 'Flame vent', cost: 100, hp: 700,
     turret: {
       prefers: 'walker', range: 150, fireMs: 250, damage: 7, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 50, muzzle: 0, bullet: { r: 2, color: '#ff7a2a' }, lobbed: null,
       burn: { ms: 4000, stacks: 3, patchMs: 1200 }, jet: { w0: 16, w1: 30 },
