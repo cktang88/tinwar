@@ -1,4 +1,4 @@
-import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, STREAK, TOWER, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, SIDES, STREAK, TOWER, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
   AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, FloorPlateView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
@@ -11,14 +11,14 @@ import { heardShots } from './hearing.ts';
 import { empMul, propState } from './props.ts';
 import { armorByte, packViews } from './packs.ts';
 import { dist2 } from './movement.ts';
-import { abilityOf, effectiveStats, hasPerk, isHunted, pendingPick, rushMul } from './stats.ts';
+import { abilityOf, effectiveStats, hasPerk, isHunted, pendingPick, PERK_RULES, rushMul } from './stats.ts';
+import { isTracked } from './zomperks.ts';
 import { zombieMaxHp } from './run.ts';
 import { rangeView, targetViews } from './targets.ts';
 import { buildingView, tenths } from './build.ts';
 import { redeploysOpen, resultFor, ringView, stillIn } from './royale.ts';
 import { areFriends, isEnemy, sameTeam, type Player, type Royale, type Run, type World } from './world.ts';
 
-const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
 
 /** The walls on the wire: map walls, polygon parts and built walls; door leaves are rebuilt by the client from the map and `Snapshot.doors`. */
@@ -27,7 +27,7 @@ export function wallViews(w: World): WallView[] {
 }
 
 function isHidden(w: World, p: Player): boolean {
-  return p.life.k === 'alive' && !isHunted(w, p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
+  return p.life.k === 'alive' && !isHunted(w, p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= PERK_RULES.ghillie.stillMs && w.now >= p.revealedUntil;
 }
 
 /** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
@@ -68,6 +68,7 @@ function selfView(w: World, p: Player): SelfView {
   const life = p.life;
   const stats = effectiveStats(p);
   const ability = abilityOf(p);
+  const scout = w.run && hasPerk(p, 'recon') ? scoutView(w.run) : undefined;
   return {
     id: p.id,
     ...(life.k === 'alive' && w.now < p.taggedUntil && { tagged: Math.ceil((p.taggedUntil - w.now) / 1000) }),
@@ -100,7 +101,36 @@ function selfView(w: World, p: Player): SelfView {
     fired: p.fired,
     streak: p.lifeKills,
     nemesis: p.nemesis,
+    ...(scout && { scout }),
   };
+}
+
+/** How many of the next packs a Recon holder's minimap shows by night. */
+const SCOUT_PACKS = 6;
+
+/** Recon in a zombies run, by night: the next packs to walk in, in order, and the sides they come from (see `SelfView.scout`). */
+function scoutView(run: Run): SelfView['scout'] {
+  const phase = run.phase;
+  if (phase.k !== 'night' || phase.toSpawn.length === 0) return undefined;
+  const packs = phase.toSpawn.slice(0, SCOUT_PACKS).map((u): [number, number, number] => [SIDES.indexOf(u.side), ZOMBIE_KINDS.indexOf(u.kind), u.n]);
+  return { sides: [...new Set(packs.map(([side]) => side))], packs };
+}
+
+/** The most zombies one minimap shows (the nearest), so a full horde never floods the wire. */
+const MINIMAP_ZOMBIES = 40;
+
+/**
+ * The zombies on `me`'s minimap: those a Tracker hit or a radar sensor has marked, for the whole squad, and with Thermal every zombie within its reach;
+ * the nearest `MINIMAP_ZOMBIES` of them.
+ */
+function zombieMarks(w: World, me: Player, heatPx: number): MinimapMark[] {
+  const marks: { m: MinimapMark; d: number }[] = [];
+  for (const z of w.zombies) {
+    const d = dist2(z.x, z.y, me.x, me.y), marked = isTracked(z, w.now);
+    if (!marked && d > heatPx * heatPx) continue;
+    marks.push({ m: { x: z.x, y: z.y, team: null, pingAge: null, zombie: true, ...(marked && { marked: true as const }) }, d });
+  }
+  return marks.sort((a, b) => a.d - b.d).slice(0, MINIMAP_ZOMBIES).map(({ m }) => m);
 }
 
 const leaderboard = (w: World): LeaderRow[] => rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team, ...(p.kind === 'human' && { human: true as const }) })));
@@ -182,6 +212,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner, ...(t.kind === 'claymore' && { angle: Math.round(t.angle * 100) / 100 }) }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress, ...(z.crew > 0 && { crew: z.crew }), ...(z.contested && { contested: true as const }) }));
   const minimap: MinimapMark[] = [];
+  const heatPx = stats.thermal ? stats.viewRadius * PERK_RULES.thermal.heatViewMul : 0;
   for (const p of w.players.values()) {
     if (p.id === me.id || p.life.k !== 'alive') continue;
     const marked = me.life.k === 'alive' && w.now < (me.life.tracks[p.id] ?? -Infinity);
@@ -193,7 +224,10 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     else if (sameTeam(me, p)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
     // A radar tag shows the tagged player to everyone not on their side, wherever they go, until it runs out.
     else if (w.now < p.taggedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, tagged: true });
+    // Thermal picks up an enemy's heat a little past the screen's edge, never a Ninja's.
+    else if (heatPx > 0 && me.life.k === 'alive' && isEnemy(me, p) && !hasPerk(p, 'ninja') && dist2(p.x, p.y, me.x, me.y) <= heatPx * heatPx) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, heat: true });
   }
+  if (w.run) minimap.push(...zombieMarks(w, me, heatPx));
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
   // A medal, and what a pickup gave, is news only to the player who earned it.
   const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'airdrop' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id) || (e.e === 'gain' && e.id === me.id)
@@ -269,7 +303,7 @@ function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: num
   for (const z of w.zombies) {
     if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
     const view: ZombieView = [z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night, run.share))];
-    const fx = ((z.mark ?? 0) > w.now ? ZOMBIE_FX.marked : 0) | (z.burn && z.burn.until > w.now ? ZOMBIE_FX.burning : 0);
+    const fx = ((z.mark ?? 0) > w.now || isTracked(z, w.now) ? ZOMBIE_FX.marked : 0) | (z.burn && z.burn.until > w.now ? ZOMBIE_FX.burning : 0);
     if (fx) view.push(fx);
     zombies.push(view);
   }

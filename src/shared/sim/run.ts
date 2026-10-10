@@ -8,6 +8,7 @@ import { tickBurns, tickTraps, tickUtilities, tickVents, trapWatch } from './uti
 import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { tickDowned } from './downed.ts';
+import { perkOnZombieHit, perkOnZombieKill } from './zomperks.ts';
 import { coreRect, coverRects, loadMap, newId, newRun, rand, solidRects, spawnPoint, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
 
 function squadOf(w: World) {
@@ -171,7 +172,7 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   const dealt = Math.min(z.hp, amount);
   z.hp -= amount;
   if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null);
-  if (attacker && (via === 'hit' || via === 'blast')) statsFor(run, attacker).dealt += dealt;
+  if (attacker && (via === 'hit' || via === 'blast')) { statsFor(run, attacker).dealt += dealt; perkOnZombieHit(w, attacker, z, dealt, via); }
   if (z.hp > 0) return;
   const def = ZOMBIES[z.kind];
   const shooter = via === 'hit' || via === 'blast' ? null : via;
@@ -183,7 +184,7 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: by?.id ?? null, scrap });
   if (shooter === 'bastion') run.bastionKills++;
   else if (shooter) run.turretKills[shooter][z.kind]++;
-  else if (attacker) { attacker.kills++; const s = statsFor(run, attacker); s.kills++; s.scrap += scrap; }
+  else if (attacker) { attacker.kills++; const s = statsFor(run, attacker); s.kills++; s.scrap += scrap; perkOnZombieKill(w, attacker); }
   // Versus levels are scaled up for the medals a kill pays there; the horde pays no medals, so its score is scaled to match.
   if (attacker) addScore(w, attacker, def.score * ZOM.levelScoreMul);
   if (def.burst) burst(w, run, z, def.burst);

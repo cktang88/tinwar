@@ -214,6 +214,11 @@ export type SelfView = {
   fired?: number;
   /** Kills this life, and the player who last killed you until you take your revenge. */
   streak: number; nemesis: number | null;
+  /**
+   * Zombies, with Recon, by night while packs are still to come: the next packs to walk in, in order, each `[side, kind, count]` as indexes into
+   * `SIDES` and `ZOMBIE_KINDS`, and `sides` the sides among them (the day's forecast already names the night's sides).
+   */
+  scout?: { sides: number[]; packs: [side: number, kind: number, n: number][] };
 };
 
 /** `victim` is the id of the player, crate, zombie or squad wall hit; all come from the world's one id sequence. */
@@ -317,7 +322,11 @@ export type RoyaleView = {
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
 /** `marked` is a Tracker mark on an enemy you hurt; `friend` is one of your friends (see `World.friends`), shown wherever they are; `tagged` an enemy a radar sensor caught (`RADAR`). */
-export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true; friend?: true; tagged?: true };
+/**
+ * A dot on your minimap. `marked`: your Tracker mark (or, on a zombie, a Tracker or radar mark the squad shares); `tagged`: an enemy radar tag; `heat`: an enemy
+ * your Thermal picks up just past your screen; `zombie`: a zombie (marked, or in your Thermal's reach), Zombies only.
+ */
+export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true; friend?: true; tagged?: true; heat?: true; zombie?: true };
 
 /** `kills` and `deaths` count this round only and every mode ranks on them; `score` is the current life's, which a death resets. */
 /** How long a friend invite waits for an answer: its plate goes from the invitee's screen then, and the server forgets it. */

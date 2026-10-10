@@ -1,6 +1,8 @@
 import { HORDE_GUN_MUL, KNOCK, MARK, ZOMBIES, zombieRole, type GunId } from '../defs.ts';
 import { addKnock } from './movement.ts';
 import type { Bullet, Zombie } from './world.ts';
+import { PERK_RULES } from './stats.ts';
+import { isTracked } from './zomperks.ts';
 
 /**
  * Zombies only (see `ZombieRole` in defs.ts): how a player's gun treats the horde. Every caller is a path a round, blast or kill against a zombie takes,
@@ -19,8 +21,8 @@ export function roundOnZombie(z: Zombie, gun: GunId | null, damage: number, pier
 
 /** Whether a tesla coil's mark is on `z` now. */
 export const isMarked = (z: Zombie, now: number): boolean => (z.mark ?? 0) > now;
-/** What a player's gun does more to a zombie a tesla coil has marked (`MARK`). */
-const markMul = (z: Zombie, now: number) => (isMarked(z, now) ? MARK.gunMul : 1);
+/** What a player's gun does more to a zombie a tesla coil (`MARK`), a Tracker or a radar sensor (`PERK_RULES.tracker`) has marked. */
+const markMul = (z: Zombie, now: number) => (isMarked(z, now) ? MARK.gunMul : 1) * (isTracked(z, now) ? PERK_RULES.tracker.zombieMul : 1);
 
 /** What a blast of `damage` from `gun` does to `z`: `HORDE_GUN_MUL`, the role's blast multiplier, and the share of it plating lets through. */
 export function blastOnZombie(z: Zombie, gun: GunId | null, damage: number, now = 0): number {

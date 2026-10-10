@@ -1,7 +1,7 @@
 import { abilityCooldownMs } from '../shared/sim/stats.ts';
 import { raiseWatch, reticleLook } from './raise.ts';
 import { SPRINT_RING, STICK_RADIUS, stickVector, sticksSprint, type Sticks } from './touch.ts';
-import { ARMOR_IDS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { ARMOR_IDS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, SIDES, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ZombieKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot, Team, ZoneView } from '../shared/protocol.ts';
 import { flagOf, zoneLetter, zonesOf } from './zoneart.ts';
@@ -1049,6 +1049,21 @@ function drawMinimap(hud: Hud, size: number) {
   }
   for (const m of snap.minimap) {
     if (m.pingAge !== null) continue;
+    // A zombie off your screen: Thermal's heat, or a Tracker or radar mark the squad shares (ringed).
+    if (m.zombie) {
+      ctx.fillStyle = MINIMAP_HEAT;
+      ctx.beginPath();
+      ctx.arc(x + m.x * k, y + m.y * k, 1.8, 0, TAU);
+      ctx.fill();
+      if (m.marked) {
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = '#ff5a1f';
+        ctx.beginPath();
+        ctx.arc(x + m.x * k, y + m.y * k, 4, 0, TAU);
+        ctx.stroke();
+      }
+      continue;
+    }
     if (m.friend) {
       // A friend: a heart in their own colour, ringed so it reads over any floor.
       fillIcon(ctx, UI_ICONS.heart, x + m.x * k, y + m.y * k, 11, '#ffffff');
@@ -1067,7 +1082,16 @@ function drawMinimap(hud: Hud, size: number) {
       ctx.arc(x + m.x * k, y + m.y * k, 5 + 1.5 * Math.sin(now / 200), 0, TAU);
       ctx.stroke();
     }
-    // A Tracker mark: a ring round an enemy you hurt.
+    // Thermal: a soft heat halo round an enemy just past your screen.
+    if (m.heat) {
+      ctx.fillStyle = MINIMAP_HEAT;
+      ctx.globalAlpha = base * 0.35;
+      ctx.beginPath();
+      ctx.arc(x + m.x * k, y + m.y * k, 5, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = base;
+    }
+    // A Tracker or Recon mark: a ring round an enemy you hurt, or who hurt you.
     if (m.marked) {
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = '#ff5a1f';
@@ -1119,6 +1143,7 @@ function drawMinimap(hud: Hud, size: number) {
       }
       ctx.fill();
     }
+    if (snap.self.scout) drawScout(ctx, snap.self.scout, x, y, size, now, base);
     const c = snap.run.core, half = Math.max(3, ZOM.coreHalf * k);
     ctx.fillStyle = hud.now - s.coreHitAt < CORE_ALERT_MS && Math.floor(hud.now / 200) % 2 ? PALETTE.hunted : '#4fd1e8';
     ctx.fillRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
@@ -1144,6 +1169,36 @@ function drawMinimap(hud: Hud, size: number) {
   ctx.arc(x + self.x * k, y + self.y * k, 3.5, 0, TAU);
   ctx.fill();
   ctx.globalAlpha = 1;
+}
+
+/** Thermal's heat on the minimap: zombies and enemies it picks up past the screen. */
+const MINIMAP_HEAT = '#ffb347';
+/** Short names for the zombie kinds in Recon's minimap scouting. */
+const SCOUT_KIND: Record<ZombieKind, string> = { walker: 'W', runner: 'R', plated: 'P', bloater: 'Bl', brute: 'Br', colossus: 'C' };
+
+/**
+ * Recon in Zombies: a pulsing chevron at each minimap edge the next packs walk in from, and what is coming that way ("6W 2Br"), the soonest
+ * side brightest.
+ */
+function drawScout(ctx: CanvasRenderingContext2D, scout: NonNullable<Snapshot['self']['scout']>, x: number, y: number, size: number, now: number, base: number) {
+  const pulse = 0.65 + 0.35 * Math.sin(now / 180);
+  scout.sides.forEach((side, order) => {
+    const counts = new Map<ZombieKind, number>();
+    for (const [s, kind, n] of scout.packs) if (s === side) counts.set(ZOMBIE_KINDS[kind]!, (counts.get(ZOMBIE_KINDS[kind]!) ?? 0) + n);
+    const label = [...counts].map(([kind, n]) => `${n}${SCOUT_KIND[kind]}`).join(' ');
+    const name = SIDES[side];
+    const [ex, ey, dx, dy] = name === 'north' ? [x + size / 2, y + 3, 0, 1] : name === 'south' ? [x + size / 2, y + size - 3, 0, -1] : name === 'west' ? [x + 3, y + size / 2, 1, 0] : [x + size - 3, y + size / 2, -1, 0];
+    ctx.globalAlpha = base * (order === 0 ? pulse : 0.55);
+    ctx.fillStyle = PALETTE.hunted;
+    ctx.beginPath();
+    ctx.moveTo(ex + dx * 8, ey + dy * 8);
+    ctx.lineTo(ex - dy * 6, ey + dx * 6);
+    ctx.lineTo(ex + dy * 6, ey - dx * 6);
+    ctx.closePath();
+    ctx.fill();
+    text(ctx, label, ex + dx * 22, ey + dy * 16, TYPE.micro - 2, '#ffffff', 'center', 800);
+  });
+  ctx.globalAlpha = base;
 }
 
 function drawPill(hud: Hud, compact: boolean): number {

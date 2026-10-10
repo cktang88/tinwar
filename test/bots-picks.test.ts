@@ -27,10 +27,9 @@ function tierOnePicks(weapon: WeaponId, n: number): Map<PickOption, number> {
 }
 
 test('a bot never takes a perk that does nothing for a bot', () => {
-  for (const weapon of ['pistol', 'sniper', 'smg'] as const) {
-    const counts = tierOnePicks(weapon, 300);
-    for (const useless of ['ghillie', 'longRange'] as const) assert.equal(counts.get(useless) ?? 0, 0, `${weapon} took ${useless}`);
-  }
+  for (const weapon of ['pistol', 'sniper', 'smg'] as const) assert.equal(tierOnePicks(weapon, 300).get('ghillie') ?? 0, 0, `${weapon} took a Ghillie suit`);
+  // Long range moves an SMG's damage falloff out with its reach, so it is worth a bot's pick now.
+  assert.ok((tierOnePicks('smg', 300).get('longRange') ?? 0) > 0, 'an SMG never took Long range');
 });
 
 test('a bot takes its attachment from its own class menu', () => {

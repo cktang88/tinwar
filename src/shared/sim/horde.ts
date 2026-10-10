@@ -5,6 +5,7 @@ import { aiOf, BOID, buildGrid, LURE, personality, steer, type ZAi } from './boi
 import { MAPS } from '../maps.ts';
 import { cellRect, levelOf, reachAt, wallTier } from './build.ts';
 import { paceOf } from './zomroles.ts';
+import { hiddenFromZombie, noticeRange } from './zomperks.ts';
 import { coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
 
 const UNREACHABLE = 0xffff;
@@ -159,9 +160,11 @@ function choosePrey(w: World, z: Zombie, ai: ZAi, solids: readonly Rect[], core:
   for (const p of w.players.values()) {
     if (p.life.k !== 'alive') continue;
     const d = Math.hypot(p.x - z.x, p.y - z.y);
-    if (d > lure.range) continue;
+    // A Ninja is noticed nearer, and a still Ghillie suit not at all until the zombie all but bumps into them (zomperks.ts).
+    const range = noticeRange(p, lure.range);
+    if (d > range || hiddenFromZombie(w, p, d)) continue;
     const mine = p === cur;
-    const score = lure.lure * me.lure * nearCore * (d <= NEAR ? 1 : (lure.range - d) / (lure.range - NEAR)) + (mine ? STICKY : 0);
+    const score = lure.lure * me.lure * nearCore * (d <= NEAR ? 1 : (range - d) / Math.max(1, range - NEAR)) + (mine ? STICKY : 0);
     if (score <= CORE_BIAS || !hasLine(solids, z.x, z.y, p.x, p.y)) continue;
     if (mine) curScore = score;
     if (score > bestScore) { best = p; bestScore = score; }

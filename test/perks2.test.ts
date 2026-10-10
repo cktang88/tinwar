@@ -199,12 +199,12 @@ test('Bloodlust: heal 15% of the damage you deal', () => {
   assert.equal(hpOf(p), effectiveStats(p).maxHp, 'never past full health');
 });
 
-test('Recon: +8% view radius, and you see enemies reload', () => {
+test('Recon: you see enemies reload, and whoever hurts you shows on your minimap for 4 s', () => {
   const w = emptyWorld();
   const spotter = holding(w, 'recon', 500, 500);
   const plain = spawnAt(w, 600, 900);
   const foe = spawnAt(w, 700, 500);
-  assert.ok(Math.abs(effectiveStats(spotter).viewRadius - WORLD.viewRadius * 1.08) < 1e-9);
+  assert.equal(effectiveStats(spotter).viewRadius, WORLD.viewRadius, 'no view bonus: that is Optics\' job');
   if (foe.life.k === 'alive') { foe.life.ammo = 1; }
   press(w, foe, { reload: true });
   step(w, TICK_MS);
@@ -213,6 +213,17 @@ test('Recon: +8% view radius, and you see enemies reload', () => {
   assert.equal(mark(spotter), true);
   assert.equal(mark(plain), undefined, 'without Recon the reload is not shown');
   assert.equal(snapshotFor(w, foe.id).players.find((q) => q.id === foe.id)?.reloading, undefined, 'and never on yourself');
+  const sniper = spawnAt(w, 2500, 2500);
+  const marks = (viewer: Player) => snapshotFor(w, viewer.id).minimap.filter((m) => m.marked);
+  hit(w, spotter, sniper, 10);
+  hit(w, plain, sniper, 10);
+  assert.deepEqual(marks(spotter).map((m) => Math.round(m.x)), [2500], 'the shooter shows on the Recon holder\'s minimap');
+  assert.equal(marks(plain).length, 0, 'not on anyone else\'s');
+  run(w, 4100);
+  assert.equal(marks(spotter).length, 0, 'gone after 4 s');
+  sniper.perks = { 2: 'ninja' };
+  hit(w, spotter, sniper, 10);
+  assert.equal(marks(spotter).length, 0, 'a Ninja never shows');
 });
 
 test('Ninja: a hunted shot never pings you on enemy minimaps (only the timed ping does), and your sprint is silent and unseen', () => {
@@ -242,6 +253,27 @@ test('Ninja: a hunted shot never pings you on enemy minimaps (only the timed pin
   press(w, plain, { right: true, sprint: true });
   run(w, TICK_MS * 3);
   assert.equal(snapshotFor(w, watcher.id).players.find((q) => q.id === plain.id)?.sprint, true);
+});
+
+test('Ninja: no Tracker hit, radar sensor or Thermal heat ever puts you on an enemy minimap', () => {
+  const w = emptyWorld();
+  const ninja = holding(w, 'ninja', 1000, 1000);
+  const plain = spawnAt(w, 1100, 1000);
+  const hunter = spawnAt(w, 500, 500);
+  const seen = () => snapshotFor(w, hunter.id).minimap.map((m) => Math.round(m.x)).sort((a, b) => a - b);
+  hunter.perks = { 2: 'tracker' };
+  hit(w, ninja, hunter, 5);
+  hit(w, plain, hunter, 5);
+  assert.deepEqual(seen(), [1100], 'Tracker marks only the one without Ninja');
+  run(w, 4500);
+  hunter.perks = { 1: 'thermal' };
+  assert.deepEqual(seen(), [1100], 'Thermal picks up only the one without Ninja');
+  hunter.perks = { 3: 'radar' };
+  hunter.abilityReadyAt = 0;
+  press(w, hunter, { ability: true, aimDist: 700, angle: Math.PI / 4 });
+  run(w, 1000);
+  assert.equal(ninja.taggedUntil > w.now, false, 'the sensor never tags a Ninja');
+  assert.equal(plain.taggedUntil > w.now, true, 'but tags the one beside them');
 });
 
 test('Overclock: abilities recharge 30% sooner', () => {
@@ -277,23 +309,25 @@ test('Demolitions: your blasts hit 30% harder and wider, and you take 30% less b
   assert.ok(Math.abs(dmgAt(null, 0, 'demolitions').lost / plain.lost - 0.7) < 1e-6, 'and 30% less to the one standing in it');
 });
 
-test('Fast Hands: reload 25% faster, and an evolution refills the magazine', () => {
+test('Fast Hands: reload 25% faster, and each kill puts 30% of the magazine back on top of the kill\'s own refuel', () => {
   const w = emptyWorld();
   const p = holding(w, 'fastHands');
   assert.ok(Math.abs(effectiveStats(p).reloadMs - GUNS.pistol.reloadMs * 0.75) < 1e-9);
   const q = spawnAt(w, 900, 900);
   assert.equal(effectiveStats(q).reloadMs, GUNS.pistol.reloadMs);
-  const evolved = (perk: P2 | null) => {
+  const afterKill = (perk: P2 | null) => {
     const world = emptyWorld();
     const x = spawnAt(world, 500, 500);
     if (perk) x.perks = { 2: perk };
-    x.level = 2;
-    if (x.life.k === 'alive') x.life.ammo = 2;
-    assert.ok(choosePick(world, x.id, 2, 'handCannon'));
+    equip(x, 'assault');
+    if (x.life.k === 'alive') x.life.ammo = 0;
+    const v = spawnAt(world, 900, 500);
+    hit(world, v, x, 1000);
     return x.life.k === 'alive' ? x.life.ammo : -1;
   };
-  assert.equal(evolved('fastHands'), GUNS.handCannon.mag);
-  assert.ok(evolved(null) < GUNS.handCannon.mag);
+  const mag = GUNS.assault.mag;
+  assert.equal(afterKill(null), Math.ceil(0.5 * mag), 'a kill refuels half a magazine');
+  assert.equal(afterKill('fastHands'), Math.ceil(0.5 * mag) + Math.round(0.3 * mag), 'Fast Hands puts another 30% back');
 });
 
 test('Tracker: enemies you damage are marked on your minimap for 4 s', () => {

@@ -1,4 +1,4 @@
-import { PROP_FX, WORLD, ZOMBIES, type AbilityId } from '../defs.ts';
+import { PROP_FX, WORLD, ZOM, ZOMBIES, type AbilityId } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { damagePlayer, explode } from './combat.ts';
 import { damageZombie } from './run.ts';
@@ -7,7 +7,9 @@ import { burnTargets, knifeTargets } from './targets.ts';
 import { nearestEdge } from '../geom.ts';
 import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, segmentBlocked, startDash } from './movement.ts';
 import { areFriends, coverRects, friendly, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
-import { effectiveStats } from './stats.ts';
+import { effectiveStats, hasPerk } from './stats.ts';
+import { trackZombie } from './zomperks.ts';
+import { applyHold } from './zomroles.ts';
 import type { Team } from '../protocol.ts';
 
 /** How long a Shield stands; its cooldown (`ABILITY_COOLDOWN_MS.engineer`) is longer, so one is never up all the time. */
@@ -61,8 +63,11 @@ export function blowClaymore(w: World, t: Extract<Thrown, { kind: 'claymore' }>)
   }
 }
 
-/** A radar sensor: lands after `fuseMs` and tags every enemy within `radius` (through walls) on everyone's minimap for `tagMs`. */
-export const RADAR = { fuseMs: 700, radius: 900, tagMs: 30_000 } as const;
+/**
+ * A radar sensor: lands after `fuseMs` and tags every enemy within `radius` (through walls; never a Ninja) on everyone's minimap for `tagMs`.
+ * In a zombies run it marks every zombie within `radius` for `zombieMs` instead, as a Tracker hit does (`PERK_RULES.tracker`).
+ */
+export const RADAR = { fuseMs: 700, radius: 900, tagMs: 30_000, zombieMs: 6000 } as const;
 /** A heal pole: planted at your feet, it heals you, your teammates and your friends within `radius` by `hps` a second, in pulses, for `lifeMs`. Health only: it never mends armor, which only a fresh life, an armor pack or a supply drop fills. */
 export const HEAL_POLE = { radius: 150, hps: 18, lifeMs: 8000 } as const;
 
@@ -72,8 +77,13 @@ const radarFoe = (w: World, owner: number, team: Team, p: Player) => p.id !== ow
 function pulseRadar(w: World, t: { owner: number; team: Team; x: number; y: number }) {
   let n = 0;
   for (const p of w.players.values()) {
-    if (p.life.k !== 'alive' || !radarFoe(w, t.owner, t.team, p) || dist2(p.x, p.y, t.x, t.y) > RADAR.radius ** 2) continue;
+    if (p.life.k !== 'alive' || !radarFoe(w, t.owner, t.team, p) || hasPerk(p, 'ninja') || dist2(p.x, p.y, t.x, t.y) > RADAR.radius ** 2) continue;
     p.taggedUntil = w.now + RADAR.tagMs;
+    n++;
+  }
+  for (const z of w.zombies) {
+    if (dist2(z.x, z.y, t.x, t.y) > RADAR.radius ** 2) continue;
+    trackZombie(z, w.now, RADAR.zombieMs);
     n++;
   }
   w.events.push({ e: 'radar', x: t.x, y: t.y, r: RADAR.radius, owner: t.owner, n });
@@ -104,6 +114,8 @@ function throwGrenade(kind: 'fragGrenade' | 'gasGrenade' | 'radar', fuseMs = GRE
 }
 
 const KNIFE_DAMAGE = 50;
+/** The knife against the horde: `mul` times its damage, grown with the night as the horde's health is, and a stun of `stunMs` on whatever lives through it. */
+export const KNIFE_ZOMBIE = { mul: 3, stunMs: 800 } as const;
 const MAX_MINES = 2;
 
 export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
@@ -125,7 +137,10 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
       ...[...w.players.values()].filter((v) => v.life.k === 'alive' && isEnemy(p, v) && !areFriends(w, p.id, v.id)).map((v) => ({
         x: v.x, y: v.y, strike: () => damagePlayer(w, v, KNIFE_DAMAGE, { attacker: p, team: p.team, label: 'Knife', piercing: true, via: 'knife', fromX: p.x, fromY: p.y }),
       })),
-      ...w.zombies.map((z) => ({ x: z.x, y: z.y, strike: () => damageZombie(w, z, KNIFE_DAMAGE, p) })),
+      ...w.zombies.map((z) => ({ x: z.x, y: z.y, strike: () => {
+        damageZombie(w, z, KNIFE_DAMAGE * KNIFE_ZOMBIE.mul * ZOM.nightMul(w.run?.night ?? 1).hp, p);
+        if (z.hp > 0) applyHold(z, { mul: 0, ms: KNIFE_ZOMBIE.stunMs }, w.now);
+      } })),
       ...knifeTargets(w, p, KNIFE_DAMAGE),
     ];
     const { x, y, victim } = knifeLunge(solidRects(w), p, p.angle, targets, MAPS[w.map].size);
