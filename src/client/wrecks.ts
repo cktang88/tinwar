@@ -75,9 +75,7 @@ const BARREL = '#2c3037';
 const STEEL = '#808a99';
 const KHAKI = '#b4a07a';
 const SAND = '#c9b48a';
-const OLIVE = '#6c7356';
 const RUST = '#a8552e';
-const BRASS = '#b79a4a';
 const BONE = '#e2dccb';
 const WOOD = '#93724a';
 const CHAR_GROUND = 'rgba(16, 13, 11, 0.6)';
@@ -132,14 +130,6 @@ function toppledBarrel(g: CanvasRenderingContext2D, x: number, y: number, a: num
   g.fill();
 }
 
-/** Brass rounds spilled from a broken box. */
-function rounds(g: CanvasRenderingContext2D, rnd: () => number, n: number, spread: number) {
-  for (let i = 0; i < n; i++) {
-    const a = rnd() * TAU, d = spread * (0.3 + 0.7 * rnd());
-    part(g, Math.cos(a) * d, Math.sin(a) * d, rnd() * TAU, roundBox(-2.2, -0.9, 2.2, 0.9, 0.9), BRASS, 0.8, 0, 0.6);
-  }
-}
-
 /** The kind's own remains: what is left of its gun, its stock or its walls, heaped in the middle. */
 function remains(g: CanvasRenderingContext2D, kind: BuildingKind, lv: number, rnd: () => number) {
   if (isTurretKind(kind) && kind !== 'tesla') {
@@ -176,19 +166,21 @@ function remains(g: CanvasRenderingContext2D, kind: BuildingKind, lv: number, rn
     part(g, -14, 12, 0, ellipse(0, 0, 4.6, 4.6), STEEL, 2.4);
     for (let i = 0; i < 4; i++) shard(g, rnd, -10 + rnd() * 24, -14 + rnd() * 8, 3.2, BONE);
     for (let i = 0; i < 4; i++) shard(g, rnd, (rnd() - 0.5) * 36, (rnd() - 0.5) * 36, 5, i % 2 ? STEEL : GUNMETAL);
-  } else if (kind === 'depot') {
-    // The crates smashed to planks and their rounds strewn about.
-    for (let i = 0; i < 7; i++) {
-      const a = rnd() * TAU, d = 4 + rnd() * 16;
-      part(g, Math.cos(a) * d, Math.sin(a) * d, rnd() * TAU, roundBox(-7, -1.8, 7, 1.8, 0.8), i % 3 ? OLIVE : '#59614a', 1.6);
+  } else if (kind === 'salvage') {
+    // The heap scattered wider still, the crane's yellow jib snapped in two across it and the magnet rolled off on its side.
+    for (let i = 0; i < 8; i++) {
+      const a = rnd() * TAU, d = 4 + rnd() * 17;
+      part(g, Math.cos(a) * d, Math.sin(a) * d, rnd() * TAU, roundBox(-6, -2.4, 6, 2.4, 1), i % 3 ? RUST : STEEL, 1.6);
     }
-    part(g, -3, -2, 0.25, roundBox(-9, -6, 7, 6, 1.2), '#4f5640', 2.4);
-    rounds(g, rnd, 12, 20);
-    part(g, 8, 6, -0.4, roundBox(-6, -1.6, 6, 1.6, 0.8), '#e0661f', 1);
+    part(g, -4, -4, 0.6, roundBox(-11, -1.6, 11, 1.6, 0.8), '#f5c400', 1.4);
+    part(g, 7, 2, -0.9, roundBox(-7, -1.6, 7, 1.6, 0.8), '#d9a520', 1.4);
+    part(g, 9, 11, 0, ellipse(0, 0, 5.6, 3.6), GUNMETAL_DARK, 2.4);
+    for (let i = 0; i < 3; i++) shard(g, rnd, (rnd() - 0.5) * 36, (rnd() - 0.5) * 36, 5, i % 2 ? STEEL : GUNMETAL);
   } else if (kind === 'post') {
-    // The locker crumpled flat, its cross plate face down beside it, the antenna snapped.
-    part(g, -1, 0, -0.2, polygon([-13, -8], [-2, -10], [12, -7], [13, 6], [1, 9], [-12, 7]), GUNMETAL_DARK, 3);
-    part(g, 10, 10, 0.5, roundBox(-5, -4, 5, 4, 1), '#2f6e52', 1.2);
+    // The tent collapsed flat in a heap of canvas, its cross panel torn off beside it, the lamp pole snapped.
+    part(g, -1, 0, -0.2, polygon([-13, -8], [-2, -10], [12, -7], [13, 6], [1, 9], [-12, 7]), '#5f6b46', 3);
+    part(g, 10, 10, 0.5, roundBox(-5, -4, 5, 4, 1), '#eef2ea', 1.2);
+    part(g, 10, 10, 0.5, roundBox(-1.2, -3, 1.2, 3, 0.4), '#2f9e6f', 0.4);
     part(g, -12, 10, 1.1, roundBox(-8, -0.9, 8, 0.9, 0.9), GUNMETAL, 0.8);
     for (let i = 0; i < 4; i++) shard(g, rnd, (rnd() - 0.5) * 36, (rnd() - 0.5) * 36, 5, i % 2 ? STEEL : GUNMETAL);
   } else {

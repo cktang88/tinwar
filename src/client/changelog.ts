@@ -8,7 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-10',
     items: [
-      'Zombies: every gun and turret has its own job (scatter shoves, mortar reaches far, tesla marks for your guns), plus a flame vent and a decoy beacon',
+      'Zombies: every gun and turret has its own job, plus a flame vent, a decoy beacon, a salvage yard and a medic post that revives; turret ammo is free and restocks at dawn',
     ],
   },
   {

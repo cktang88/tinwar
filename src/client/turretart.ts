@@ -80,7 +80,7 @@ export const turretBakes = { count: 0 };
 
 /**
  * A sprite baked once per drawn scale and `key`, `half` world px each side of its centre, which `paint` draws about in world
- * units. Shared by the siege's baked art (turrets, depots, posts, wrecks): a few scales are kept, the least recent dropped.
+ * units. Shared by the siege's baked art (turrets, salvage yards, medic posts, wrecks): a few scales are kept, the least recent dropped.
  */
 export function bakedSprite(key: string, half: number, pxPerUnit: number, paint: (g: CanvasRenderingContext2D) => void): HTMLCanvasElement {
   const px = Math.max(0.25, Math.round(pxPerUnit * SCALE_STEP) / SCALE_STEP);

@@ -60,7 +60,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     ...(alive && life.reloadUntil !== null && { rl: reloadClock(life.reloadUntil, w.now, stats.reloadMs) }),
     ...(p.badge && { badge: p.badge }),
     ...(p.cos && { cos: p.cos }),
-    ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
+    ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt, ...(life.medic && { medic: true as const }) } }),
   };
 }
 
@@ -255,6 +255,7 @@ function runView(w: World, run: Run): RunView {
     survivors: run.survivors,
     lost: run.lost,
     ready: [...run.ready],
+    ...(phase.k === 'day' && run.restocked && { restocked: run.restocked }),
     report: phase.k === 'over'
       ? {
         night: phase.night, won: phase.won, survivors: run.survivors, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map(({ name, kills, revives, built }) => ({ name, kills, revives, built })),

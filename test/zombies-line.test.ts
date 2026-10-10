@@ -122,7 +122,7 @@ test('a line message parses, and a crooked, gapped, overlong or turret line is r
     { kind: 'wall', cells: [[1, 1], [2, 2]] }, { kind: 'wall', cells: [[1, 1], [3, 1]] }, { kind: 'wall', cells: [[1, 1], [2, 1], [1, 1]] }, { kind: 'wall', cells: [[1, 1], [2, 1], [3, 2]] },
     { kind: 'wall', cells: [[1, 1], [1, 1]] }, { kind: 'wall', cells: [[1, 1], [2, 1], [2, 2]] }, { kind: 'wall', cells: [[1.5, 1]] }, { kind: 'wall', cells: [[-1, 1]] },
     { kind: 'wall', cells: [[1, 1, 1]] }, { kind: 'wall', cells: [['1', 1]] }, { kind: 'wall', cells: [[1e9, 1]] }, { kind: 'wall', cells: [null] },
-    { kind: 'sentry', cells: [[1, 1], [2, 1]] }, { kind: 'depot', cells: [[1, 1]] }, { kind: 'nope', cells: [[1, 1]] },
+    { kind: 'sentry', cells: [[1, 1], [2, 1]] }, { kind: 'salvage', cells: [[1, 1]] }, { kind: 'nope', cells: [[1, 1]] },
     { kind: 'wall', cells: [[1, 1]], cx: 1, cy: 1 }, { kind: 'wall', cells: [[1, 1]], lv: 4 },
   ];
   for (const b of bad) assert.equal(parseClientMsg(JSON.stringify({ t: 'build', ...(b as object) })), null, JSON.stringify(b));

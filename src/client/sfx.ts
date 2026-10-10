@@ -9,7 +9,7 @@ export type SoundId =
   | `shot:${GunId}` | 'shot:silenced' | FoleyId
   | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'fanfare' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click' | 'notReady'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
-  | 'build:wood' | 'build:sandbag' | 'build:steel' | 'build:spikes' | 'upgrade' | 'aid:depot' | 'aid:post'
+  | 'build:wood' | 'build:sandbag' | 'build:steel' | 'build:spikes' | 'upgrade' | 'aid:salvage' | 'aid:post'
   | 'knock' | 'ring' | 'step' | 'stepSprint' | 'tink' | 'spawn' | 'impact:flesh' | 'impact:wall' | 'impact:crate' | 'impact:zombie'
   | 'barrel:hurt' | 'barrel:fuse' | 'barrel:burst' | 'barrel:chain'
   | 'prop:whoosh' | 'prop:hiss' | 'prop:zap' | 'prop:fire' | 'prop:glass' | 'prop:pickup' | 'prop:splat'
@@ -318,7 +318,7 @@ const RAW: Record<SoundId, Recipe> = {
   'build:steel': [crack(3200, 30, 0.4), thump(170, 80, 0.45), ping(1180, 0, 560, 0.24), ping(1770, 0, 380, 0.14), ping(2760, 0, 220, 0.08), { ...ping(1000, 0, 420, 0.14), delayMs: 120 }, { ...crack(2400, 25, 0.25), delayMs: 120 }],
   'build:spikes': [...crackle(9, 0, 170, 0.2, 3400), ping(1500, 0, 90, 0.08), thump(220, 60, 0.3)],
   upgrade: [snap(3000, 0.25, 0, 12), thump(260, 60, 0.4), bell(784, 70, 240, 0.2), bell(1047, 150, 240, 0.2), bell(1568, 230, 460, 0.22), ...sparkles(3, 240, 220, 3136, 0.05)],
-  'aid:depot': [...mechClick(2600, 0, 0.16), thunk(200, 20, 0.22), ...mechClick(3000, 90, 0.12)],
+  'aid:salvage': [thunk(160, 0, 0.18), ...mechClick(2600, 40, 0.12), bell(1568, 90, 160, 0.09), bell(2093, 150, 220, 0.08)],
   'aid:post': [bell(1047, 0, 200, 0.12), bell(1319, 70, 280, 0.12)],
   wallHit: [thump(150, 90, 0.4), { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1400, 300], ms: 80, gain: 0.3 }],
   wallUp: [thump(320, 50, 0.45), thump(240, 70, 0.45), { ...thump(240, 70, 0.4), delayMs: 80 }],

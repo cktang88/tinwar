@@ -121,7 +121,8 @@ export type PlayerView = {
   /** Shocked by a generator's EMP: slowed, abilities locked. */
   emp?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
-  downed?: { revive: number; bleedOutAt: number };
+  /** `medic`: a medic post, not a squadmate, is reviving them. */
+  downed?: { revive: number; bleedOutAt: number; medic?: true };
 };
 
 /** `gun` is null for shrapnel. */
@@ -184,6 +185,8 @@ export type RunReport = {
 export type RunView = {
   phase: 'day' | 'night' | 'over'; night: number; phaseEndsAt: number | null; scrap: number;
   core: { x: number; y: number; hp: number; maxHp: number }; aliveZombies: number; waveLeft: number; survivors: number; lost: number; ready: number[]; report: RunReport | null;
+  /** By day: how many turrets and vents dawn restocked to full, free; absent when none needed it. */
+  restocked?: number;
 };
 
 export type SelfView = {
@@ -249,8 +252,11 @@ export type GameEvent =
   | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number; reach?: number }
   /** A tesla coil at (`x`, `y`) arced: `p` is the arc's points, x then y, from the coil to each zombie it jumped to. */
   | { e: 'coil'; x: number; y: number; p: number[] }
-  /** A depot topped up a turret or a post mended someone at (`x`, `y`), at most once a second each. */
-  | { e: 'aid'; kind: 'depot' | 'post'; x: number; y: number }
+  /**
+   * A medic post at (`x`, `y`) healed, revived or mended something, or a salvage yard there paid `scrap` extra for the kills in its reach since it last said so;
+   * at most once a second each.
+   */
+  | { e: 'aid'; kind: 'salvage' | 'post'; x: number; y: number; scrap?: number }
   /** A squad player went down, was revived (`by` the reviver), bled out, was finished while down (`by` null for the ring), or redeployed beside a squadmate. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut' | 'finished' | 'redeployed'; by: number | null }
   /** A Last Squad squad has nobody left standing; `place` is where it finished. */

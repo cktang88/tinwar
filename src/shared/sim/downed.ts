@@ -9,7 +9,11 @@ export function goDown(w: World, p: Player, hp = 0) {
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'downed', by: null });
 }
 
-export function tickDowned(w: World, p: Player, dtMs: number, revivers: Set<Player>): Player | 'bledOut' | null {
+/**
+ * A downed player's tick: bled out, still down, or revived (by the squadmate holding use over them, or by a medic post, `'post'`). `medic` is how fast a medic post
+ * in reach revives them, as a share of a squadmate's pace (0 with none); a squadmate's hand is the quicker and counts while it is there.
+ */
+export function tickDowned(w: World, p: Player, dtMs: number, revivers: Set<Player>, medic = 0): Player | 'post' | 'bledOut' | null {
   const life = p.life;
   if (life.k !== 'downed') return null;
   if (w.now >= life.bleedOutAt) {
@@ -17,9 +21,11 @@ export function tickDowned(w: World, p: Player, dtMs: number, revivers: Set<Play
     return 'bledOut';
   }
   const reviver = [...w.players.values()].find((o) => o.life.k === 'alive' && o.input.use && sameTeam(o, p) && dist2(o.x, o.y, p.x, p.y) <= ZOM.reviveRange ** 2);
-  if (!reviver) { life.reviveProgress = 0; return null; }
-  revivers.add(reviver);
-  life.reviveProgress += dtMs;
+  if (!reviver && medic <= 0) { life.reviveProgress = 0; delete life.medic; return null; }
+  if (reviver) revivers.add(reviver);
+  life.reviveProgress += reviver ? dtMs : dtMs * medic;
+  if (reviver) delete life.medic;
+  else life.medic = true;
   if (life.reviveProgress < ZOM.reviveMs) return null;
   const revived = freshLife(p, w.now);
   revived.hp *= ZOM.reviveHpFrac;
@@ -27,6 +33,6 @@ export function tickDowned(w: World, p: Player, dtMs: number, revivers: Set<Play
   revived.lastDamageAt = w.now;
   revived.shieldUntil = -Infinity;
   p.life = revived;
-  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
-  return reviver;
+  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver?.id ?? null });
+  return reviver ?? 'post';
 }

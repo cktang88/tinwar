@@ -3,12 +3,12 @@
 //   seeds: comma-separated, default 1,2. quick: turrets at level I only, no walls or utilities.
 // What does a scrap buy in Zombies? Every buildable at every level in a scripted lane (scripts/lib/zombiebuilds.ts `playFort`): the core walled in, the
 // buildable just inside the south face, packs of the real horde streaming in from the south for 90 s at nights 3, 5 and 7 (and packs of one kind at a time
-// at night 5). A turret's value a scrap is the horde health it takes off over three such nights over its price plus three nights' ammo and mending; a level's
-// step is set beside building another level-I copy. Walls are bitten with nothing shooting; spikes, the depot and the post are measured by what they add.
+// at night 5). A turret's value a scrap is the horde health it takes off over three such nights over its price plus three nights' mending (ammo is free); a level's
+// step is set beside building another level-I copy. Walls are bitten with nothing shooting; spikes, the salvage yard and the medic post are measured by what they add.
 // Then each buildable's job (`buildMatrix`): the walk its holds and stuns cost the horde, the marks it keeps on, the harm it does far out and through a
 // one-cell gap in the wall, what it spares a steel wall and how far a decoy draws the horde, with what each wins and any buildable another dominates.
 import { BUILDINGS, TURRET_KINDS, UTILITY, WALL_TIERS, ZOM, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
-import { investedOf, turretDef, upgradeCost } from '../src/shared/sim/build.ts';
+import { auraOf, investedOf, reachAt, salvageBonusOf, turretDef, upgradeCost } from '../src/shared/sim/build.ts';
 import { AXES, buildMatrix, dominatedPairs, NIGHTS_LIFE, playFort, valuePerScrap, winsOf, type Axis, type FortRun, type FortSetup } from './lib/zombiebuilds.ts';
 
 const seeds = (process.argv[2] ?? '1,2').split(',').map(Number);
@@ -19,11 +19,11 @@ const KINDS: ZombieKind[] = ['walker', 'runner', 'plated', 'bloater', 'brute'];
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
 const f = (x: number, d = 0) => (Number.isFinite(x) ? x.toFixed(d) : '-');
 const many = (s: Omit<FortSetup, 'seed' | 'night'>, nights = NIGHTS) => nights.flatMap((night) => seeds.map((seed) => playFort({ ...s, night, seed })));
-/** A night's upkeep for a tended turret: every round it fired refilled at full price, and its wear mended. */
-const upkeepOf = (r: FortRun, kind: TurretKind, lv: number) => r.rounds * turretDef(kind, lv).scrapPerRound + r.repairScrap;
+/** A night's upkeep for a tended turret: its wear mended (refills are free). */
+const upkeepOf = (r: FortRun, _kind: TurretKind, _lv: number) => r.repairScrap;
 
 console.log(`Turrets against the night's own mix, nights ${NIGHTS.join(',')}, seeds ${seeds.join(',')}, 90 s, tended (value a scrap over ${NIGHTS_LIFE} nights)`);
-console.log('turret    | lv | price | harm/s | kills | ammo+mend/night | income/night | value/scrap | step value/scrap | 2nd copy');
+console.log('turret    | lv | price | harm/s | kills |    mend/night | income/night | value/scrap | step value/scrap | 2nd copy');
 const vps = new Map<string, number>();
 const perKind = new Map<string, number[]>();
 for (const kind of TURRET_KINDS) {
@@ -78,16 +78,14 @@ console.log(`\nUtilities, nights ${NIGHTS.join(',')}`);
 const sp = many({ spikes: true });
 const strips = 2 * 4 + 1;
 console.log(`spike strips (a row of ${strips}, ${strips * BUILDINGS.spikes.cost} scrap): harm ${f(mean(sp.map((r) => r.harm)))} in 90 s, ${f(mean(sp.map((r) => r.harm)) / (strips * BUILDINGS.spikes.cost), 1)} a scrap (strips are used up)`);
-const fed = [{ kind: 'sentry' as const, lv: 1 }, { kind: 'sentry' as const, lv: 1 }, { kind: 'sentry' as const, lv: 1 }, { kind: 'cannon' as const, lv: 1 }];
-const dry = many({ turrets: fed, tend: false });
+const fed = [{ kind: 'sentry' as const, lv: 1 }, { kind: 'sentry' as const, lv: 1 }];
+const plain = mean(many({ turrets: fed, tend: true }).map((r) => r.income));
 for (let lv = 1; lv <= 3; lv++) {
-  const dep = many({ turrets: fed, tend: false, depot: lv });
-  const gain = mean(dep.map((r) => r.harm)) - mean(dry.map((r) => r.harm)), price = investedOf('depot', lv), upkeep = mean(dep.map((r) => r.ammoScrap));
-  console.log(`depot ${lv}: three unattended sentries and a cannon take off ${f(gain)} more in 90 s (ammo ${f(upkeep)} scrap at ${UTILITY.depot.scrapShare * 100}%), value a scrap ${f(valuePerScrap(gain, price, upkeep), 1)}`);
+  const extra = mean(many({ turrets: fed, tend: true, salvage: lv }).map((r) => r.income)) - plain, price = investedOf('salvage', lv);
+  console.log(`salvage yard ${lv} (+${f(salvageBonusOf(lv) * 100)}%, ${f(reachAt(UTILITY.salvage.reach, lv))} px): two tended sentries' kills pay ${f(plain)} + ${f(extra)} in 90 s; pays back its ${price} in ${f(price / extra, 1)} such nights`);
 }
 for (let lv = 1; lv <= 3; lv++) {
   const ps = many({ turrets: [{ kind: 'sentry', lv: 1 }], tend: true, southTier: 1, post: lv });
-  const saved = mean(ps.map((r) => r.mendedScrap)), price = investedOf('post', lv);
-  console.log(`post ${lv}: mends ${f(mean(ps.map((r) => r.mended)))} hp of barricades and turret in 90 s, ${f(saved, 1)} scrap of mending; pays back its ${price} in ${f(price / saved, 1)} nights`);
+  const saved = mean(ps.map((r) => r.mendedScrap));
+  console.log(`medic post ${lv}: heals ${f(UTILITY.post.playerHp * auraOf(lv), 1)} hp/s, revives in ${f(ZOM.reviveMs / 1000 / (UTILITY.post.revive * auraOf(lv)), 1)} s, mends ${f(mean(ps.map((r) => r.mended)))} hp of barricades and turret in 90 s (${f(saved, 1)} scrap of mending)`);
 }
-void ZOM;

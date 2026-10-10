@@ -4,7 +4,7 @@ import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
 import { buildingView, buildRefusal, buildsNow, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
-import { tickBurns, tickTraps, tickUtilities, tickVents, trapWatch } from './utility.ts';
+import { medicReviveAt, salvageAt, tickBurns, tickTraps, tickUtilities, tickVents, trapWatch } from './utility.ts';
 import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { tickDowned } from './downed.ts';
@@ -25,11 +25,11 @@ function statsFor(run: Run, p: Player): RunStats {
 }
 
 function tickSquadmate(w: World, run: Run, p: Player, dtMs: number, revivers: Set<Player>) {
-  const outcome = tickDowned(w, p, dtMs, revivers);
+  const outcome = tickDowned(w, p, dtMs, revivers, p.life.k === 'downed' ? medicReviveAt(w, p.x, p.y) : 0);
   if (outcome === 'bledOut') {
     p.life = { k: 'dead', respawnAt: w.now + ZOM.reinforce.ms };
     p.deaths++;
-  } else if (outcome) statsFor(run, outcome).revives++;
+  } else if (outcome && outcome !== 'post') statsFor(run, outcome).revives++;
 }
 
 function service(w: World, run: Run, p: Player, dtMs: number) {
@@ -46,11 +46,11 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
   };
   if (target.on === 'core') { mend(run.core, ZOM.coreHp, ZOM.coreRepairScrapPerHp); return; }
   const b = target.on.b;
-  if (target.job === 'repair' || !('ammo' in b)) { mend(b, maxHpOf(b.kind, levelOf(b)), repairScrapPerHp(b.kind, levelOf(b)), b.kind === 'wall' ? wallTier(levelOf(b)).repairMul : 1); return; }
+  // With the bank empty a worn turret is reloaded instead, since mending costs scrap and a reload does not.
+  if (!('ammo' in b) || (target.job === 'repair' && run.scrap > 0)) { mend(b, maxHpOf(b.kind, levelOf(b)), repairScrapPerHp(b.kind, levelOf(b)), b.kind === 'wall' ? wallTier(levelOf(b)).repairMul : 1); return; }
   const def = turretDef(b.kind, levelOf(b));
-  const rounds = Math.min((def.ammo * hands * dtMs) / ZOM.refillMs, def.ammo - b.ammo, run.scrap / def.scrapPerRound);
-  b.ammo += rounds;
-  run.scrap -= rounds * def.scrapPerRound;
+  // Refilling is free, so a squad never weighs a turret's load against its bank: only the time it takes.
+  b.ammo += Math.min((def.ammo * hands * dtMs) / ZOM.refillMs, def.ammo - b.ammo);
 }
 
 function reinforce(w: World, run: Run) {
@@ -97,7 +97,7 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
   if (kind === 'spikes') w.floor.push({ ...at, kind });
   else if (kind === 'vent') w.floor.push({ ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0, flareUntil: 0 });
   else {
-    w.buildings.push(kind === 'wall' || kind === 'depot' || kind === 'post' || kind === 'decoy' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0 });
+    w.buildings.push(kind === 'wall' || kind === 'salvage' || kind === 'post' || kind === 'decoy' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0 });
     w.buildingsVersion++;
   }
   statsFor(run, p).built++;
@@ -178,7 +178,11 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   w.zombies = w.zombies.filter((o) => o !== z);
   // A player's own kill pays the bounty of the gun in their hand (`zombieBounty`): a gun slow to kill the horde pays more for each.
   const by = shooter ? null : attacker;
-  const scrap = Math.round(def.scrap * (by ? zombieBounty(by.gun) : 1) * 100) / 100;
+  const base = def.scrap * (by ? zombieBounty(by.gun) : 1);
+  // A kill in a salvage yard's reach pays the best yard's bonus on top, whoever made it; the yard says what it paid once a second (tickUtilities).
+  const yard = salvageAt(w, z.x, z.y);
+  const scrap = Math.round(base * (1 + (yard?.bonus ?? 0)) * 100) / 100;
+  if (yard) (run.salvaged ??= new Map()).set(yard.yard.id, (run.salvaged.get(yard.yard.id) ?? 0) + base * yard.bonus);
   run.scrap += scrap;
   w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: by?.id ?? null, scrap });
   if (shooter === 'bastion') run.bastionKills++;
@@ -256,6 +260,14 @@ function placeAtCore(w: World, p: Player) {
  */
 function dawn(w: World, run: Run) {
   run.scrap += run.survivors * ZOM.scrapPerSurvivor;
+  // Every turret and flame vent is restocked to a full load, free, so ammo is a night's worry and never a building's job.
+  let restocked = 0;
+  for (const t of [...w.buildings, ...w.floor]) {
+    if (!('ammo' in t)) continue;
+    const full = turretDef(t.kind, levelOf(t)).ammo;
+    if (t.ammo < full) { t.ammo = full; restocked++; }
+  }
+  if (restocked) run.restocked = restocked;
   run.night++;
   run.phase = { k: 'day', endsAt: w.now + ZOM.dayMs };
   for (const p of w.players.values()) {
@@ -320,6 +332,7 @@ export function tickRun(w: World, dtMs: number) {
         run.phase = { k: 'night', toSpawn: hordeOf(w, run.night, run.share), nextSpawnAt: w.now, dawnAt: Infinity };
         run.ready.clear();
         run.lost = 0;
+        delete run.restocked;
       }
       break;
     case 'night':

@@ -1,4 +1,4 @@
-import { BUILDINGS, isFloorKind, MAX_LEVEL, UPGRADE, WALL_TIERS, ZOM, zombieRole, type BuildingKind, type GunId, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
+import { BUILDINGS, isFloorKind, MAX_LEVEL, UPGRADE, UTILITY, WALL_TIERS, ZOM, zombieRole, type BuildingKind, type GunId, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
 import type { BuildingView } from '../protocol.ts';
 import { circleHitsRect, dist2, rectsOverlap, type Rect } from './movement.ts';
 import type { Building, FloorItem } from './world.ts';
@@ -53,9 +53,9 @@ export function turretDef(kind: TurretKind, lv = 1): TurretDef {
       // A scatter buys time, not kills: a level makes its pellets grip and shove harder, not hit harder.
       ...base, damage: base.damage * (base.hold ? 1 : UPGRADE.damage[i]!), fireMs: base.fireMs * UPGRADE.fireMs[i]!, range: Math.round(base.range * UPGRADE.range[i]!), ammo: Math.round(base.ammo * UPGRADE.ammo[i]!),
       lobbed: base.lobbed && { radius: Math.round(base.lobbed.radius * UPGRADE.range[i]!), damage: base.lobbed.damage * UPGRADE.damage[i]! },
-      // A scatter's hold grips harder and shoves farther, and a coil's arc leaps to one more zombie and marks for longer, at each level.
+      // A scatter's hold grips harder and shoves farther, and a coil's arc leaps to two more zombies and marks for longer, at each level.
       ...(base.hold && { hold: { ...base.hold, mul: base.hold.mul / UPGRADE.damage[i]! ** 2, shove: base.hold.shove * UPGRADE.damage[i]!, shoveCap: base.hold.shoveCap * UPGRADE.damage[i]! } }),
-      ...(base.arc && { arc: { ...base.arc, jumps: base.arc.jumps + i } }),
+      ...(base.arc && { arc: { ...base.arc, jumps: base.arc.jumps + 2 * i } }),
       ...(base.mark && { mark: { ...base.mark, markMs: base.mark.markMs * UPGRADE.damage[i]! } }),
     });
   }
@@ -64,6 +64,8 @@ export function turretDef(kind: TurretKind, lv = 1): TurretDef {
 /** A utility's work rate and reach at `lv`. */
 export const auraOf = (lv: number) => UPGRADE.aura[Math.min(Math.max(1, lv), MAX_LEVEL) - 1]!;
 export const reachAt = (reach: number, lv: number) => reach * UPGRADE.reach[Math.min(Math.max(1, lv), MAX_LEVEL) - 1]!;
+/** The share more scrap a salvage yard at `lv` pays for a kill in its reach. */
+export const salvageBonusOf = (lv: number) => UTILITY.salvage.bonus[Math.min(Math.max(1, lv), MAX_LEVEL) - 1]!;
 
 type Pose = { x: number; y: number };
 

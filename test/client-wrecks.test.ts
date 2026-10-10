@@ -26,7 +26,7 @@ function fakeCanvas() {
 
 const run = (phase: RunView['phase']) => ({ phase } as RunView);
 const snap = (phase: RunView['phase'], buildings: BuildingView[], events: GameEvent[] = []) => ({ run: run(phase), buildings, events } as Pick<Snapshot, 'run' | 'buildings' | 'events'>);
-const b = (kind: BuildingKind, cx: number, cy: number, hp = 1): BuildingView => ({ kind, cx, cy, hp, ...(kind !== 'wall' && kind !== 'depot' && kind !== 'post' && kind !== 'spikes' && { ammo: 5 }) }) as BuildingView;
+const b = (kind: BuildingKind, cx: number, cy: number, hp = 1): BuildingView => ({ kind, cx, cy, hp, ...(kind !== 'wall' && kind !== 'salvage' && kind !== 'post' && kind !== 'spikes' && { ammo: 5 }) }) as BuildingView;
 const boomAt = (cx: number, cy: number): GameEvent => ({ e: 'boom', x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell, r: ZOM.cell / 2 }) as GameEvent;
 const view = { x0: -1e6, y0: -1e6, x1: 1e6, y1: 1e6 };
 
@@ -37,9 +37,9 @@ test('each health band maps to its state: sound over half, worn at half, badly d
 });
 
 test('a building the horde brings down leaves a wreck; one demolished by day, or a spike strip worn away, leaves none', () => {
-  const before = [b('sentry', 3, 3), b('wall', 4, 4), b('depot', 5, 5), b('spikes', 6, 6)];
+  const before = [b('sentry', 3, 3), b('wall', 4, 4), b('salvage', 5, 5), b('spikes', 6, 6)];
   const night = noteWrecks([], snap('night', before), snap('night', []), 1000);
-  assert.deepEqual(night.map((w) => [w.kind, w.cx, w.cy, w.born]).sort(), [['depot', 5, 5, 1000], ['sentry', 3, 3, 1000], ['wall', 4, 4, 1000]]);
+  assert.deepEqual(night.map((w) => [w.kind, w.cx, w.cy, w.born]).sort(), [['salvage', 5, 5, 1000], ['sentry', 3, 3, 1000], ['wall', 4, 4, 1000]]);
   assert.deepEqual(noteWrecks([], snap('day', before), snap('day', []), 1000), [], 'demolished by day');
   // A building blown up with the sim's boom on its cell is a wreck whatever the phase (the night's last tick may land at dawn).
   const blown = noteWrecks([], snap('night', [b('cannon', 3, 3, 1)]), snap('day', [], [boomAt(3, 3)]), 1000);
@@ -78,7 +78,7 @@ test('a wreck smokes thick, thins over 20 to 30 s, then lies cold', () => {
 test('damage-state art is baked once per state: steady frames, worn and wrecked bases and wrecks paint nothing new', () => {
   const { ctx } = fakeCanvas();
   const all: BuildingView[] = [];
-  for (const kind of [...TURRET_KINDS, 'depot', 'post'] as const) for (const hp of [10, 5, 2]) all.push(b(kind, all.length, 0, hp));
+  for (const kind of [...TURRET_KINDS, 'salvage', 'post'] as const) for (const hp of [10, 5, 2]) all.push(b(kind, all.length, 0, hp));
   const list = noteWrecks([], snap('night', all.map((x, i) => ({ ...x, cx: i, cy: 9 }))), snap('night', []), 0);
   const frame = (now: number) => {
     drawSiegeTops(ctx, all, new Map(), new Map(), { x: 0, y: 0 }, now, 2);

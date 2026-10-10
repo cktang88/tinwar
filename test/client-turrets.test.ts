@@ -50,7 +50,7 @@ test('the placement ghost of a turret shows its first level\'s ring; a wall, a u
     // A refused cell still shows the reach, so the player sees what the gun would cover there.
     assert.equal(rangeRings({ ...none, ghost: ghost(kind, 12, 14, 'outOfReach') })[0]?.r, turretDef(kind, 1).range);
   }
-  for (const kind of ['wall', 'depot', 'post', 'spikes', 'decoy', 'vent'] as const) assert.deepEqual(rangeRings({ ...none, ghost: ghost(kind, 12, 14) }), []);
+  for (const kind of ['wall', 'salvage', 'post', 'spikes', 'decoy', 'vent'] as const) assert.deepEqual(rangeRings({ ...none, ghost: ghost(kind, 12, 14) }), []);
   assert.deepEqual(rangeRings({ ...none, ghost: { ...ghost('sentry', 12, 14), line: [{ cx: 12, cy: 14, refusal: null }] } }), []);
 });
 
@@ -73,7 +73,7 @@ test('a built turret under the ghost or the cursor shows its own ring and, by da
 });
 
 test('at night with the setting on every turret gets a faint ring of its true range, and the focused one is not doubled', () => {
-  const list = [built('sentry', 1, 10, 10), built('mortar', 3, 14, 10), { kind: 'depot', cx: 12, cy: 12, hp: 10 } as BuildingView];
+  const list = [built('sentry', 1, 10, 10), built('mortar', 3, 14, 10), { kind: 'salvage', cx: 12, cy: 12, hp: 10 } as BuildingView];
   const rings = rangeRings({ ...none, day: false, buildings: list, squad: true });
   assert.deepEqual(rings.map((r) => [r.role, r.kind, r.r]), [['squad', 'sentry', turretDef('sentry', 1).range], ['squad', 'mortar', turretDef('mortar', 3).range]]);
   const focused = rangeRings({ ...none, day: false, buildings: list, squad: true, ghost: ghost('wall', 10, 10, 'taken') });
@@ -172,7 +172,7 @@ test('a shot kicks the gun back at once and eases it home; wear shows in three s
   assert.ok(kickOf('cannon', 0) > kickOf('sentry', 0), 'the cannon kicks hardest');
   assert.deepEqual([10, 6, 5, 4, 3, 2, 1].map(wearStage), [0, 0, 1, 1, 2, 2, 2]);
   assert.equal(onPad({ kind: 'sentry', cx: 0, cy: 0, hp: 10, ammo: 10 } as BuildingView), false);
-  assert.equal(onPad({ kind: 'depot', cx: 0, cy: 0, hp: 10 } as BuildingView), true);
+  assert.equal(onPad({ kind: 'salvage', cx: 0, cy: 0, hp: 10 } as BuildingView), true);
   assert.equal(onPad({ kind: 'spikes', cx: 0, cy: 0, hp: 10 } as BuildingView), false);
 });
 

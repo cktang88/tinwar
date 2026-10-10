@@ -79,7 +79,7 @@ test('the ghost judges each kind as the server would build it, and names what it
 
 test('in build mode 1 to 9, 0 and minus pick wall, the turrets and the utilities, and the hint bar lists them by category with their costs', () => {
   assert.deepEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'KeyB'].map(buildKindForKey),
-    ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes', 'vent', 'decoy', null]);
+    ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'salvage', 'post', 'spikes', 'vent', 'decoy', null]);
   const rows = buildRows();
   assert.deepEqual(rows.map((r) => r.label), ['WALLS', 'TURRETS', 'UTILITY']);
   assert.deepEqual(rows[0]!.chips.map((c) => [c.key, c.what, c.pick]), WALL_TIERS.map((t, i) => [['I', 'II', 'III'][i], `${t.name} ${t.cost}`, { kind: 'wall', lv: i + 1 }]));
@@ -88,11 +88,11 @@ test('in build mode 1 to 9, 0 and minus pick wall, the turrets and the utilities
     ['5', `Mortar ${BUILDINGS.mortar.cost}`, { kind: 'mortar' }], ['6', `Tesla coil ${BUILDINGS.tesla.cost}`, { kind: 'tesla' }], ['0', `Flame vent ${BUILDINGS.vent.cost}`, { kind: 'vent' }],
   ]);
   assert.deepEqual(rows[2]!.chips.map((c) => [c.key, c.what, c.pick]), [
-    ['7', `Ammo depot ${BUILDINGS.depot.cost}`, { kind: 'depot' }], ['8', `Repair post ${BUILDINGS.post.cost}`, { kind: 'post' }], ['9', `Spike strip ${BUILDINGS.spikes.cost}`, { kind: 'spikes' }],
+    ['7', `Salvage yard ${BUILDINGS.salvage.cost}`, { kind: 'salvage' }], ['8', `Medic post ${BUILDINGS.post.cost}`, { kind: 'post' }], ['9', `Spike strip ${BUILDINGS.spikes.cost}`, { kind: 'spikes' }],
     ['-', `Decoy beacon ${BUILDINGS.decoy.cost}`, { kind: 'decoy' }],
   ]);
   // Every price sits in one tight band, so nothing goes unbuilt for its price.
-  for (const kind of ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent', 'depot', 'post', 'decoy'] as const) assert.ok(BUILDINGS[kind].cost >= 50 && BUILDINGS[kind].cost <= 150, kind);
+  for (const kind of ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent', 'salvage', 'post', 'decoy'] as const) assert.ok(BUILDINGS[kind].cost >= 50 && BUILDINGS[kind].cost <= 150, kind);
   assert.ok(BUILD_CONTROLS.some((c) => c.key === 'U' && c.pick && 'upgrade' in c.pick), 'the controls row has the upgrade chip');
 });
 
@@ -382,13 +382,15 @@ test('by night a pistol holder\'s preview, U target and build gate open, and clo
 
 test('the hover names the next level and what it brings in round steps against the first level, and a wall tier in health and bite damage', () => {
   assert.equal(upgradeGains('sentry', 1), 'Sentry II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
-  assert.equal(upgradeGains('tesla', 2), 'Tesla coil III: 2× dmg · +2 jumps · 1.5× rate · +20% range · 2× ammo · 3× hp');
+  assert.equal(upgradeGains('tesla', 2), 'Tesla coil III: 2× dmg · +4 jumps · 1.5× rate · +20% range · 2× ammo · 3× hp');
   assert.equal(upgradeGains('cannon', 1), 'Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
   assert.equal(upgradeGains('scatter', 1), 'Scatter II: 1.5× shove · 1.25× rate · +10% range · 1.5× ammo · 2× hp', 'a scatter grips harder, not hits harder');
   assert.equal(upgradeGains('vent', 1), 'Flame vent II: 1.5× burn · 1.25× rate · 1.5× fuel · 2× hp');
   assert.equal(upgradeGains('decoy', 2), 'Decoy beacon III: +50% pull reach · 3× hp');
-  assert.equal(upgradeGains('depot', 1), 'Ammo depot II: 2× resupply · +25% reach · 2× hp');
-  assert.equal(upgradeGains('post', 2), 'Repair post III: 3× repair · +50% reach · 3× hp');
+  assert.equal(upgradeGains('salvage', 1), 'Salvage yard II: +75% scrap · +25% reach · 2× hp');
+  assert.equal(upgradeGains('salvage', 2), 'Salvage yard III: +100% scrap · +50% reach · 3× hp');
+  assert.equal(upgradeGains('post', 1), 'Medic post II: 1.5× heal · 1.5× revive · +25% reach · 2× hp');
+  assert.equal(upgradeGains('post', 2), 'Medic post III: 2× heal · 2× revive · +50% reach · 3× hp');
   assert.equal(upgradeGains('wall', 1), 'Sandbag wall: 3× hp · takes 10% less bite damage');
   assert.equal(upgradeGains('wall', 2), 'Steel wall: 6× hp · takes 20% less bite damage');
   for (const kind of BUILDING_KINDS) assert.equal(upgradeGains(kind, 3), '', `${kind} at the top has nothing next`);

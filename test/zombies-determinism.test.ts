@@ -21,7 +21,7 @@ function replay(seed: number): { hash: string; nights: number; walls: number } {
   for (let tick = 0; tick < 6000 && w.run!.phase.k !== 'over'; tick++) {
     thinkBots(w, bots, r, { respawn: false });
     const me = w.players.get(builder)!;
-    // Every kind and wall tier goes up, and anything standing is upgraded, so tiers, levels, strips, depots, posts and coils are all in the hash.
+    // Every kind and wall tier goes up, and anything standing is upgraded, so tiers, levels, strips, yards, posts and coils are all in the hash.
     if (tick % 15 === 0) {
       const n = tick / 15, cx = Math.floor(me.x / ZOM.cell) + 2, cy = Math.floor(me.y / ZOM.cell) + (tick % 4) - 2;
       build(w, builder, BUILDING_KINDS[n % BUILDING_KINDS.length]!, cx, cy, 1 + (n % 3));

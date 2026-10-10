@@ -21,10 +21,10 @@ export type FortSetup = {
   /** The ring's south face at this wall tier with its real health; otherwise the whole ring stands unbreakable. */
   southTier?: number;
   /** A utility one cell further in, behind the turrets. */
-  depot?: number; post?: number;
+  salvage?: number; post?: number;
   /** A row of spike strips laid along the outside of the south face. */
   spikes?: boolean;
-  /** Whether a dry turret is refilled (after `TEND_MS`), as a squad does; without it only a depot refills it. */
+  /** Whether a dry turret is refilled (after `TEND_MS`, free), as a squad does; without it a turret run dry stays dry. */
   tend?: boolean;
   /** Keep streaming zombies while fewer than this are alive. */
   alive?: number;
@@ -36,8 +36,8 @@ export type FortSetup = {
 export type FortRun = {
   /** Health the horde lost in all, and its kills. */
   harm: number; kills: number; byKind: Record<ZombieKind, number>;
-  /** Rounds the turrets fired, the scrap the refills cost (a depot's at its share) and the scrap mending the turrets' wear would cost; a turret lost is its whole price. */
-  rounds: number; ammoScrap: number; /** The scrap the kills paid into the bank. */ income: number; repairScrap: number; turretsLost: number;
+  /** Rounds the turrets fired (refills are free) and the scrap mending the turrets' wear would cost; a turret lost is its whole price. */
+  rounds: number; /** The scrap the kills paid into the bank, a salvage yard's bonus included. */ income: number; repairScrap: number; turretsLost: number;
   /** What the horde took off the south face, before its armor, the scrap mending it would cost, and the first second a wall of it fell (null if none did). */
   wallBitten: number; wallRepairScrap: number; breachSec: number | null;
   /** Health a repair post gave back to the buildings, and what mending that by hand would have cost. */
@@ -93,7 +93,7 @@ export function playFort(s: FortSetup): FortRun {
     return b;
   });
   if (s.decoy) w.buildings.push({ id: newId(w), kind: 'decoy', cx: c, cy: c + RING + 4, hp: maxHpOf('decoy', s.decoy), ...(s.decoy > 1 && { lv: s.decoy }) });
-  if (s.depot) w.buildings.push({ id: newId(w), kind: 'depot', cx: c - 1, cy: c + RING - 2, hp: maxHpOf('depot', s.depot), ...(s.depot > 1 && { lv: s.depot }) });
+  if (s.salvage) w.buildings.push({ id: newId(w), kind: 'salvage', cx: c - 1, cy: c + RING - 2, hp: maxHpOf('salvage', s.salvage), ...(s.salvage > 1 && { lv: s.salvage }) });
   const post = s.post ? { id: newId(w), kind: 'post' as const, cx: c + 1, cy: c + RING - 2, hp: maxHpOf('post', s.post), ...(s.post > 1 && { lv: s.post }) } : null;
   if (post) w.buildings.push(post);
   if (s.spikes) for (let cx = c - RING; cx <= c + RING; cx++) if (free(cx, c + RING + 1)) w.floor.push({ id: newId(w), kind: 'spikes', cx, cy: c + RING + 1, hp: maxHpOf('spikes') });
@@ -118,7 +118,7 @@ export function playFort(s: FortSetup): FortRun {
 
   const byKind = Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>;
   const out: FortRun = {
-    harm: 0, kills: 0, byKind, rounds: 0, ammoScrap: 0, income: 0, repairScrap: 0, turretsLost: 0, wallBitten: 0, wallRepairScrap: 0, breachSec: null, mended: 0, mendedScrap: 0,
+    harm: 0, kills: 0, byKind, rounds: 0, income: 0, repairScrap: 0, turretsLost: 0, wallBitten: 0, wallRepairScrap: 0, breachSec: null, mended: 0, mendedScrap: 0,
     timeBought: 0, marked: 0, farHarm: 0, seconds: ms / 1000,
   };
   const dryAt = new Map<Turret | Vent, number>();
@@ -148,13 +148,10 @@ export function playFort(s: FortSetup): FortRun {
       if ((z.mark ?? 0) > w.now) out.marked += dt;
     }
     const ammo = turrets.map((b) => b.ammo), hp = turrets.map((b) => b.hp), wallHp = south.map((b) => b.hp), postHp = w.buildings.filter((b) => b !== post).map((b) => [b, b.hp] as const);
-    const scrapWas = run.scrap;
     step(w, TICK_MS);
     let paid = 0;
     for (const e of w.events) if (e.e === 'zkill') { out.kills++; byKind[e.kind]++; paid += e.scrap ?? 0; }
     out.income += paid;
-    // The bank fell by what a depot charged and rose by what the kills paid.
-    out.ammoScrap += scrapWas - run.scrap + paid;
     for (const [z, was] of hpOf) {
       const lost = w.zombies.includes(z) ? Math.max(0, was - z.hp) : Math.max(0, was);
       out.harm += lost;
@@ -172,7 +169,7 @@ export function playFort(s: FortSetup): FortRun {
       if (b.hp < hp[i]!) out.repairScrap += (hp[i]! - b.hp) * repairScrapPerHp(b.kind, lv);
       if (s.tend && b.ammo < 1) {
         if (!dryAt.has(b)) dryAt.set(b, w.now);
-        else if (w.now - dryAt.get(b)! >= TEND_MS) { out.ammoScrap += (tdef.ammo - b.ammo) * tdef.scrapPerRound; b.ammo = tdef.ammo; dryAt.delete(b); }
+        else if (w.now - dryAt.get(b)! >= TEND_MS) { b.ammo = tdef.ammo; dryAt.delete(b); }
       }
     });
     south.forEach((b, i) => {
@@ -191,11 +188,11 @@ export function playFort(s: FortSetup): FortRun {
 }
 
 /** The scrap a building stands for: its price and every step up. */
-export const priceOf = (kind: TurretKind | 'depot' | 'post' | 'spikes' | 'decoy', lv: number) => investedOf(kind, lv);
+export const priceOf = (kind: TurretKind | 'salvage' | 'post' | 'spikes' | 'decoy', lv: number) => investedOf(kind, lv);
 export const NIGHTS_LIFE = 3;
 /**
  * Value a scrap: what a building does (the horde's health it takes off, or the bites it saves the wall, or the walk it costs the horde) over `NIGHTS_LIFE` nights
- * like this one, over its price plus that many nights' upkeep (ammo and mending).
+ * like this one, over its price plus that many nights' upkeep (mending: ammo is free).
  */
 export const valuePerScrap = (harm: number, price: number, upkeep: number) => (NIGHTS_LIFE * harm) / (price + NIGHTS_LIFE * upkeep);
 export { BUILDINGS };
@@ -203,7 +200,7 @@ export { BUILDINGS };
 /** The axes a buildable is judged on, each higher-is-better (see `buildMatrix`). */
 export const AXES = [
   'vsWalker', 'vsRunner', 'vsPlated', 'vsBloater', 'vsBrute', 'vsHeavy', 'vsMix', 'range', 'farHarm', 'pierce', 'timeBought', 'wallSaved', 'gunBoost', 'chokepoint', 'aggroPull',
-  'cheap', 'hpPerScrap', 'burstHpPerScrap', 'hpPerCell', 'mendSpeed', 'harmPerUpkeep', 'resupply', 'mending', 'slow',
+  'cheap', 'hpPerScrap', 'burstHpPerScrap', 'hpPerCell', 'mendSpeed', 'harmPerRepair', 'scrapReturn', 'squadSustain', 'slow',
 ] as const;
 export type Axis = (typeof AXES)[number];
 export type Group = 'turret' | 'wall' | 'utility';
@@ -226,8 +223,9 @@ export type Metric = 'harm' | 'timeBought' | 'marked' | 'farHarm';
  * - `chokepoint`: the horde health it takes off a scrap with a one-cell gap left in the south face (`FortSetup.gap`), every zombie through it to the core and round again.
  * - `aggroPull`: how far a decoy draws the horde.
  * - `cheap` (one over its price); `hpPerScrap`, `burstHpPerScrap` and `hpPerCell`: its health against bites (a wall's armor counted) and against a bloater's burst (a wall's `blast`), a scrap and in its one cell;
- *   `mendSpeed`: how fast holding use mends it; `harmPerUpkeep`: the harm it does a scrap of ammo and mending.
- * - What a utility does that nothing else does: a depot's `resupply` (share of a load a second), a post's `mending` (health a second) and spikes' `slow`.
+ *   `mendSpeed`: how fast holding use mends it; `harmPerRepair`: the harm it does a scrap of mending (ammo is free).
+ * - What a utility does that nothing else does: a salvage yard's `scrapReturn` (the extra scrap its kills pay over `NIGHTS_LIFE` nights, a scrap of its price, beside two tended
+ *   sentries), a medic post's `squadSustain` (health a second it gives the squad: its healing, and a revive's worth of health at its revive pace) and spikes' `slow`.
  */
 export const GUN_DPS = 60;
 export function buildMatrix({ seeds = [1], nights = [3, 5, 7], kindNight = 5, ms = 90_000 } = {}): MatrixRow[] {
@@ -238,7 +236,7 @@ export function buildMatrix({ seeds = [1], nights = [3, 5, 7], kindNight = 5, ms
   const bare = mean(runs({ southTier: 3, tend: true }, nights).map((r) => r.wallBitten)) * scale;
   for (const kind of TURRET_KINDS) {
     const def = turretDef(kind, 1), price = investedOf(kind, 1), at = zeroAxes();
-    const upkeepOf = (r: FortRun) => r.rounds * def.scrapPerRound + r.repairScrap;
+    const upkeepOf = (r: FortRun) => r.repairScrap;
     const judge = (rs: FortRun[], what: (r: FortRun) => number = (r) => r.harm) => {
       const harm = mean(rs.map(what)) * scale, upkeep = mean(rs.map(upkeepOf)) * scale;
       return { harm, upkeep, value: valuePerScrap(harm, price, upkeep) };
@@ -247,7 +245,7 @@ export function buildMatrix({ seeds = [1], nights = [3, 5, 7], kindNight = 5, ms
     const mixRuns = runs({ turrets, tend: true }, nights);
     const mix = judge(mixRuns);
     at.vsMix = mix.value;
-    at.harmPerUpkeep = mix.harm / Math.max(1, mix.upkeep);
+    at.harmPerRepair = mix.harm / Math.max(1, mix.upkeep);
 
     at.timeBought = judge(mixRuns, (r) => r.timeBought).value;
     at.gunBoost = judge(mixRuns, (r) => r.marked * GUN_DPS * (MARK.gunMul - 1)).value;
@@ -271,11 +269,14 @@ export function buildMatrix({ seeds = [1], nights = [3, 5, 7], kindNight = 5, ms
     Object.assign(at, { cheap: 1 / t.cost, hpPerScrap: ehp / t.cost, burstHpPerScrap: t.hp / t.blast / t.cost, hpPerCell: ehp, mendSpeed: t.repairMul });
     rows.push({ name: t.name, group: 'wall', price: investedOf('wall', i + 1), at });
   }
-  for (const kind of ['depot', 'post', 'decoy'] as const) {
+  // What two tended sentries' kills pay with nothing else there, to measure what a yard adds.
+  const pair = [{ kind: 'sentry' as const, lv: 1 }, { kind: 'sentry' as const, lv: 1 }];
+  const plainIncome = mean(runs({ turrets: pair, tend: true }, nights).map((r) => r.income)) * scale;
+  for (const kind of ['salvage', 'post', 'decoy'] as const) {
     const price = BUILDINGS[kind].cost, hp = maxHpOf(kind, 1), at = zeroAxes();
     Object.assign(at, { cheap: 1 / price, hpPerScrap: hp / price, burstHpPerScrap: hp / price, hpPerCell: hp, mendSpeed: 1 });
-    if (kind === 'depot') at.resupply = UTILITY.depot.ammoPerSec;
-    else if (kind === 'post') at.mending = UTILITY.post.buildingHp;
+    if (kind === 'salvage') at.scrapReturn = (NIGHTS_LIFE * (mean(runs({ turrets: pair, tend: true, salvage: 1 }, nights).map((r) => r.income)) * scale - plainIncome)) / price;
+    else if (kind === 'post') at.squadSustain = UTILITY.post.playerHp + (UTILITY.post.revive * ZOM.reviveHpFrac * 100) / (ZOM.reviveMs / 1000);
     else {
       at.aggroPull = reachAt(UTILITY.decoy.reach, 1);
       // A decoy is not mended in the lane: what it spares the wall is all it gives, against its price alone.
@@ -287,7 +288,7 @@ export function buildMatrix({ seeds = [1], nights = [3, 5, 7], kindNight = 5, ms
   const laid = 2 * RING + 1, spikePrice = BUILDINGS.spikes.cost;
   const at = zeroAxes();
   at.vsMix = mean(strips.map((r) => r.harm)) * scale / (laid * spikePrice);
-  at.harmPerUpkeep = at.vsMix;
+  at.harmPerRepair = at.vsMix;
   Object.assign(at, { cheap: 1 / spikePrice, hpPerScrap: maxHpOf('spikes', 1) / spikePrice, hpPerCell: maxHpOf('spikes', 1), slow: 1 - UTILITY.spikes.slow });
   rows.push({ name: BUILDINGS.spikes.name, group: 'utility', price: spikePrice, at });
   return rows;
@@ -315,8 +316,7 @@ export type UpgradeRoi = { kind: TurretKind; copy: number; steps: [number, numbe
 export function upgradeRoi(kind: TurretKind, { seeds = [1], nights = [5], ms = 90_000, kinds = undefined as readonly ZombieKind[] | undefined, metric = 'harm' as Metric, gap = false } = {}): UpgradeRoi {
   const play = (turrets: { kind: TurretKind; lv: number }[]) => {
     const rs = nights.flatMap((night) => seeds.map((seed) => playFort({ night, seed, ms, turrets, tend: true, kinds, gap })));
-    const per = turretDef(kind, turrets[0]!.lv).scrapPerRound;
-    return { harm: mean(rs.map((r) => r[metric])) * (90_000 / ms), upkeep: mean(rs.map((r) => r.rounds * per + r.repairScrap)) * (90_000 / ms) };
+    return { harm: mean(rs.map((r) => r[metric])) * (90_000 / ms), upkeep: mean(rs.map((r) => r.repairScrap)) * (90_000 / ms) };
   };
   const one = play([{ kind, lv: 1 }]), two = play([{ kind, lv: 1 }, { kind, lv: 1 }]), l2 = play([{ kind, lv: 2 }]), l3 = play([{ kind, lv: 3 }]);
   const step = (from: typeof one, to: typeof one, cost: number) => valuePerScrap(to.harm - from.harm, cost, to.upkeep - from.upkeep);

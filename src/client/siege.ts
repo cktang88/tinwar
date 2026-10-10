@@ -1,6 +1,6 @@
-import { isFloorKind, isTurretKind, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
+import { isFloorKind, isTurretKind, UTILITY, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
-import { cellRect, coreRectAt, costOf, levelOf, maxLevelOf } from '../shared/sim/build.ts';
+import { cellRect, coreRectAt, costOf, levelOf, maxLevelOf, reachAt, salvageBonusOf } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 import { HIT_FLASH_MS } from './effects.ts';
 import { INK, PALETTE, tint } from './palette.ts';
@@ -19,7 +19,7 @@ import { drawRangeRings, rangeRings } from './turretrange.ts';
 
 const TAU = Math.PI * 2;
 
-/** What stands on a raised pad: walls (as their tier), depots and posts. A turret is an emplacement sandbagged straight onto the floor (turretart.ts), so it is no block. */
+/** What stands on a raised pad: walls (as their tier), salvage yards, medic posts and decoys. A turret is an emplacement sandbagged straight onto the floor (turretart.ts), so it is no block. */
 export const onPad = (b: BuildingView): boolean => standsUp(b) && !isTurretKind(b.kind);
 const R = WORLD.playerRadius;
 
@@ -90,67 +90,192 @@ function box3d(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
   ctx.strokeRect(x, y + h, w, depth);
 }
 
-/** An ammo depot: two olive ammo crates, one stacked on the other, with an orange band and a stencilled round on the front. Badly damaged, the top crate is knocked askew. */
-function drawDepot(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, wear: Wear = 0) {
-  box3d(ctx, cx - 17, cy - 7, 24, 14, 8, '#6c7356', '#4f5640');
-  ctx.fillStyle = '#e0661f';
-  ctx.fillRect(cx - 17, cy + 8, wear === 2 ? 9 : 24, 3);
-  if (wear === 2) ctx.fillRect(cx - 4, cy + 8, 7, 3);
-  ctx.save();
-  if (wear === 2) { ctx.translate(cx + 9, cy - 9); ctx.rotate(0.22); ctx.translate(-cx - 9 + 2, -cy + 9 + 1); }
-  box3d(ctx, cx + 1, cy - 15, 17, 11, 6, '#7a8262', '#59614a');
-  ctx.restore();
-  ctx.fillStyle = 'rgba(20, 22, 26, 0.75)';
+/**
+ * A salvage yard: a heap of the horde's leavings (rusted plate, a tyre, a plank, a bent pipe) on the pad, and a little yellow crane at its back corner
+ * swinging a round electromagnet on its cable over the heap. Level 2 adds a conveyor belt feeding the heap, level 3 a second, bigger magnet coil and a
+ * hazard band on the jib. Badly damaged, the jib sags and the magnet hangs on the heap.
+ */
+function drawSalvage(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, wear: Wear = 0) {
+  // The conveyor first, under the heap: a dark belt with rollers, running in from the front-left corner.
+  if (lv >= 2) {
+    box3d(ctx, cx - 20, cy + 4, 20, 6, 3, '#3a3f48', '#2a2e35');
+    ctx.fillStyle = '#7d8590';
+    for (let i = 0; i < 4; i++) ctx.fillRect(cx - 18 + i * 5, cy + 5, 1.6, 4);
+  }
+  // The heap: overlapping chunks, each ink-edged, the darkest at the back.
+  const chunk = (pts: number[], fill: string) => {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(cx + pts[0]!, cy + pts[1]!);
+    for (let i = 2; i < pts.length; i += 2) ctx.lineTo(cx + pts[i]!, cy + pts[i + 1]!);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  };
+  chunk([-16, 6, -12, -6, -4, -11, 6, -9, 12, 0, 10, 8, -2, 10], '#6b5a48');
+  chunk([-12, 4, -8, -3, 0, -5, 2, 3, -6, 7], '#9a5a32');
+  chunk([0, -2, 7, -7, 11, -1, 6, 5], '#7b8290');
+  // A tyre and a plank on the pile.
+  ctx.fillStyle = '#26282d';
   ctx.beginPath();
-  ctx.roundRect(cx - 7, cy - 4, 4, 9, 2);
+  ctx.ellipse(cx - 4, cy + 3, 5, 3.4, -0.3, 0, TAU);
   ctx.fill();
-  ctx.fillStyle = '#ffb347';
-  ctx.fillRect(cx - 7, cy + 1, 4, 4);
-  // More levels, more stock: a third crate, then a fourth on the ground by the stack.
-  if (lv >= 2) box3d(ctx, cx - 17, cy - 15, 14, 8, 4, '#7a8262', '#59614a');
-  if (lv >= 3) box3d(ctx, cx + 9, cy + 6, 12, 7, 4, '#6c7356', '#4f5640');
-}
-
-/** Where a post's lamp sits on its antenna, from the cell centre. */
-const postLamp = (lv: number) => ({ x: (22 + 2 * lv) / 2 - 5, y: -(16 + 2 * lv) / 2 - 13 });
-
-/** A repair post: a gunmetal locker with a green cross plate, an antenna and its lamp's housing (lit live, `drawPostLamp`), a bigger cross at each level. Badly damaged, the antenna is bent over. */
-function drawPost(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, wear: Wear = 0) {
-  const w = 22 + 2 * lv, h = 16 + 2 * lv;
-  box3d(ctx, cx - w / 2, cy - h / 2 - 3, w, h, 9, '#4f5560', '#383d46');
-  const fy = cy - h / 2 - 3 + h;
-  ctx.fillStyle = '#2f9e6f';
-  ctx.fillRect(cx - 6, fy + 1.2, 12, 6.6);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(cx - 1.2, fy + 1.8, 2.4, 5.4);
-  ctx.fillRect(cx - 3.2, fy + 3.4, 6.4, 2.4);
   ctx.strokeStyle = INK;
   ctx.lineWidth = 1.2;
-  ctx.strokeRect(cx - 6, fy + 1.2, 12, 6.6);
-  ctx.beginPath();
-  ctx.moveTo(cx + w / 2 - 5, cy - h / 2 - 3);
-  if (wear === 2) { ctx.lineTo(cx + w / 2 - 5, cy - h / 2 - 7); ctx.lineTo(cx + w / 2 + 2, cy - h / 2 - 9); }
-  else ctx.lineTo(cx + w / 2 - 5, cy - h / 2 - 12);
   ctx.stroke();
-  // The cross plate on top, white on green, lit when the post is in the middle of a mend.
+  ctx.fillStyle = '#4c4f56';
+  ctx.beginPath();
+  ctx.ellipse(cx - 4, cy + 3, 2, 1.3, -0.3, 0, TAU);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(cx + 3, cy + 5);
+  ctx.rotate(-0.35);
+  ctx.fillStyle = '#b48a55';
+  ctx.fillRect(-7, -1.6, 14, 3.2);
+  ctx.strokeStyle = INK;
+  ctx.strokeRect(-7, -1.6, 14, 3.2);
+  ctx.restore();
+  // The crane: a mast at the back right, a jib over the heap, the cable and the magnet.
+  const mx = cx + 14, my = cy - 2;
+  box3d(ctx, mx - 3.5, my - 2, 7, 7, 3, '#d9a520', '#9c7612');
+  const sag = wear === 2 ? 7 : 0;
+  const tip = { x: cx - 6, y: cy - 15 + sag };
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 4.6;
+  ctx.beginPath();
+  ctx.moveTo(mx, my);
+  ctx.lineTo(mx, my - 14);
+  ctx.lineTo(tip.x, tip.y);
+  ctx.stroke();
+  ctx.strokeStyle = '#f5c400';
+  ctx.lineWidth = 2.6;
+  ctx.stroke();
+  if (lv >= 3) {
+    ctx.setLineDash([2.2, 2.2]);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(mx - 3, my - 14 + (tip.y - my + 14) * 0.15);
+    ctx.lineTo(tip.x + 6, tip.y + (my - 14 - tip.y) * 0.25);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  const mag = { x: tip.x, y: wear === 2 ? cy - 2 : tip.y + 9 };
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(tip.x, tip.y);
+  ctx.lineTo(mag.x, mag.y - 3);
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+  const r = lv >= 3 ? 6 : 5;
+  ctx.fillStyle = '#3d424c';
+  ctx.beginPath();
+  ctx.ellipse(mag.x, mag.y, r, r * 0.62, 0, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  // The coil's red band and its lit face.
+  ctx.strokeStyle = '#d8452b';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.ellipse(mag.x, mag.y, r - 1.8, (r - 1.8) * 0.62, 0, Math.PI, TAU);
+  ctx.stroke();
+  ctx.fillStyle = tint('#3d424c', 0.35);
+  ctx.fillRect(mag.x - r * 0.5, mag.y - r * 0.45, r, 1.2);
+}
+
+/** Where a medic post's lamp sits on its pole, from the cell centre. */
+const postLamp = (lv: number) => ({ x: 12 + lv, y: -16 - lv });
+
+/**
+ * A medic post: a field tent of olive canvas, its ridge pole and guy lines, the door flap pinned open on a white panel with the kit's green cross, and
+ * a pole at its corner carrying its lamp (lit live, `drawPostLamp`). Level 2 adds a stretcher by the door, level 3 a second, bigger cross on the roof.
+ * Badly damaged, the tent sags at one end and the lamp pole leans.
+ */
+function drawPost(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, wear: Wear = 0) {
+  const w = 26 + 2 * lv, h = 18 + lv, x0 = cx - w / 2 - 1, y0 = cy - h / 2 - 2;
+  const sag = wear === 2 ? 4 : 0;
+  // The two roof slopes, the near one lit, and the ridge between them.
+  ctx.fillStyle = '#5f6b46';
+  ctx.beginPath();
+  ctx.moveTo(x0, y0 + h * 0.5); ctx.lineTo(x0 + w, y0 + h * 0.5 + sag); ctx.lineTo(x0 + w, y0 + sag * 0.5); ctx.lineTo(x0, y0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#7a8758';
+  ctx.beginPath();
+  ctx.moveTo(x0, y0 + h * 0.5); ctx.lineTo(x0 + w, y0 + h * 0.5 + sag); ctx.lineTo(x0 + w, y0 + h + 2); ctx.lineTo(x0, y0 + h + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0); ctx.lineTo(x0 + w, y0 + sag * 0.5); ctx.lineTo(x0 + w, y0 + h + 2); ctx.lineTo(x0, y0 + h + 2); ctx.closePath();
+  ctx.moveTo(x0, y0 + h * 0.5); ctx.lineTo(x0 + w, y0 + h * 0.5 + sag);
+  ctx.stroke();
+  // Seams down the near slope.
+  ctx.strokeStyle = 'rgba(28, 31, 38, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < 4; i++) { const x = x0 + (w * i) / 4; ctx.moveTo(x, y0 + h * 0.5 + (sag * i) / 4 + 1); ctx.lineTo(x, y0 + h + 1); }
+  ctx.stroke();
+  // The door panel: white with the green cross, at the front.
+  const dx = cx - 6, dy = y0 + h * 0.5 + 2;
+  ctx.fillStyle = '#eef2ea';
+  ctx.fillRect(dx, dy, 12, 10);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(dx, dy, 12, 10);
   ctx.fillStyle = '#2f9e6f';
-  ctx.fillRect(cx - w / 2 + 3, cy - h / 2 - 1, 7, 7);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(cx - w / 2 + 5.8, cy - h / 2, 1.4, 5);
-  ctx.fillRect(cx - w / 2 + 4, cy - h / 2 + 1.8, 5, 1.4);
+  ctx.fillRect(dx + 4.6, dy + 1.6, 2.8, 6.8);
+  ctx.fillRect(dx + 2.6, dy + 3.6, 6.8, 2.8);
+  if (lv >= 3) {
+    ctx.fillStyle = '#eef2ea';
+    ctx.fillRect(cx - 5, y0 + 2, 10, 7);
+    ctx.strokeRect(cx - 5, y0 + 2, 10, 7);
+    ctx.fillStyle = '#2f9e6f';
+    ctx.fillRect(cx - 1.2, y0 + 3, 2.4, 5);
+    ctx.fillRect(cx - 3.4, y0 + 4.3, 6.8, 2.4);
+  }
+  if (lv >= 2) {
+    // A stretcher on the ground by the door: two poles and its canvas.
+    ctx.fillStyle = '#c9c2a8';
+    ctx.fillRect(x0 - 2, y0 + h + 5, 13, 5);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.1;
+    ctx.strokeRect(x0 - 2, y0 + h + 5, 13, 5);
+    ctx.beginPath();
+    ctx.moveTo(x0 - 5, y0 + h + 5); ctx.lineTo(x0 + 14, y0 + h + 5);
+    ctx.moveTo(x0 - 5, y0 + h + 10); ctx.lineTo(x0 + 14, y0 + h + 10);
+    ctx.stroke();
+  }
+  // The lamp pole at the corner.
+  const at = postLamp(lv);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cx + at.x, y0 + h + 2);
+  ctx.lineTo(cx + at.x + (wear === 2 ? 5 : 0), cy + at.y + 2);
+  ctx.stroke();
 }
 
 const UTILITY_HALF = 34;
+/** A medic post's mint: its lamp, its pulse and a revive it is making. */
+const MEDIC = '#8ff0c4';
 
 /**
- * A depot or post baked once per level and state, like the turrets: worn, soot-streaked, dented and pocked; badly damaged,
+ * A salvage yard or medic post baked once per level and state, like the turrets: worn, soot-streaked, dented and pocked; badly damaged,
  * charred black with chunks out of it as well.
  */
-function utilitySprite(kind: 'depot' | 'post', lv: number, wear: Wear, pxPerUnit: number) {
+function utilitySprite(kind: 'salvage' | 'post', lv: number, wear: Wear, pxPerUnit: number) {
   return bakedSprite(`u|${kind}|${lv}|${wear}`, UTILITY_HALF, pxPerUnit, (g) => {
     const rnd = seeded(lv * 17 + wear * 5 + kind.length);
     if (wear > 0) streaks(g, rnd, wear === 2 ? 9 : 5, 12, wear === 2 ? 32 : 27, wear === 2 ? 3.4 : 2.4, wear === 2 ? 'rgba(18, 15, 13, 0.62)' : 'rgba(24, 20, 17, 0.5)');
-    if (kind === 'depot') drawDepot(g, 0, 0, lv, wear);
+    if (kind === 'salvage') drawSalvage(g, 0, 0, lv, wear);
     else drawPost(g, 0, 0, lv, wear);
     if (!wear) return;
     dent(g, -9, -3, 2.6);
@@ -185,10 +310,10 @@ function drawPostLamp(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv:
   ctx.stroke();
 }
 
-/** What stands on a cell, drawn over its pad (centred on `cx`, `cy`): a turret's emplacement and gun turned to `angle` (turretart.ts), a coil, a depot's crates, a post's locker or a decoy's mast (ventart.ts). */
+/** What stands on a cell, drawn over its pad (centred on `cx`, `cy`): a turret's emplacement and gun turned to `angle` (turretart.ts), a coil, a salvage yard's heap and crane, a medic post's tent or a decoy's mast (ventart.ts). */
 function drawHead(ctx: CanvasRenderingContext2D, b: { kind: BuildingKind; lv?: number; hp: number }, cx: number, cy: number, angle: number, sinceShot: number, now: number, pxPerUnit: number) {
   const lv = levelOf(b);
-  if (b.kind === 'depot' || b.kind === 'post') {
+  if (b.kind === 'salvage' || b.kind === 'post') {
     ctx.drawImage(utilitySprite(b.kind, lv, wearStage(b.hp), pxPerUnit), cx - UTILITY_HALF, cy - UTILITY_HALF, UTILITY_HALF * 2, UTILITY_HALF * 2);
     if (b.kind === 'post') drawPostLamp(ctx, cx, cy, lv, wearStage(b.hp), now);
   } else if (b.kind === 'decoy') drawDecoy(ctx, cx, cy, lv, wearStage(b.hp));
@@ -300,11 +425,15 @@ export type SiegeLights = {
 export function drawSiegeLights(ctx: CanvasRenderingContext2D, l: SiegeLights) {
   const rings = rangeRings({ ghost: l.ghost, buildings: l.all, day: l.day, cursor: l.cursor, upgrade: l.upgrade, squad: l.squadRings });
   if (rings.length) drawRangeRings(ctx, rings, coverOf(l.walls, l.crates), l.scale, l.now, l.reduced);
-  // In build mode each decoy shows how far it draws the horde, and one about to go up shows its own.
+  // In build mode each decoy shows how far it draws the horde and each salvage yard the reach its bonus pays in, and one about to go up shows its own.
   if (l.ghost) {
-    for (const b of l.all) if (b.kind === 'decoy') drawDecoyPull(ctx, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell, levelOf(b), l.now, l.scale, l.reduced);
+    for (const b of l.all) {
+      if (b.kind === 'decoy') drawDecoyPull(ctx, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell, levelOf(b), l.now, l.scale, l.reduced);
+      else if (b.kind === 'salvage') drawSalvageReach(ctx, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell, levelOf(b), l.now, l.scale, l.reduced);
+    }
     const g = l.ghost;
     if (g.kind === 'decoy' && g.refusal !== 'taken' && !g.line) drawDecoyPull(ctx, (g.cx + 0.5) * ZOM.cell, (g.cy + 0.5) * ZOM.cell, 1, l.now, l.scale, l.reduced, true);
+    if (g.kind === 'salvage' && g.refusal !== 'taken' && !g.line) drawSalvageReach(ctx, (g.cx + 0.5) * ZOM.cell, (g.cy + 0.5) * ZOM.cell, 1, l.now, l.scale, l.reduced, true);
   }
   for (const b of l.floor) {
     if (b.kind !== 'vent') continue;
@@ -314,7 +443,7 @@ export function drawSiegeLights(ctx: CanvasRenderingContext2D, l: SiegeLights) {
   if (l.zombies.length) drawZombieFx(ctx, l.zombies, l.now, l.pxPerUnit, l.reduced);
   for (const b of l.buildings) {
     const { x, y, w, h } = cellRect(b.cx, b.cy);
-    // A badly damaged wall, depot or post smoulders (a turret's embers come with its lights).
+    // A badly damaged wall, yard or post smoulders (a turret's embers come with its lights).
     if (!('ammo' in b) && wearStage(b.hp) === 2) drawEmbers(ctx, x + w / 2, y + h / 2, l.now, l.pxPerUnit, l.reduced, 1);
     if (b.kind === 'wall') continue;
     if (b.kind === 'decoy') drawDecoyLamp(ctx, b, l.now, l.pxPerUnit, l.reduced, l.dark);
@@ -325,6 +454,40 @@ export function drawSiegeLights(ctx: CanvasRenderingContext2D, l: SiegeLights) {
     }
     drawPips(ctx, levelOf(b), maxLevelOf(b.kind), x, y);
   }
+}
+
+/**
+ * The reach a salvage yard pays its bonus in, in build mode: a scrap-gold dashed ring at `UTILITY.salvage.reach` at its level, a faint fill, and its
+ * bonus written on the ring's top ("+50% scrap"), so a squad sees where its kills will pay more and where two yards overlap (the better one pays).
+ * `ghost` draws a yard about to go up a little brighter.
+ */
+export function drawSalvageReach(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, now: number, scale: number, reduced: boolean, ghost = false) {
+  const r = reachAt(UTILITY.salvage.reach, lv), px = 1 / Math.max(0.2, scale);
+  ctx.save();
+  ctx.fillStyle = `rgba(245, 196, 0, ${ghost ? 0.08 : 0.045})`;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.fill();
+  ctx.lineWidth = 3.4 * px;
+  ctx.strokeStyle = 'rgba(28, 31, 38, 0.3)';
+  ctx.stroke();
+  ctx.setLineDash([10 * px, 7 * px]);
+  ctx.lineDashOffset = reduced ? 0 : -now / 80;
+  ctx.lineWidth = 1.8 * px;
+  ctx.strokeStyle = `rgba(255, 210, 74, ${ghost ? 0.95 : 0.75})`;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = `800 ${Math.round(13 * px)}px "Barlow Condensed", system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3.2 * px;
+  ctx.strokeStyle = 'rgba(28, 31, 38, 0.85)';
+  const label = `+${Math.round(salvageBonusOf(lv) * 100)}% scrap`;
+  ctx.strokeText(label, cx, cy - r);
+  ctx.fillStyle = '#ffd24a';
+  ctx.fillText(label, cx, cy - r);
+  ctx.restore();
 }
 
 /**
@@ -405,10 +568,23 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
   ctx.stroke();
   if (down.revive > 0) {
     ctx.lineWidth = 5;
-    ctx.strokeStyle = PALETTE.hpGood;
+    ctx.strokeStyle = down.medic ? MEDIC : PALETTE.hpGood;
     ctx.beginPath();
     ctx.arc(p.x, p.y, ring, -Math.PI / 2, -Math.PI / 2 + down.revive * TAU);
     ctx.stroke();
+  }
+  // A medic post reviving them: a mint dashed ring turning outside the revive, so it reads as the post's work, not a squadmate's.
+  if (down.medic) {
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.lineDashOffset = -now / 40;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = MEDIC;
+    ctx.globalAlpha = 0.6 + 0.4 * beat;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ring + 9, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
   }
   if (self) {
     ctx.lineWidth = 1.5;
@@ -440,6 +616,11 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
     ctx.strokeText(clock(left), p.x, p.y + R + 24);
     ctx.fillStyle = left < 8000 ? PALETTE.hunted : '#ffffff';
     ctx.fillText(clock(left), p.x, p.y + R + 24);
+    if (down.medic) {
+      ctx.strokeText('MEDIC', p.x, p.y + R + 38);
+      ctx.fillStyle = MEDIC;
+      ctx.fillText('MEDIC', p.x, p.y + R + 38);
+    }
   }
 }
 

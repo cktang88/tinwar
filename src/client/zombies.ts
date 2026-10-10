@@ -1,6 +1,6 @@
 import { BUILDINGS, hordeCount, isEndless, MARK, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, UPGRADE, UTILITY, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, isTurretKind, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
-import { buildRefusal, buildsNow, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
+import { buildRefusal, buildsNow, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, salvageBonusOf, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
@@ -58,9 +58,11 @@ export function useHint(snap: Snapshot, at: Pose): string | null {
   if (!run || !snap.self.alive) return null;
   const down = snap.players.find((p) => p.id !== snap.self.id && p.downed && Math.hypot(p.x - at.x, p.y - at.y) <= ZOM.reviveRange);
   if (down) return `Hold E to revive ${down.name}`;
-  if (run.scrap <= 0) return null;
   const target = serviceTarget(at, run.core, snap.buildings ?? []);
-  return target && `Hold E to ${target.job} the ${target.on === 'core' ? 'Bastion' : nameOf(target.on)}`;
+  if (!target) return null;
+  // Mending costs scrap and a reload does not: with the bank empty only a turret short of its load is worth holding E at (the server reloads a worn one then).
+  if (run.scrap <= 0) return target.on !== 'core' && 'ammo' in target.on && target.on.ammo < 10 ? `Hold E to reload the ${nameOf(target.on)}` : null;
+  return `Hold E to ${target.job} the ${target.on === 'core' ? 'Bastion' : nameOf(target.on)}`;
 }
 
 /**
@@ -110,6 +112,8 @@ export function runCallouts(prev: RunView | undefined, next: RunView | undefined
     // Holding through the Tide is the run's great moment, but not its end: the nights go on until the core falls.
     if (prev.night === NIGHTS.length) out.push({ title: 'THE TIDE HELD', line: `${next.survivors} survivors saw the morning · the nights go on`, tone: 'dawn' });
     else out.push({ title: 'Dawn', line: `Night ${prev.night} held · ${lost}${next.survivors} survivors · +${next.scrap - prev.scrap} scrap`, tone: 'dawn' });
+    // Dawn refills every turret and vent, free: said only when one needed it.
+    if (next.restocked) out.push({ title: 'Turrets restocked', line: `${next.restocked} ${next.restocked === 1 ? 'turret' : 'turrets'} back to a full load`, tone: 'dawn' });
     out.push({ title: 'Tonight', line: forecast(next.night, share), tone: 'warn' });
   }
   return out;
@@ -190,8 +194,8 @@ const times = (x: number) => `${Math.round(x * 100) / 100}×`;
 const plus = (x: number) => `+${Math.round((x - 1) * 100)}%`;
 /**
  * What the next level up from `lv` is, named, with its stats against the first level's (so every level reads in the same round steps):
- * a turret's damage, fire rate, range, load and health ("Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp"); a depot's or post's
- * output, reach and health; a wall tier's health against a barricade's and the share of each bite's damage it takes less of. Empty at the top.
+ * a turret's damage, fire rate, range, load and health ("Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp"); a salvage yard's bonus,
+ * reach and health; a medic post's healing, reviving, reach and health; a wall tier's health against a barricade's and the share of each bite's damage it takes less of. Empty at the top.
  */
 export function upgradeGains(kind: BuildingKind, lv: number): string {
   if (lv >= maxLevelOf(kind)) return '';
@@ -205,10 +209,11 @@ export function upgradeGains(kind: BuildingKind, lv: number): string {
   // A scatter's level grips and shoves harder rather than hitting harder; a vent's is its burn and its fuel; a coil's arc leaps further.
   const gains = kind === 'scatter' ? [`${times(U.damage[j])} shove`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
     : kind === 'vent' ? [`${times(U.damage[j])} burn`, `${times(1 / U.fireMs[j])} rate`, `${times(U.ammo[j])} fuel`, hp]
-    : kind === 'tesla' ? [`${times(U.damage[j])} dmg`, `+${j} jump${j > 1 ? 's' : ''}`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
+    : kind === 'tesla' ? [`${times(U.damage[j])} dmg`, `+${2 * j} jumps`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
     : isTurretKind(kind) ? [`${times(U.damage[j])} dmg`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
     : kind === 'decoy' ? [`${plus(U.reach[j])} pull reach`, hp]
-    : [`${times(U.aura[j])} ${kind === 'depot' ? 'resupply' : 'repair'}`, `${plus(U.reach[j])} reach`, hp];
+    : kind === 'salvage' ? [`+${Math.round(salvageBonusOf(j + 1) * 100)}% scrap`, `${plus(U.reach[j])} reach`, hp]
+    : [`${times(U.aura[j])} heal`, `${times(U.aura[j])} revive`, `${plus(U.reach[j])} reach`, hp];
   return `${name}: ${gains.join(' · ')}`;
 }
 
@@ -281,7 +286,7 @@ export type HintChip = { key: string; what: string; pick?: BuildChip };
  * Build mode's keys, in order: the number keys pick these kinds from 1, then 0 and minus past 9 (a wall takes the tier last chosen, and its key again
  * steps to the next tier). The flame vent and the decoy came last, so they take the keys past the utilities and every older key stays where it was.
  */
-export const BUILD_KEYS: readonly BuildingKind[] = ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes', 'vent', 'decoy'];
+export const BUILD_KEYS: readonly BuildingKind[] = ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'salvage', 'post', 'spikes', 'vent', 'decoy'];
 const KEY_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus'] as const;
 /** The label on a kind's build key: 1 to 9, 0, then minus. */
 export const buildKeyLabel = (kind: BuildingKind): string => { const code = KEY_CODES[BUILD_KEYS.indexOf(kind)]; return code === 'Minus' ? '-' : code?.slice(5) ?? ''; };
@@ -298,8 +303,8 @@ export const BUILD_ROLES: Record<Exclude<BuildingKind, 'wall'>, string> = {
   mortar: `Mortar: long range, can't hit inside ${BUILDINGS.mortar.turret.minRange} px`,
   tesla: `Tesla: stuns and marks — +${Math.round((MARK.gunMul - 1) * 100)}% gun damage to marked`,
   vent: 'Flame vent: sets alight what walks over it, best at a chokepoint',
-  depot: 'Ammo depot: refills turrets and guns nearby',
-  post: 'Repair post: mends buildings and squadmates nearby',
+  salvage: `Salvage yard: +${Math.round(UTILITY.salvage.bonus[0] * 100)}% scrap from kills nearby`,
+  post: 'Medic post: heals and slowly revives the squad nearby',
   spikes: 'Spike strip: slows and cuts what crosses it',
   decoy: `Decoy beacon: draws the horde within ${UTILITY.decoy.reach} px off the walls`,
 };
@@ -311,7 +316,7 @@ export function buildRows(): { label: string; chips: HintChip[] }[] {
   return [
     { label: 'WALLS', chips: WALL_TIERS.map((t, i) => ({ key: TIER_KEYS[i]!, what: `${t.name} ${t.cost}`, pick: { kind: 'wall' as const, lv: i + 1 } })) },
     { label: 'TURRETS', chips: TURRET_KINDS.map(chip) },
-    { label: 'UTILITY', chips: (['depot', 'post', 'spikes', 'decoy'] as const).map(chip) },
+    { label: 'UTILITY', chips: (['salvage', 'post', 'spikes', 'decoy'] as const).map(chip) },
   ];
 }
 

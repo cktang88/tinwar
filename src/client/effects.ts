@@ -88,7 +88,7 @@ export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Eff
       case 'splat': drawSplat(ctx, fx.x, fx.y, ZOMBIE_LOOK[fx.zombie].arm, ZOMBIES[fx.zombie].radius, k); break;
       case 'tracer': drawTurretRound(ctx, fx.turret, fx.x, fx.y, fx.angle, fx.reach, now - fx.born); break;
       case 'coil': drawArc(ctx, fx.p, fx.born, k, now); break;
-      case 'aid': drawAid(ctx, fx.of, fx.x, fx.y, k); break;
+      case 'aid': drawAid(ctx, fx.of, fx.x, fx.y, k, fx.scrap); break;
     }
   }
   ctx.globalAlpha = 1;
@@ -130,11 +130,24 @@ function drawArc(ctx: CanvasRenderingContext2D, p: readonly number[], born: numb
   ctx.lineCap = 'butt';
 }
 
-/** A depot's round or a post's cross rising off the building and fading, ink-edged so it reads on any floor. */
-function drawAid(ctx: CanvasRenderingContext2D, of: 'depot' | 'post', x: number, y: number, k: number) {
+/**
+ * A medic post's cross rising off the tent over a soft mint pulse spreading out from it, or a salvage yard's pay-out: a gold "+N" with a scrap cog rising
+ * off the heap, ink-edged so either reads on any floor.
+ */
+function drawAid(ctx: CanvasRenderingContext2D, of: 'salvage' | 'post', x: number, y: number, k: number, scrap?: number) {
   const rise = 10 + 26 * (1 - (1 - k) * (1 - k)), at = y - rise;
-  ctx.globalAlpha = Math.min(1, 2.2 * (1 - k));
   if (of === 'post') {
+    // The pulse: a soft ring of the post's mint growing out over the tent and fading.
+    ctx.globalAlpha = 0.35 * (1 - k);
+    ctx.strokeStyle = '#8ff0c4';
+    ctx.lineWidth = 5 * (1 - k) + 1;
+    ctx.beginPath();
+    ctx.arc(x, y, 18 + 70 * k, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.12 * (1 - k);
+    ctx.fillStyle = '#8ff0c4';
+    ctx.fill();
+    ctx.globalAlpha = Math.min(1, 2.2 * (1 - k));
     ctx.fillStyle = INK;
     ctx.fillRect(x - 7, at - 3.5, 14, 7);
     ctx.fillRect(x - 3.5, at - 7, 7, 14);
@@ -142,16 +155,40 @@ function drawAid(ctx: CanvasRenderingContext2D, of: 'depot' | 'post', x: number,
     ctx.fillRect(x - 5.5, at - 2, 11, 4);
     ctx.fillRect(x - 2, at - 5.5, 4, 11);
   } else {
+    const pop = 1 + 0.35 * Math.max(0, 1 - k * 6);
+    ctx.globalAlpha = Math.min(1, 2.2 * (1 - k));
+    const text = `+${scrap ?? 1}`;
+    ctx.font = `900 ${Math.round(17 * pop)}px "Barlow Condensed", system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const w = ctx.measureText(text).width, left = x - (w + 14) / 2;
+    // The cog: a gold gear with its hub, ink-edged.
+    const gx = left + 5, gy = at;
     ctx.fillStyle = INK;
     ctx.beginPath();
-    ctx.roundRect(x - 4.5, at - 8, 9, 16, 4);
-    ctx.fill();
-    ctx.fillStyle = '#ffb347';
-    ctx.beginPath();
-    ctx.roundRect(x - 3, at - 6.5, 6, 6, 2.5);
+    ctx.arc(gx, gy, 6.6, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#d9a441';
-    ctx.fillRect(x - 3, at - 0.5, 6, 6);
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + k * 2;
+      ctx.moveTo(gx + Math.cos(a) * 5.4, gy + Math.sin(a) * 5.4);
+      ctx.arc(gx + Math.cos(a) * 4.6, gy + Math.sin(a) * 4.6, 1.3, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(gx, gy, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = INK;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3.4;
+    ctx.strokeStyle = INK;
+    ctx.strokeText(text, left + 13, at + 0.5);
+    ctx.fillStyle = '#ffd24a';
+    ctx.fillText(text, left + 13, at + 0.5);
   }
   ctx.globalAlpha = 1;
 }

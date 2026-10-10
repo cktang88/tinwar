@@ -161,7 +161,7 @@ function onSide(core: { x: number; y: number }, side: Side, out: number, along: 
 
 /**
  * What a squad bot would do next by day, in order, from what stands and what the coming night brings (the forecast every squad sees): a ring of turrets round the Bastion,
- * the turret nearest the side the horde comes from stepping up once nine stand; the rest of the ring, then an ammo depot and a repair post behind that side's guns; a line of sandbags across its way, later
+ * the turret nearest the side the horde comes from stepping up once nine stand; the rest of the ring, then a salvage yard and a medic post behind that side's guns; a line of sandbags across its way, later
  * steel; spike strips ahead of the line and a tesla coil beside it; and every turret a level, the ones facing the horde first, and again.
  */
 export function nextBuildStep(night: number, buildings: readonly BuildingView[], core: { x: number; y: number }): Step | null {
@@ -182,9 +182,9 @@ export function nextBuildStep(night: number, buildings: readonly BuildingView[],
   const faced = (lv: number): Wish[] => byFacing.map((t) => ({ ...t, lv }));
   const line = (lv: number): Wish[] => [0, 1, -1, 2].map((along) => ({ kind: 'wall' as const, cell: onSide(core, side, 5, along), lv }));
   const strips: Wish[] = [0, 1, -1, 2].map((along) => ({ kind: 'spikes' as const, cell: onSide(core, side, 7, along), lv: 1 }));
-  const depot: Wish = { kind: 'depot', cell: onSide(core, side, 3, 2), lv: 1 }, post: Wish = { kind: 'post', cell: onSide(core, side, 3, -1), lv: 1 };
+  const yard: Wish = { kind: 'salvage', cell: onSide(core, side, 3, 2), lv: 1 }, post: Wish = { kind: 'post', cell: onSide(core, side, 3, -1), lv: 1 };
   const coil: Wish = { kind: 'tesla', cell: onSide(core, side, 4, -2), lv: 1 };
-  return first(ring(0, 9)) ?? first(faced(2).slice(0, 1)) ?? first(ring(9, 12)) ?? first([depot]) ?? first([post]) ?? first(line(2)) ?? first(faced(2)) ?? first(strips) ?? first([coil])
+  return first(ring(0, 9)) ?? first(faced(2).slice(0, 1)) ?? first(ring(9, 12)) ?? first([yard]) ?? first([post]) ?? first(line(2)) ?? first(faced(2)) ?? first(strips) ?? first([coil])
     ?? first(line(3)) ?? first(faced(3));
 }
 
@@ -275,8 +275,9 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const tending = mem.motor.tending;
   const started = (b: BuildingView) => tending?.x === at(b).x && tending.y === at(b).y;
   const worn = !spare ? [] : (snap.buildings ?? [])
-    .filter((b) => solid(b) && guarded(b) && (b.hp < WHOLE_TENTHS || ('ammo' in b && b.ammo <= (started(b) ? WHOLE_TENTHS - 1 : LOW_TENTHS) && run.scrap > 0))).map(at);
-  const dry = spends && run.scrap > 0 ? (snap.buildings ?? []).filter((b) => guarded(b) && 'ammo' in b && b.ammo <= DRY_TENTHS).map(at) : [];
+    .filter((b) => solid(b) && guarded(b) && (b.hp < WHOLE_TENTHS || ('ammo' in b && b.ammo <= (started(b) ? WHOLE_TENTHS - 1 : LOW_TENTHS)))).map(at);
+  // Reloading is free, so a dry turret is worth the walk whatever the bank holds.
+  const dry = spends ? (snap.buildings ?? []).filter((b) => guarded(b) && 'ammo' in b && b.ammo <= DRY_TENTHS).map(at) : [];
   const plan = humansBank || !spends ? null : nextBuild(run, snap.buildings ?? []);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;

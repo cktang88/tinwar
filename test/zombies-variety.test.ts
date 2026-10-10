@@ -4,7 +4,7 @@ import { BUILDING_KINDS, BUILDINGS, MAX_LEVEL, TURRET_KINDS, UPGRADE, UTILITY, W
 import { MAPS } from '../src/shared/maps.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
-import { auraOf, costOf, investedOf, levelOf, maxHpOf, repairScrapPerHp, turretDef, upgradeCost, wallTier } from '../src/shared/sim/build.ts';
+import { auraOf, costOf, investedOf, levelOf, maxHpOf, reachAt, repairScrapPerHp, salvageBonusOf, turretDef, upgradeCost, wallTier } from '../src/shared/sim/build.ts';
 import { damageZombie, build, demolish, upgrade } from '../src/shared/sim/run.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { tickTurrets } from '../src/shared/sim/turrets.ts';
@@ -357,40 +357,62 @@ test('a decoy beacon draws zombies in its reach off the core and the walls to bi
   assert.equal(boss.decoy.hp, BUILDINGS.decoy.hp, 'the Colossus pays it no mind');
 });
 
-test('an ammo depot tops up the neediest turret in reach slowly for part of the scrap, none out of reach, and reloads a squad player beside it at once', () => {
-  const w = nightWorld();
-  const owner = spawnAt(w, 1475, 1900);
-  w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity, vx: 0, vy: 0 });
-  const mk = (kind: 'sentry' | 'cannon', cx: number, cy: number, ammo: number) => {
-    const t = { id: newId(w), kind, cx, cy, hp: 1e9, owner: owner.id, ammo, nextFireAt: Infinity };
-    w.buildings.push(t);
-    return t;
-  };
-  const near = mk('sentry', 30, 33, 100), nearer = mk('cannon', 31, 34, 2), far = mk('sentry', 40, 40, 0);
-  w.buildings.push({ id: newId(w), kind: 'depot', cx: 31, cy: 33, hp: 1e9 });
+test('dawn restocks every turret and flame vent to a full load for free, says how many, and night clears it', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  const owner = spawnAt(w, AT.x, AT.y);
+  const run1 = w.run!;
+  run1.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
+  run1.core.hp = 1e9;
+  const sentry = { id: newId(w), kind: 'sentry' as const, cx: 30, cy: 33, hp: 1e9, owner: owner.id, ammo: 3, nextFireAt: Infinity };
+  const full = { id: newId(w), kind: 'cannon' as const, cx: 31, cy: 33, hp: 1e9, owner: owner.id, ammo: turretDef('cannon', 2).ammo, nextFireAt: Infinity, lv: 2 };
+  const vent = { id: newId(w), kind: 'vent' as const, cx: 32, cy: 36, hp: 1e9, owner: owner.id, ammo: 0, nextFireAt: 0, flareUntil: 0 };
+  w.buildings.push(sentry, full);
+  w.floor.push(vent);
   w.buildingsVersion++;
-  w.run!.scrap = 1000;
-  run(w, 1000);
-  const cannon = BUILDINGS.cannon.turret;
-  const gained = nearer.ammo - 2;
-  assert.ok(Math.abs(gained - cannon.ammo * UTILITY.depot.ammoPerSec) < 0.2, `the emptier cannon gained ${gained.toFixed(2)} rounds a second`);
-  assert.equal(near.ammo, 100, 'the sentry waits while the cannon is the needier');
-  assert.equal(far.ammo, 0, 'out of reach, nothing');
-  assert.ok(Math.abs(1000 - w.run!.scrap - gained * cannon.scrapPerRound * UTILITY.depot.scrapShare) < 1e-6, 'for a share of the usual scrap');
-  w.run!.scrap = 0;
-  const before = nearer.ammo;
-  run(w, 1000);
-  assert.equal(nearer.ammo, before, 'no scrap, no rounds');
-  // A player standing beside it is reloaded at once.
-  const p = spawnAt(w, (31 + 0.5) * ZOM.cell + 60, (33 + 0.5) * ZOM.cell);
-  assert.ok(p.life.k === 'alive');
-  p.life.ammo = 0;
-  p.life.reloadUntil = w.now + 5000;
+  run1.scrap = 0;
+  run(w, 200);
+  assert.equal(run1.phase.k, 'day', 'the night is over');
+  assert.equal(sentry.ammo, turretDef('sentry', 1).ammo);
+  assert.equal(full.ammo, turretDef('cannon', 2).ammo, 'a full one stays full');
+  assert.equal(vent.ammo, turretDef('vent', 1).ammo, 'vents too');
+  assert.equal(run1.scrap, run1.survivors * ZOM.scrapPerSurvivor, 'free: the bank only gains the survivors\' pay');
+  assert.equal(snapshotFor(w, owner.id).run!.restocked, 2, 'the day says how many it filled');
+  run1.phase = { k: 'day', endsAt: w.now };
   run(w, 100);
-  assert.ok(p.life.k === 'alive' && p.life.reloadUntil === null && p.life.ammo > 0, 'the reload finished early');
+  assert.equal(run1.phase.k, 'night');
+  assert.equal(snapshotFor(w, owner.id).run!.restocked, undefined, 'the night clears it');
 });
 
-test('a depot says so once a second in an aid event, and a post mends squad players and buildings in reach for free, and only up to whole', () => {
+test('a salvage yard pays its bonus on every kill in its reach, the best of overlapping yards only, nothing out of reach, and says what it paid once a second', () => {
+  const w = nightWorld();
+  const yard = { id: newId(w), kind: 'salvage' as const, cx: 30, cy: 30, hp: 1e9 };
+  const yard3 = { id: newId(w), kind: 'salvage' as const, cx: 38, cy: 30, hp: 1e9, lv: 3 };
+  w.buildings.push(yard, yard3);
+  w.buildingsVersion++;
+  const walker = ZOMBIES.walker.scrap;
+  const killAt = (x: number, y: number) => {
+    const before = w.run!.scrap;
+    damageZombie(w, zombieAt(w, x, y, 'walker', 1), 10, null, 'sentry');
+    return Math.round((w.run!.scrap - before) * 100) / 100;
+  };
+  const at = cellCenter(30, 30), at3 = cellCenter(38, 30);
+  assert.equal(killAt(at.x, at.y + 200), walker * (1 + UTILITY.salvage.bonus[0]), 'inside a level-I yard\'s reach: +50%');
+  assert.equal(killAt(at.x - UTILITY.salvage.reach - 20, at.y), walker, 'just outside: the plain price');
+  // Between the two, in reach of both, the level-III yard's bonus pays, once.
+  assert.ok(Math.hypot(at3.x - at.x - 200, 0) <= reachAt(UTILITY.salvage.reach, 3));
+  assert.equal(killAt(at.x + 200, at.y), walker * (1 + UTILITY.salvage.bonus[2]), 'overlapping yards do not stack: the best one pays');
+  assert.equal(killAt(at3.x + reachAt(UTILITY.salvage.reach, 3) - 10, at3.y), walker * (1 + UTILITY.salvage.bonus[2]), 'a level III yard reaches 1.5× as far');
+  assert.deepEqual([salvageBonusOf(1), salvageBonusOf(2), salvageBonusOf(3)], [0.5, 0.75, 1]);
+  w.events = [];
+  run(w, 1000);
+  const aid = w.events.filter((e) => e.e === 'aid');
+  assert.deepEqual(aid.map((e) => e.e === 'aid' && [e.kind, e.scrap]).sort(), [['salvage', Math.round(walker * 0.5)], ['salvage', Math.round(walker * 2)]].sort(), 'each yard says what it paid');
+  w.events = [];
+  run(w, 1000);
+  assert.equal(w.events.filter((e) => e.e === 'aid').length, 0, 'and nothing once it is said');
+});
+
+test('a medic post heals squad players fast and mends buildings slowly in reach for free, only up to whole, and says so once a second', () => {
   const w = nightWorld();
   const p = spawnAt(w, (31 + 0.5) * ZOM.cell, (35 + 0.5) * ZOM.cell + 40);
   const out = spawnAt(w, 1000, 1000);
@@ -405,11 +427,12 @@ test('a depot says so once a second in an aid event, and a post mends squad play
   w.run!.scrap = 0;
   run(w, 2000);
   // Everyone regenerates a little; the post's share is what the one beside it gained over the one far off.
-  assert.ok(Math.abs(p.life.hp - out.life.hp - UTILITY.post.playerHp * 2) < 0.3, `mended ${p.life.hp - out.life.hp} hp more in two seconds`);
+  assert.ok(Math.abs(p.life.hp - out.life.hp - UTILITY.post.playerHp * 2) < 0.5, `healed ${p.life.hp - out.life.hp} hp more in two seconds`);
+  assert.ok(UTILITY.post.playerHp > UTILITY.post.buildingHp, 'people first');
   assert.ok(Math.abs(wall.hp - 100 - UTILITY.post.buildingHp * 2) < UTILITY.post.buildingHp * 0.05, `the wall mended ${wall.hp - 100}`);
   assert.equal(farWall.hp, 100);
   assert.equal(w.run!.scrap, 0, 'free');
-  run(w, 200_000);
+  run(w, 400_000);
   assert.equal(wall.hp, maxHpOf('wall', 1), 'mends to whole and no further');
   const aid = w.events.filter((e) => e.e === 'aid');
   assert.ok(aid.length <= 1, 'at most one event a tick window of a second');
@@ -425,7 +448,28 @@ test('a depot says so once a second in an aid event, and a post mends squad play
     run(wx, 1000);
   }
   const hp = (wx: World): number => [...wx.players.values()].map((q) => hpOf(q)).find((h) => h > 0)!;
-  assert.ok(Math.abs(hp(run3) - hp(run1) - UTILITY.post.playerHp * (auraOf(3) - auraOf(1))) < 0.3, `a level 3 post mends ${auraOf(3)} times as fast as a level 1`);
+  assert.ok(Math.abs(hp(run3) - hp(run1) - UTILITY.post.playerHp * (auraOf(3) - auraOf(1))) < 0.5, `a level 3 post heals ${auraOf(3)} times as fast as a level 1`);
+});
+
+test('a medic post revives a downed squad player in its reach by itself, slower than a hand on use, and not one out of its reach', () => {
+  const w = nightWorld();
+  const near = spawnAt(w, (31 + 0.5) * ZOM.cell + 60, (35 + 0.5) * ZOM.cell);
+  const far = spawnAt(w, 1000, 1000);
+  w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity, vx: 0, vy: 0 });
+  w.buildings.push({ id: newId(w), kind: 'post', cx: 31, cy: 35, hp: 1e9 });
+  w.buildingsVersion++;
+  for (const q of [near, far]) q.life = { k: 'downed', bleedOutAt: w.now + ZOM.bleedOutMs, reviveProgress: 0, hp: 0 };
+  const alone = ZOM.reviveMs / UTILITY.post.revive;
+  assert.ok(alone > 2 * ZOM.reviveMs && alone < 3 * ZOM.reviveMs, `alone it takes ${alone} ms, two to three times a squadmate's`);
+  run(w, alone / 2);
+  assert.ok(near.life.k === 'downed' && near.life.medic, 'the post is at it');
+  const seen = snapshotFor(w, near.id).players.find((q) => q.id === near.id)!.downed!;
+  assert.ok(Math.abs(seen.revive - 0.5) < 0.02 && seen.medic === true, `half way, and the view says the post is reviving: ${JSON.stringify(seen)}`);
+  const lives: typeof w.events = [];
+  for (let t = 0; t < alone / 2 + 100; t += TICK_MS) { step(w, TICK_MS); lives.push(...w.events.filter((e) => e.e === 'life')); }
+  assert.equal(near.life.k, 'alive', 'stood up by the post');
+  assert.equal(far.life.k, 'downed', 'out of reach, nothing');
+  assert.ok(lives.some((e) => e.e === 'life' && e.k === 'revived' && e.id === near.id && e.by === null), 'revived by nobody in the feed');
 });
 
 test('building messages carry a wall tier, and an upgrade message carries a whole cell', () => {
@@ -444,10 +488,10 @@ test('every kind has a price the economy can carry: a night\'s scrap buys the ch
   assert.ok(costOf('tesla') > costOf('cannon') && costOf('tesla') <= costOf('cannon') * 1.6, 'the coil costs more than the cannon, but not by far');
   for (const kind of TURRET_KINDS) assert.equal(investedOf(kind, 3), costOf(kind) * 3, `${kind} fully upgraded costs three of them`);
   for (const kind of BUILDING_KINDS) assert.equal(costOf(kind) % 5, 0, `${kind} has a round price`);
-  assert.deepEqual(BUILDING_KINDS, ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent', 'depot', 'post', 'spikes', 'decoy']);
+  assert.deepEqual(BUILDING_KINDS, ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent', 'salvage', 'post', 'spikes', 'decoy']);
 });
 
-test('squad bots by day step the ring up and out: turrets, the one facing the night first upgraded, then depot and post, sandbags across the way, spikes, steel, level 3', () => {
+test('squad bots by day step the ring up and out: turrets, the one facing the night first upgraded, then salvage yard and medic post, sandbags across the way, spikes, steel, level 3', () => {
   const core = CORE;
   const cellOfStep = (s: NonNullable<ReturnType<typeof nextBuildStep>>) => ({ cx: s.cell.cx, cy: s.cell.cy });
   const standing: { kind: string; cx: number; cy: number; hp: number; lv?: number; ammo?: number }[] = [];
@@ -464,7 +508,7 @@ test('squad bots by day step the ring up and out: turrets, the one facing the ni
   assert.equal(seen[9], 'upgrade sentry to 2', 'then the turret facing night 1\'s north side steps up');
   const rest = seen.slice(10);
   assert.deepEqual(rest.slice(0, 3).map((l) => l.split(' ')[1]), ['mortar', 'scatter', 'scatter'], 'the rest of the ring');
-  assert.deepEqual(rest.slice(3, 5), ['build depot', 'build post']);
+  assert.deepEqual(rest.slice(3, 5), ['build salvage', 'build post']);
   assert.ok(rest.includes('build wall') && rest.includes('build spikes') && rest.includes('build tesla') && rest.includes('upgrade wall to 3'));
   assert.ok(rest.indexOf('build spikes') > rest.indexOf('build wall'), 'the line before the strips');
   assert.ok(rest.at(-1)!.startsWith('upgrade') && rest.filter((l) => l === 'upgrade sentry to 3').length >= 1, 'level 3 at the end');
@@ -492,7 +536,7 @@ test('a bot squad with scrap to spend builds the variety on its own and upgrades
   }
   const kinds = new Map<string, number>();
   for (const b of [...w.buildings, ...w.floor]) kinds.set(b.kind, (kinds.get(b.kind) ?? 0) + 1);
-  for (const kind of ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'wall', 'spikes']) assert.ok((kinds.get(kind) ?? 0) > 0, `built a ${kind}: ${JSON.stringify([...kinds])}`);
+  for (const kind of ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'salvage', 'post', 'wall', 'spikes']) assert.ok((kinds.get(kind) ?? 0) > 0, `built a ${kind}: ${JSON.stringify([...kinds])}`);
   assert.ok(w.buildings.some((b) => 'ammo' in b && levelOf(b) >= 2), 'a turret was upgraded');
   assert.ok(w.buildings.filter((b) => b.kind === 'wall').every((b) => levelOf(b) === 3), 'every wall steel');
   const turrets = w.buildings.filter((b) => 'ammo' in b);

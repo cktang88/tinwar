@@ -260,8 +260,10 @@ test('zombies bite a turret down like a wall', () => {
   assert.ok(!w.buildings.includes(t) && w.buildingsVersion > version, 'the bitten-through turret is gone');
 });
 
-test('holding use by a turret short of ammo reloads it for scrap up to a full load, mending a worn one first', () => {
+test('holding use by a turret short of ammo reloads it for free up to a full load, mending a worn one first', () => {
   const w = nightWorld();
+  // A pack still to come keeps the night going, so dawn's free restock does not fill the turret first.
+  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
   // An assault rifle reloads at the plain rate; a sidearm would reload faster (`ZombieRole.mend`).
   const p = spawnAt(w, TX, TY + 100, { loadout: { weapon: 'assault' } });
   const t = addTurret(w, 'sentry', p.id, { ammo: 0, hp: BUILDINGS.sentry.hp - 200 });
@@ -277,7 +279,7 @@ test('holding use by a turret short of ammo reloads it for scrap up to a full lo
   run(w, 1000);
   const loaded = t.ammo - 0.3;
   assert.ok(Math.abs(loaded - (SENTRY.ammo * 1000) / ZOM.refillMs) <= (SENTRY.ammo * TICK_MS) / ZOM.refillMs + 1e-6, `reloaded ${loaded.toFixed(1)}`);
-  assert.ok(Math.abs(scrap - w.run!.scrap - loaded * SENTRY.scrapPerRound) < 1e-6, 'for scrap by the round');
+  assert.equal(w.run!.scrap, scrap, 'for free');
 
   run(w, ZOM.refillMs);
   scrap = w.run!.scrap;
@@ -285,9 +287,10 @@ test('holding use by a turret short of ammo reloads it for scrap up to a full lo
   assert.deepEqual([t.ammo, w.run!.scrap], [SENTRY.ammo, scrap], 'full, and no scrap spent past it');
 
   t.ammo = 0;
+  t.hp = BUILDINGS.sentry.hp - 200;
   w.run!.scrap = 0;
   run(w, 1000);
-  assert.equal(t.ammo, 0, 'no scrap, no reload');
+  assert.ok(t.ammo > 0 && t.hp === BUILDINGS.sentry.hp - 200, 'an empty bank still reloads, and a worn turret is reloaded instead of mended');
 });
 
 test('a turret\'s ammo shows in tenths, and its aim and rounds only in its shot events, so the sticky buildings field holds still while it fires', () => {

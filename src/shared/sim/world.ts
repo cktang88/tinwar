@@ -57,7 +57,7 @@ export type Life =
     tracks: Record<number, number>;
   }
   /** Out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */
-  | { k: 'downed'; bleedOutAt: number; reviveProgress: number; hp: number; /** The armor pool as it stood when they went down, which a revive gives back (full if unset). */ armor?: number }
+  | { k: 'downed'; bleedOutAt: number; reviveProgress: number; /** A medic post, not a squadmate, is reviving them. */ medic?: true; hp: number; /** The armor pool as it stood when they went down, which a revive gives back (full if unset). */ armor?: number }
   /** `respawnAt` is Infinity when the mode, not a timer, brings the player back: a zombies dawn or a Last Squad redeploy. */
   | { k: 'dead'; respawnAt: number };
 
@@ -199,8 +199,8 @@ type Cell = { id: number; cx: number; cy: number; hp: number; lv?: number };
 export type Turret = Cell & { kind: Exclude<TurretKind, 'vent'>; owner: number; ammo: number; nextFireAt: number };
 /** A flame vent: a turret on the floor, its load its fuel; its flame burns on until `flareUntil` after its last puff. */
 export type Vent = Cell & { kind: 'vent'; owner: number; ammo: number; nextFireAt: number; flareUntil: number };
-/** What stands on a cell and blocks the way: a wall, a turret, a depot, a post or a decoy. Spike strips and flame vents are floor, in `World.floor`, and are walked over. */
-export type Building = (Cell & { kind: 'wall' | 'depot' | 'post' | 'decoy' }) | Turret;
+/** What stands on a cell and blocks the way: a wall, a turret, a salvage yard, a medic post or a decoy. Spike strips and flame vents are floor, in `World.floor`, and are walked over. */
+export type Building = (Cell & { kind: 'wall' | 'salvage' | 'post' | 'decoy' }) | Turret;
 export type FloorItem = (Cell & { kind: 'spikes' }) | Vent;
 
 /** `n` zombies of one kind that walk in together from one side. */
@@ -242,6 +242,10 @@ export type Run = {
   /** Tonight's horde share for the squad, which scales a boss's health. */
   share: number;
   bastionFireAt: number;
+  /** The extra scrap each salvage yard (by id) has paid since it last said so in an `aid` event; absent until a yard first pays. */
+  salvaged?: Map<number, number>;
+  /** How many turrets and vents this dawn's restock filled, until night falls; absent when none needed it. */
+  restocked?: number;
 };
 
 export type Ring =

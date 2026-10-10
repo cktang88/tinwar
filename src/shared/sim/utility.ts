@@ -1,13 +1,13 @@
 import { UTILITY, ZOM, ZOMBIES, type ZombieKind } from '../defs.ts';
-import { auraOf, levelOf, maxHpOf, reachAt, turretDef, wallTier } from './build.ts';
+import { auraOf, levelOf, maxHpOf, reachAt, salvageBonusOf, turretDef } from './build.ts';
 import { damageZombie } from './run.ts';
 import { effectiveStats } from './stats.ts';
 import { dist2 } from './movement.ts';
-import type { Run, Turret, Vent, World, Zombie } from './world.ts';
+import type { Building, Run, World, Zombie } from './world.ts';
 
 /**
  * What the utilities do besides stand there: spike strips slow, hurt and wear under the horde that walks over them, a steel wall shrugs off part of each bite,
- * and a depot or a repair post tends everything in its reach. The horde's own tick (horde.ts) knows none of it, so each hook here is handed what it needs
+ * a medic post tends everything in its reach and a salvage yard pays more for the kills in its. The horde's own tick (horde.ts) knows none of it, so each hook here is handed what it needs
  * from just before that tick and corrects the result after it: a slowed zombie keeps `slow` of the step it took, an armoured wall gets back its share of the bites.
  */
 
@@ -64,48 +64,63 @@ export function tickTraps(w: World, dtMs: number, on: TrapWatch | null) {
 const centerOf = (b: { cx: number; cy: number }) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell });
 
 /**
- * A depot tops up the neediest turret in its reach, at `ammoPerSec` of that turret's load a second for `scrapShare` of the usual price, and fills the guns of squad players there.
- * A post mends squad players and the other buildings in its reach, free. Each says so, at most once a second, in an `aid` event.
+ * The best bonus any salvage yard pays for a kill at (`x`, `y`): `salvageBonusOf` its level within its reach, 0 out of every yard's reach. Yards do not stack,
+ * and the yard that pays is the one with that bonus nearest the kill. Null when no yard reaches.
+ */
+export function salvageAt(w: World, x: number, y: number): { yard: Building; bonus: number } | null {
+  let best: { yard: Building; bonus: number; d: number } | null = null;
+  for (const b of w.buildings) {
+    if (b.kind !== 'salvage') continue;
+    const lv = levelOf(b), at = centerOf(b), d = dist2(x, y, at.x, at.y), bonus = salvageBonusOf(lv);
+    if (d > reachAt(UTILITY.salvage.reach, lv) ** 2) continue;
+    if (!best || bonus > best.bonus || (bonus === best.bonus && d < best.d)) best = { yard: b, bonus, d };
+  }
+  return best && { yard: best.yard, bonus: best.bonus };
+}
+
+/** How fast a medic post revives a squad player downed at (`x`, `y`), as a share of a squadmate's pace: the fastest post in reach, 0 out of every one's. */
+export function medicReviveAt(w: World, x: number, y: number): number {
+  let rate = 0;
+  for (const b of w.buildings) {
+    if (b.kind !== 'post') continue;
+    const lv = levelOf(b), at = centerOf(b);
+    if (dist2(x, y, at.x, at.y) <= reachAt(UTILITY.post.reach, lv) ** 2) rate = Math.max(rate, UTILITY.post.revive * auraOf(lv));
+  }
+  return rate;
+}
+
+/**
+ * A medic post heals squad players and mends the other buildings in its reach, free (its reviving is `medicReviveAt`, which the downed tick reads). It says so,
+ * at most once a second, in an `aid` event. A salvage yard says once a second what extra scrap its kills paid since it last did.
  */
 export function tickUtilities(w: World, run: Run, dtMs: number) {
   const dt = dtMs / 1000;
   const say = everySecond(w, dtMs);
   for (const u of w.buildings) {
-    if (u.kind !== 'depot' && u.kind !== 'post') continue;
+    if (u.kind === 'salvage') {
+      const owed = say ? run.salvaged?.get(u.id) : undefined;
+      if (owed) {
+        const at = centerOf(u);
+        w.events.push({ e: 'aid', kind: 'salvage', x: at.x, y: at.y, scrap: Math.round(owed) || 1 });
+        run.salvaged!.delete(u.id);
+      }
+      continue;
+    }
+    if (u.kind !== 'post') continue;
     const lv = levelOf(u), aura = auraOf(lv), at = centerOf(u);
-    const base = UTILITY[u.kind].reach;
-    const reach = reachAt(base, lv);
+    const reach = reachAt(UTILITY.post.reach, lv);
     let did = false;
-    if (u.kind === 'depot') {
-      let needy: Turret | Vent | null = null, share = 1;
-      for (const t of [...w.buildings, ...w.floor]) {
-        if (!('ammo' in t)) continue;
-        const c = centerOf(t), max = turretDef(t.kind, levelOf(t)).ammo, f = t.ammo / max;
-        if (f < share && dist2(at.x, at.y, c.x, c.y) <= reach ** 2) { needy = t; share = f; }
-      }
-      if (needy) {
-        const def = turretDef(needy.kind, levelOf(needy));
-        const per = def.scrapPerRound * UTILITY.depot.scrapShare;
-        const rounds = Math.min(def.ammo * UTILITY.depot.ammoPerSec * aura * dt, def.ammo - needy.ammo, per > 0 ? run.scrap / per : Infinity);
-        if (rounds > 0) { needy.ammo += rounds; run.scrap -= rounds * per; did = true; }
-      }
-      for (const p of w.players.values()) {
-        if (p.life.k !== 'alive' || dist2(p.x, p.y, at.x, at.y) > reach ** 2) continue;
-        const mag = effectiveStats(p).mag;
-        if (p.life.reloadUntil !== null) { p.life.reloadUntil = Math.min(p.life.reloadUntil, w.now); did = true; }
-        else if (p.life.ammo < mag) { p.life.ammo = Math.min(mag, p.life.ammo + mag * 0.5 * aura * dt); did = true; }
-      }
-    } else {
-      for (const p of w.players.values()) {
-        if (p.life.k !== 'alive' || dist2(p.x, p.y, at.x, at.y) > reach ** 2) continue;
-        const max = effectiveStats(p).maxHp;
-        if (p.life.hp < max) { p.life.hp = Math.min(max, p.life.hp + UTILITY.post.playerHp * aura * dt); did = true; }
-      }
-      for (const b of w.buildings) {
-        if (b === u) continue;
-        const c = centerOf(b), max = maxHpOf(b.kind, levelOf(b));
-        if (b.hp < max && dist2(at.x, at.y, c.x, c.y) <= reach ** 2) { b.hp = Math.min(max, b.hp + UTILITY.post.buildingHp * aura * dt); did = true; }
-      }
+    for (const p of w.players.values()) {
+      if (dist2(p.x, p.y, at.x, at.y) > reach ** 2) continue;
+      if (p.life.k === 'downed') { did = true; continue; }
+      if (p.life.k !== 'alive') continue;
+      const max = effectiveStats(p).maxHp;
+      if (p.life.hp < max) { p.life.hp = Math.min(max, p.life.hp + UTILITY.post.playerHp * aura * dt); did = true; }
+    }
+    for (const b of w.buildings) {
+      if (b === u) continue;
+      const c = centerOf(b), max = maxHpOf(b.kind, levelOf(b));
+      if (b.hp < max && dist2(at.x, at.y, c.x, c.y) <= reach ** 2) { b.hp = Math.min(max, b.hp + UTILITY.post.buildingHp * aura * dt); did = true; }
     }
     if (did && say) w.events.push({ e: 'aid', kind: u.kind, x: at.x, y: at.y });
   }

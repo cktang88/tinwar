@@ -897,9 +897,10 @@ export const hordeCount = (kind: ZombieKind, listed: number, share: number) => (
 export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent'] as const;
 export type TurretKind = (typeof TURRET_KINDS)[number];
 /**
- * Utility kinds: an ammo `depot`, a `post` that mends and a `decoy` that draws the horde are solid like a wall, `spikes` lie on the floor and are walked over.
+ * Utility kinds: a `salvage` yard that pays extra for kills nearby, a `post` that mends and a `decoy` that draws the horde are solid like a wall, `spikes` lie on the floor and are walked over.
+ * The yard took the old ammo depot's slot (and its build key); kinds go over the wire by name, so nothing else moved.
  */
-export const UTILITY_KINDS = ['depot', 'post', 'spikes', 'decoy'] as const;
+export const UTILITY_KINDS = ['salvage', 'post', 'spikes', 'decoy'] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 export const BUILDING_KINDS = ['wall', ...TURRET_KINDS, ...UTILITY_KINDS] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
@@ -912,11 +913,11 @@ export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TU
 
 /**
  * A turret holds `ammo` rounds and fires `pellets` of `damage` each every `fireMs` at the nearest zombie of the kind it `prefers` in `range`, else the nearest of any kind.
- * Its rounds leave the barrel `muzzle` px from the cell's center; a refill costs `scrapPerRound`.
+ * Its rounds leave the barrel `muzzle` px from the cell's center. Refilling it is free: by hand (holding use) at night, and every turret to full at each dawn.
  * A `lobbed` round flies over everything to where its target will be when it lands and bursts there, so a lobbing turret needs no line of sight.
  */
 export type TurretDef = {
-  prefers: ZombieKind; range: number; fireMs: number; damage: number; pellets: number; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
+  prefers: ZombieKind; range: number; fireMs: number; damage: number; pellets: number; bulletSpeed: number; spread: number; ammo: number;
   muzzle: number; bullet: { r: number; color: string }; lobbed: Blast | null;
   /** A coil's arc: it leaps from its first target to up to `jumps` more within `reach` px of the last, each hit `falloff` as hard as the one before. No round flies. */
   arc?: { jumps: number; reach: number; falloff: number };
@@ -960,17 +961,19 @@ export const WALL_TIERS = [
 export const MAX_LEVEL = 3;
 export const UPGRADE = {
   costShare: [1, 1],
-  damage: [1, 1.5, 2], fireMs: [1, 1 / 1.25, 1 / 1.5], range: [1, 1.1, 1.2], ammo: [1, 1.5, 2], hp: [1, 2, 3], aura: [1, 2, 3], reach: [1, 1.25, 1.5],
+  damage: [1, 1.5, 2], fireMs: [1, 1 / 1.25, 1 / 1.5], range: [1, 1.1, 1.2], ammo: [1, 1.5, 2], hp: [1, 2, 3], aura: [1, 1.5, 2], reach: [1, 1.25, 1.5],
 } as const;
 /**
- * Utilities: the ammo `depot` tops up every turret within `reach` px, `ammoPerSec` as a share of a turret's load a second, for `scrapShare` of a round's price, and reloads a squad player's gun at once there.
- * The `post` mends every squad player within `reach` px `playerHp` health a second and every building there `buildingHp`, free.
+ * Utilities: the `salvage` yard pays `bonus[lv - 1]` more scrap for every zombie killed within `reach` px (scaled by level like any utility's), whoever or whatever killed it.
+ * Yards do not stack: a kill in reach of several pays the best one's bonus. A level-I yard pays its price back in two or three nights of fighting beside it.
+ * The medic `post` heals every squad player within `reach` px `playerHp` health a second, revives a downed one there by itself at `revive` of a squadmate's pace
+ * (a hand on use is quicker, and wins), and mends every building there `buildingHp` a second, all free. Its level (`UPGRADE.aura`) speeds healing, reviving and mending alike.
  * `spikes` slow a zombie on them to `slow` of its speed, hurt it `dps` a second, and wear `wear` hp a second per zombie, `heavyWear` per heavy one (brute, bloater, colossus).
  * The `decoy` draws every zombie within `reach` px (scaled by level like any utility's) that has a clear way to it and no player to chase: it goes for the beacon instead of the walls and the Bastion. The Colossus pays it no mind.
  */
 export const UTILITY = {
-  depot: { reach: 175, ammoPerSec: 0.1, scrapShare: 0.6 },
-  post: { reach: 175, playerHp: 4, buildingHp: 20 },
+  salvage: { reach: 225, bonus: [0.5, 0.75, 1] },
+  post: { reach: 175, playerHp: 10, revive: 0.4, buildingHp: 8 },
   spikes: { slow: 0.45, dps: 14, wear: 7, heavyWear: 24 },
   decoy: { reach: 300 },
 } as const;
@@ -980,47 +983,47 @@ type BuildingDef = { name: string; cost: number; hp: number };
  * test/zombies-buildvalue.test.ts holds it): the sentry is the cheap all-rounder; the scatter buys time, shoving and slowing packs off the walls;
  * the cannon is the heavy killer, one round through plate and on through a line of them; the mortar thins packs and pops bloaters far out but cannot
  * hit inside `minRange`; the tesla coil stuns and marks what its arc strikes for the squad's guns; the flame vent sets alight what walks over it,
- * best at a chokepoint. The depot feeds turrets, the post mends, spikes slow, and the decoy draws the horde off the walls.
+ * best at a chokepoint. The salvage yard turns kills near it into more scrap, the medic post heals and revives the squad, spikes slow, and the decoy draws the horde off the walls.
  */
 export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> & Record<UtilityKind, BuildingDef & { turret: null }> = {
   wall: { name: WALL_TIERS[0].name, cost: WALL_TIERS[0].cost, hp: WALL_TIERS[0].hp, turret: null },
-  depot: { name: 'Ammo depot', cost: 80, hp: 900, turret: null },
-  post: { name: 'Repair post', cost: 100, hp: 800, turret: null },
+  salvage: { name: 'Salvage yard', cost: 150, hp: 900, turret: null },
+  post: { name: 'Medic post', cost: 100, hp: 800, turret: null },
   spikes: { name: 'Spike strip', cost: 10, hp: 450, turret: null },
   decoy: { name: 'Decoy beacon', cost: 50, hp: 1600, turret: null },
   tesla: {
-    name: 'Tesla coil', cost: 140, hp: 900,
+    name: 'Tesla coil', cost: 150, hp: 900,
     turret: {
-      prefers: 'walker', range: 230, fireMs: 1000, damage: 14, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 0.6, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null,
+      prefers: 'walker', range: 230, fireMs: 1000, damage: 14, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null,
       arc: { jumps: 4, reach: 120, falloff: 0.85 }, mark: { stunMs: 400, markMs: 4000 },
     },
   },
   sentry: {
-    name: 'Sentry', cost: 60, hp: 1000,
-    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: 14, pellets: 1, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.15, muzzle: 28, bullet: { r: 1.8, color: '#a88600' }, lobbed: null },
+    name: 'Sentry', cost: 70, hp: 1000,
+    turret: { prefers: 'walker', range: 420, fireMs: 280, damage: 14, pellets: 1, bulletSpeed: 2000, spread: 0.06, ammo: 120, muzzle: 28, bullet: { r: 1.8, color: '#a88600' }, lobbed: null },
   },
   cannon: {
-    name: 'Cannon', cost: 100, hp: 1100,
-    turret: { prefers: 'brute', range: 560, fireMs: 5000, damage: 210, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 1.2, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null, pierce: 2 },
+    name: 'Cannon', cost: 120, hp: 1100,
+    turret: { prefers: 'brute', range: 560, fireMs: 5000, damage: 260, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null, pierce: 2 },
   },
   scatter: {
-    name: 'Scatter', cost: 80, hp: 1100,
+    name: 'Scatter', cost: 100, hp: 1100,
     turret: {
-      prefers: 'runner', range: 260, fireMs: 650, damage: 6, pellets: 7, bulletSpeed: 1600, spread: 0.36, ammo: 40, scrapPerRound: 0.5, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null,
+      prefers: 'runner', range: 260, fireMs: 650, damage: 6, pellets: 7, bulletSpeed: 1600, spread: 0.36, ammo: 40, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null,
       hold: { mul: 0.4, ms: 900, shove: 200, shoveCap: 600 },
     },
   },
   mortar: {
-    name: 'Mortar', cost: 120, hp: 600,
+    name: 'Mortar', cost: 140, hp: 600,
     turret: {
-      prefers: 'bloater', range: 750, minRange: 300, fireMs: 2400, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 12, scrapPerRound: 1.2, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
+      prefers: 'bloater', range: 750, minRange: 300, fireMs: 2400, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 12, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
       lobbed: { radius: 120, damage: 90 },
     },
   },
   vent: {
-    name: 'Flame vent', cost: 70, hp: 700,
+    name: 'Flame vent', cost: 80, hp: 700,
     turret: {
-      prefers: 'walker', range: 24, fireMs: 250, damage: 7, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 50, scrapPerRound: 0.6, muzzle: 0, bullet: { r: 2, color: '#ff7a2a' }, lobbed: null,
+      prefers: 'walker', range: 24, fireMs: 250, damage: 7, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 50, muzzle: 0, bullet: { r: 2, color: '#ff7a2a' }, lobbed: null,
       burn: { ms: 4000, stacks: 3, patchMs: 1200 },
     },
   },
@@ -1028,7 +1031,7 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
 
 /** The survivors shoot from the Bastion's walls at what comes close; all of them fire a round every `fireMs`, fewer of them slower. */
 export const BASTION_GUN: TurretDef = {
-  prefers: 'brute', range: 220, fireMs: 300, damage: 20, pellets: 1, bulletSpeed: 1800, spread: 0.08, ammo: Infinity, scrapPerRound: 0, muzzle: 50,
+  prefers: 'brute', range: 220, fireMs: 300, damage: 20, pellets: 1, bulletSpeed: 1800, spread: 0.08, ammo: Infinity, muzzle: 50,
   bullet: { r: 1.6, color: '#4fd1e8' }, lobbed: null,
 };
 

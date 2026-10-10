@@ -23,7 +23,7 @@ const LAMP = '#ffc47e';
 const AMBER = '#ffb347';
 const GOLD = '#ffd34d';
 const SIGNAL = '#ff8a3c';
-/** Only gun turrets carry a lamp; walls, depots, posts and spikes are dark. */
+/** Only gun turrets carry a lamp; walls, salvage yards, medic posts and spikes are dark. */
 const TURRET_LIGHT: Partial<Record<string, string>> = { sentry: AMBER, cannon: AMBER, scatter: AMBER, mortar: AMBER, tesla: '#8fc4ff' };
 
 export type LitWorld = {

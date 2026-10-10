@@ -31,8 +31,8 @@ test('every turret, wall tier and utility is the best of its kind somewhere, and
   has('Sandbag wall', 'hpPerScrap');
   has('Steel wall', 'hpPerCell');
   has('Steel wall', 'burstHpPerScrap');
-  has('Ammo depot', 'resupply');
-  has('Repair post', 'mending');
+  has('Salvage yard', 'scrapReturn');
+  has('Medic post', 'squadSustain');
   has('Spike strip', 'slow');
   has('Decoy beacon', 'aggroPull');
 });

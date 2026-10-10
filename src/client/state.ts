@@ -30,10 +30,10 @@ export type Effect =
   | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number }
   /** A tesla coil's arc at (`x`, `y`) through the points `p`, x then y, from the coil on to each zombie it jumped to. */
   | { kind: 'coil'; x: number; y: number; p: number[]; born: number }
-  /** A depot refilling or a post mending, at (`x`, `y`). */
-  | { kind: 'aid'; of: 'depot' | 'post'; x: number; y: number; born: number };
+  /** A medic post healing or mending, or a salvage yard paying `scrap` extra, at (`x`, `y`). */
+  | { kind: 'aid'; of: 'salvage' | 'post'; x: number; y: number; scrap?: number; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 400, tracer: 240, coil: 220, aid: 800 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 400, tracer: 240, coil: 220, aid: 1000 };
 
 type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' | 'wiped' | 'airdrop' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };

@@ -379,8 +379,8 @@ const STEPS: Record<string, () => Promise<void>> = {
     await wheel(-100);
     expect('and back', await until(async () => (await tier()) === 1));
     await tap('Digit6', '6');
-    expect('6 picks the tesla coil, 7 the depot, 8 the post, 9 the spikes', await until(async () => (await zdev())?.buildKind === 'tesla'));
-    for (const [code, kind] of [['Digit7', 'depot'], ['Digit8', 'post'], ['Digit9', 'spikes']] as const) {
+    expect('6 picks the tesla coil, 7 the salvage yard, 8 the medic post, 9 the spikes', await until(async () => (await zdev())?.buildKind === 'tesla'));
+    for (const [code, kind] of [['Digit7', 'salvage'], ['Digit8', 'post'], ['Digit9', 'spikes']] as const) {
       await tap(code, code.slice(5));
       expect(`${code.slice(5)} picks the ${kind}`, await until(async () => (await zdev())?.buildKind === kind));
     }
@@ -415,7 +415,7 @@ const STEPS: Record<string, () => Promise<void>> = {
       const spot = await place(`${WALL_TIERS[lv - 1]!.name}`, pickTier(lv), 'wall', lv);
       if (spot) { await mouse('mouseMoved', VIEW.w / 2 + 200, 40); await closeUp(`zom-tier-${lv}-${WALL_TIERS[lv - 1]!.name.toLowerCase().replace(/ /g, '-')}`, cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y); }
     }
-    const kinds: [string, string, BuildingKind][] = [['Digit2', 'sentry', 'sentry'], ['Digit3', 'cannon', 'cannon'], ['Digit4', 'scatter', 'scatter'], ['Digit5', 'mortar', 'mortar'], ['Digit6', 'tesla coil', 'tesla'], ['Digit7', 'ammo depot', 'depot'], ['Digit8', 'repair post', 'post'], ['Digit9', 'spike strip', 'spikes']];
+    const kinds: [string, string, BuildingKind][] = [['Digit2', 'sentry', 'sentry'], ['Digit3', 'cannon', 'cannon'], ['Digit4', 'scatter', 'scatter'], ['Digit5', 'mortar', 'mortar'], ['Digit6', 'tesla coil', 'tesla'], ['Digit7', 'salvage yard', 'salvage'], ['Digit8', 'medic post', 'post'], ['Digit9', 'spike strip', 'spikes']];
     for (const [code, label, kind] of kinds) await place(label, () => tap(code, code.slice(5)), kind);
     await mouse('mouseMoved', VIEW.w / 2 + 200, 40);
     await sleep(400);
@@ -452,7 +452,7 @@ const STEPS: Record<string, () => Promise<void>> = {
       await sleep(300);
       await closeUp('zom-sentry-lv3', cellCenter(sentry.cx, sentry.cy).x, cellCenter(sentry.cx, sentry.cy).y);
     }
-    for (const label of ['cannon', 'scatter', 'mortar', 'tesla coil', 'ammo depot', 'repair post']) { await stepUp(label, 'U', 2); await stepUp(label, 'U', 3); }
+    for (const label of ['cannon', 'scatter', 'mortar', 'tesla coil', 'salvage yard', 'medic post']) { await stepUp(label, 'U', 2); await stepUp(label, 'U', 3); }
     await mouse('mouseMoved', VIEW.w / 2 + 200, 40);
     await sleep(400);
     await shot('zom-variety-upgraded');
