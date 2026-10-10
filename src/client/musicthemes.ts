@@ -10,17 +10,19 @@ const { maj, min, maj7, min7, dom7 } = Q;
 // Pitch classes.
 const C = 0, D = 2, E = 4, F = 5, G = 7, A = 9, B = 11, Eb = 3;
 
-/** Old Town: a Balkan street band at a kolo's pace, round the Andalusian cadence. */
+/** Old Town: back-alley phonk at midnight: a stuttering koto hook down the cobbles, an overdriven guitar in a fight, a church bell answering, 808 glides and a half-time drop. */
 export const OLDTOWN: PopSpec = {
-  id: 'oldtown', label: 'Cobblestone Kolo', bpm: 136, tonic: A, minor: true,
+  id: 'oldtown', label: 'Back Alley Drift', bpm: 146, tonic: D, minor: true,
   prog: [d(0, min), d(10, maj), d(8, maj), d(7, maj)], progName: 'i-VII-VI-V',
-  hook: 'A4:2 A4:1 C5:1 E5:2 A5:4 G#5:2 A5:4 | G5:2 F5:1 E5:1 D5:2 B4:4 D5:2 G5:4 | A4:2 A4:1 C5:1 F5:2 A5:4 G5:2 A5:4 | B4:2 C5:1 B4:1 G#4:2 B4:4 r:2 E5:4',
-  counter: 'E5:4 C5:4 A4:4 C5:4 | D5:4 B4:4 G4:4 B4:4 | C5:4 A4:4 F4:4 A4:4 | B4:4 G#4:4 E4:4 G#4:4',
-  bass: '1:4 5,:4 1:4 5,:4', dropBass: '1:2 8:2 5,:2 8:2 1:2 8:2 5,:2 8:2',
-  calm: 'bandoneon', lead: 'violin', counterInst: 'flute', bassInst: 'tuba', bassLo: 40, dropInst: 'tuba', pad: 'accordion',
-  comp: { inst: 'honky', pat: '..7...7...7...7.', alt: '..7...7...7.7.7.', lo: 60, vel: 0.45 },
-  kit: { kick: 'kbb', snare: 'snare', hat: 'tamb', fill: ['tom', 45], crash: 'crash' },
-  beat: { calmKick: '9.......9.......', kick: '9...6...9...6...', snare: '....8.......8...', calmHat: '..5...5...5...5.', hat: '..5.4.5.4.5.4.5.' },
+  hook: 'D5:1 D5:1 r:1 D5:1 F5:2 A5:3 G5:1 F5:2 E5:2 r:2 | G5:2 r:1 G5:1 E5:2 C5:3 D5:1 E5:3 G5:3 | D5:1 D5:1 r:1 D5:1 F5:2 Bb5:3 A5:1 G5:2 F5:2 r:2 | C#5:2 E5:2 A5:2 Bb5:1 A5:1 G5:2 E5:2 C#5:4',
+  counter: 'A5:4 F5:4 D5:8 | G5:4 E5:4 C5:8 | F5:4 D5:4 Bb4:8 | E5:4 C#5:4 A4:8',
+  bass: '1:6 1:2 r:2 1:2 5~:2 8~:2', dropBass: '1:6 8~:4 1~:2 r:2 5~:2',
+  calm: 'koto', lead: 'od', counterInst: 'bell', bassInst: 'b808', bassLo: 26, dropInst: 'b808d', pad: 'choir', padLo: 57,
+  kit: { kick: 'k909', snare: 'clap', hat: 'hat', perc: ['cowbell', 81], fill: ['tom', 43], crash: 'crash' },
+  beat: { calmKick: '9.....9...9.....', kick: '9.....9...9..6.6', snare: '....9.......9...', calmHat: '5.5.5.5.5.5.5.5.', hat: '5.555.5.5.555.55', perc: '7..5..5.7..5..5.' },
+  halfTimeDrop: true,
+  // The church bell tolls through the breakdown.
+  extra: (cx) => { if (cx.at.part === 'breakdown' && cx.at.barIn % 2 === 0) cx.add('calm', 'bell', 0, 16, 62, 0.45); },
 };
 
 /** Quarry: drift phonk for the diggers: a cowbell hook in a 3-3-2 tresillo, a distorted 808 and a half-time drop. */

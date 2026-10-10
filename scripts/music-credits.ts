@@ -7,7 +7,7 @@ import path from 'node:path';
 import { allCredits, DROP, MARCH_CREDIT, STREAMS, type StreamKey } from '../src/client/musicstream.ts';
 import { MAP_TRACK, TRACKS } from '../src/client/musictracks.ts';
 
-const WHERE: Record<StreamKey, string> = { market: 'Night Market', groove: 'Radio', dizzy: 'Radio', chibi: 'Radio', dekalb: 'Radio', wraghstep: 'Radio' };
+const WHERE: Record<StreamKey, string> = { market: 'Night Market' };
 const MAP_NAME: Record<string, string> = {
   plaza: 'Plaza (and the menu)', oldtown: 'Old Town', quarry: 'Quarry', causeway: 'Causeway (harbour)', market: 'Night Market', museum: 'Museum', subpen: 'Sub Pen',
   park: 'Park', railyard: 'Rail Yard', summit: 'Summit', embassy: 'Embassy', airbase: 'Airbase', wasteland: 'Wasteland', range: 'Shooting Range', outpost: 'Outpost (Zombies)',
@@ -29,8 +29,8 @@ export function creditsMarkdown(): string {
     '# Soundtrack credits',
     '',
     `${MARCH_CREDIT}, so there are no recordings of them (docs/music/CRAFT.md says how the themes are written).`,
-    'Night Market and the radio-only stations play the recordings below. Each was trimmed, loudness-normalised to -16 LUFS (true peak',
-    '-1.5 dBTP) and re-encoded to MP3 for the game; the changes column says what else was done. All are used under the licence named,',
+    'Night Market plays the recording below, and a big kill streak the bass-drop sting. Each was trimmed, loudness-normalised to -16 LUFS',
+    '(true peak -1.5 dBTP) and re-encoded to MP3 for the game; the changes column says what else was done. All are used under the licence named,',
     'which requires this attribution; none is endorsed by its author.',
     '',
     '## Synthesized themes',
