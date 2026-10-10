@@ -43,13 +43,13 @@ test('a bot keeps its skill across its deaths and respawns', () => {
   for (const [id, m] of mems) assert.deepEqual(m.skill, first.get(id), `bot ${id} keeps its skill`);
 });
 
-test('skills fall in the bands: about a quarter rookies, a bit over half regulars, a fifth veterans', () => {
+test('skills fall in the bands: half rookies, a quarter regulars, a quarter veterans', () => {
   const n = 20_000, count = { rookie: 0, regular: 0, veteran: 0 };
   for (let i = 0; i < n; i++) count[skillFor(`name${i}`, 77).tier]++;
   const { bands } = BOT_SKILL;
   const want = { rookie: bands.rookie, regular: bands.regular - bands.rookie, veteran: 1 - bands.regular };
   for (const tier of ['rookie', 'regular', 'veteran'] as const) assert.ok(Math.abs(count[tier] / n - want[tier]) < 0.015, `${tier}: ${count[tier] / n} vs ${want[tier]}`);
-  for (const [tier, share] of [['rookie', 0.25], ['regular', 0.55], ['veteran', 0.2]] as const) assert.ok(Math.abs(want[tier] - share) < 1e-9, tier);
+  for (const [tier, share] of [['rookie', 0.5], ['regular', 0.25], ['veteran', 0.25]] as const) assert.ok(Math.abs(want[tier] - share) < 1e-9, tier);
 });
 
 test('skill is continuous: knobs move steadily from the worst rookie to a veteran, and every veteran is today\'s bot', () => {

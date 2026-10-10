@@ -101,7 +101,10 @@ test('leaving sprint throws the post-sprint bloom: ~4x the gun\'s moving spread,
   assert.equal(early.settleMs, settleMs);
   assert.ok(early.settle! > 0.97, `it starts in full the moment the sprint ends (${early.settle})`);
   const peak = easedOf(a);
-  assert.ok(Math.abs(peak / (SPRINT.settleMul * moving('assault')) - 1) < 0.02, `the eased spread is already at the peak (sprinting built it): ${peak}`);
+  // Sprinting built the bloom up to its peak, and it comes down on its curve from the first tick off the sprint: no hold before it falls.
+  assert.ok(Math.abs(peak / spreadFor('assault', {}, false, 0, 0, early.settle!) - 1) < 0.02, `on the settle curve from the first tick (${peak})`);
+  run(w, TICK_MS);
+  assert.ok(easedOf(a) < peak - 0.004, `and already falling at full pace (${peak} -> ${easedOf(a)})`);
   run(w, settleMs / 2);
   const mid = snapshotFor(w, a.id).self.settle!;
   assert.ok(Math.abs(mid - 0.5) < 0.04, `half the settle time, half the settle (${mid})`);
@@ -146,7 +149,9 @@ for (const gun of ['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as co
     press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
     run(w, TICK_MS);
     assert.equal(shots(), 1, 'fired on the click\'s tick');
-    assert.ok(easedOf(a) >= 3.9 * moving(gun), `at the full post-sprint bloom (${easedOf(a).toFixed(3)})`);
+    const ms = settleRulesOf(GUNS[gun]).ms;
+    assert.ok(easedOf(a) >= 0.98 * spreadFor(gun, {}, false, 0, 0, (ms - TICK_MS) / ms), `wide with the post-sprint bloom, one tick into its settle (${easedOf(a).toFixed(3)})`);
+    assert.ok(easedOf(a) >= 2.5 * moving(gun), 'far wider than walking');
   });
 }
 

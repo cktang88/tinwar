@@ -66,7 +66,7 @@ export const sharpnessAgainst = (target: PlayerView) =>
   target.kind === 'bot' ? SHARPNESS[0]! : SHARPNESS[target.hunted ? SHARPNESS.length - 1 : Math.min(target.level, SHARPNESS.length - 1)]!;
 
 /**
- * A bot's skill, drawn once for its name in a room (`skillFor`) and kept across its lives: a few rookies, mostly regulars, a few veterans.
+ * A bot's skill, drawn once for its name in a room (`skillFor`) and kept across its lives: half rookies, a quarter regulars, a quarter veterans.
  * Skill is the bot's brain only; its gun, body and health are a person's whatever its skill (test/bot-parity.test.ts).
  * `bands` are the share of bots below each tier's top; the skill value is a uniform draw in [0, 1), so its band is its tier and its
  * place in the band its continuous value. Each knob is read off the rows by `skillKnobs`: flat at a rookie's row below the rookie band's
@@ -90,7 +90,7 @@ export type SkillKnobs = {
 export type Skill = { tier: SkillTier; value: number };
 
 export const BOT_SKILL = {
-  bands: { rookie: 0.25, regular: 0.8, veteran: 1 },
+  bands: { rookie: 0.5, regular: 0.75, veteran: 1 },
   rookie: { aimMul: 2.6, reactMul: 1.35, turnMul: 0.7, lagMul: 3, lead: { mean: 0.8, spread: 0.3 }, sprayMul: 1.8, patienceMul: 0.5, readsHeld: 0.35, oddsShift: -0.3, flankMul: 0.4, flankRead: 0.35, abilityOdds: 0.5 },
   regular: { aimMul: 1.35, reactMul: 1.12, turnMul: 0.88, lagMul: 1.6, lead: { mean: 0.9, spread: 0.2 }, sprayMul: 1.3, patienceMul: 0.8, readsHeld: 0.75, oddsShift: -0.1, flankMul: 0.8, flankRead: 0.7, abilityOdds: 0.8 },
   veteran: { aimMul: 1, reactMul: 1, turnMul: 1, lagMul: 1, lead: BOT_AIM.leadJudgment, sprayMul: 1, patienceMul: 1, readsHeld: 1, oddsShift: 0, flankMul: 1, flankRead: 1, abilityOdds: 1 },
