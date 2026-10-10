@@ -900,7 +900,7 @@ export const zombieBounty = (gun: GunId): number => {
 /** How many of a kind listed `listed` times come for a squad with this share of the horde. */
 export const hordeCount = (kind: ZombieKind, listed: number, share: number) => (!listed || isBoss(kind) ? listed : Math.max(1, Math.round(listed * share)));
 
-/** Turrets: everything that holds a load and spends it on the horde. The flame `vent` is one that lies on the floor (`FLOOR_KINDS`) and burns fuel instead of firing rounds. */
+/** Turrets: everything that holds a load and spends it on the horde. The flame `vent` is a directional flamer that burns fuel down a jet in a fixed facing instead of firing rounds. */
 export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'vent'] as const;
 export type TurretKind = (typeof TURRET_KINDS)[number];
 /**
@@ -913,9 +913,12 @@ export const BUILDING_KINDS = ['wall', ...TURRET_KINDS, ...UTILITY_KINDS] as con
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
 export const isTurretKind = (kind: BuildingKind): kind is TurretKind => (TURRET_KINDS as readonly string[]).includes(kind);
 /** What lies flat on the floor: anyone walks over it, the horde's flow ignores it, and it stands in `World.floor` rather than `World.buildings`. */
-export const FLOOR_KINDS = ['spikes', 'vent'] as const;
+export const FLOOR_KINDS = ['spikes'] as const;
 export type FloorKind = (typeof FLOOR_KINDS)[number];
 export const isFloorKind = (kind: BuildingKind): kind is FloorKind => (FLOOR_KINDS as readonly string[]).includes(kind);
+/** A flame vent's facing, set when it goes up: 0 east, 1 south, 2 west, 3 north (two bits on the wire). */
+export const VENT_DIRS = [0, 1, 2, 3] as const;
+export type VentDir = (typeof VENT_DIRS)[number];
 export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TURRET_KINDS.map((k) => [k, f(k)])) as Record<TurretKind, T>;
 
 /**
@@ -937,10 +940,15 @@ export type TurretDef = {
   /** Each zombie it strikes is stunned for `stunMs` (brutes and the Colossus shrug that off) and marked for `markMs`: a marked zombie takes `MARK.gunMul` from players' guns. */
   mark?: { stunMs: number; markMs: number };
   /**
-   * A floor vent: each `fireMs` it puffs while a zombie stands within `range` (one fuel a puff), and its flame keeps the floor alight `patchMs` after the last puff.
+   * A flamer: each `fireMs` it puffs while a zombie stands in its `jet` (one fuel a puff), and its jet keeps burning `patchMs` after the last puff.
    * Whatever stands in the flame burns `damage` a second for `ms`, each fresh lick adding a stack up to `stacks`.
    */
   burn?: { ms: number; stacks: number; patchMs: number };
+  /**
+   * A flamer's jet: from its cell's edge it runs `range` px along the vent's facing (`VENT_DIRS`), `w0` px either side of its line at the nozzle and
+   * `w1` at its far end. A zombie in it (its own size besides) is in the flame.
+   */
+  jet?: { w0: number; w1: number };
 };
 /** A tesla coil's mark: players' guns (rounds and blasts) hit a marked zombie this much harder. */
 export const MARK = { gunMul: 1.25 } as const;
@@ -1030,8 +1038,8 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
   vent: {
     name: 'Flame vent', cost: 80, hp: 700,
     turret: {
-      prefers: 'walker', range: 24, fireMs: 250, damage: 7, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 50, muzzle: 0, bullet: { r: 2, color: '#ff7a2a' }, lobbed: null,
-      burn: { ms: 4000, stacks: 3, patchMs: 1200 },
+      prefers: 'walker', range: 150, fireMs: 250, damage: 7, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 50, muzzle: 0, bullet: { r: 2, color: '#ff7a2a' }, lobbed: null,
+      burn: { ms: 4000, stacks: 3, patchMs: 1200 }, jet: { w0: 16, w1: 30 },
     },
   },
 };

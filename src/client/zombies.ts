@@ -1,6 +1,6 @@
-import { BUILDINGS, hordeCount, isEndless, MARK, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, UPGRADE, UTILITY, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, isTurretKind, type BuildingKind } from '../shared/defs.ts';
+import { BUILDINGS, hordeCount, isEndless, MARK, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, UPGRADE, UTILITY, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, isTurretKind, type BuildingKind, type VentDir } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
-import { buildRefusal, buildsNow, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, salvageBonusOf, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
+import { awayFrom, buildRefusal, buildsNow, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, salvageBonusOf, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
@@ -208,7 +208,7 @@ export function upgradeGains(kind: BuildingKind, lv: number): string {
   const hp = `${times(U.hp[j])} hp`;
   // A scatter's level grips and shoves harder rather than hitting harder; a vent's is its burn and its fuel; a coil's arc leaps further.
   const gains = kind === 'scatter' ? [`${times(U.damage[j])} shove`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
-    : kind === 'vent' ? [`${times(U.damage[j])} burn`, `${times(1 / U.fireMs[j])} rate`, `${times(U.ammo[j])} fuel`, hp]
+    : kind === 'vent' ? [`${times(U.damage[j])} burn`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} jet`, `${times(U.ammo[j])} fuel`, hp]
     : kind === 'tesla' ? [`${times(U.damage[j])} dmg`, `+${2 * j} jumps`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
     : isTurretKind(kind) ? [`${times(U.damage[j])} dmg`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
     : kind === 'decoy' ? [`${plus(U.reach[j])} pull reach`, hp]
@@ -231,6 +231,8 @@ export function upgradeLine(hover: HoverInfo, why: UpgradeRefusal | null): strin
  */
 export type Ghost = {
   kind: BuildingKind; lv: number; cx: number; cy: number; refusal: BuildRefusal | null; label: string; detail: string | null; hover: HoverInfo | null; upgrade: UpgradeRefusal | null;
+  /** A flame vent's facing: R's pick in build mode, else straight out from the core. */
+  dir?: VentDir;
   /** While a line is dragged out: every cell of it from where the drag began, each judged as the server will build it; `cx`, `cy` are then its far end. */
   line?: readonly LineCell[];
 };
@@ -261,7 +263,7 @@ export function lineGhostAt(site: BuildSite, kind: BuildingKind, start: { cx: nu
   };
 }
 
-export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize: number, lv = 1): Ghost {
+export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize: number, lv = 1, ventDir: VentDir | null = null): Ghost {
   const cell = cellOf(at.x, at.y), grid = worldSize / ZOM.cell;
   const cx = Math.min(grid - 1, Math.max(0, cell.cx)), cy = Math.min(grid - 1, Math.max(0, cell.cy));
   const level = kind === 'wall' ? lv : 1;
@@ -276,7 +278,8 @@ export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize
       detail: `${upgradeLine(hover, upgrade)} · Right click: take down +${hover.refund}${hover.next?.gains ? `\n${hover.next.gains}` : ''}${role ? `\n${role}` : ''}`,
     };
   }
-  return { kind, lv: level, cx, cy, refusal, hover: null, upgrade: null, detail: roleOf(kind), label: refusal ? refusalText(refusal, kind, level) : `${nameAt(kind, level)} · ${costOf(kind, level)} scrap` };
+  const dir = kind === 'vent' ? { dir: ventDir ?? awayFrom({ x: site.core.x + site.core.w / 2, y: site.core.y + site.core.h / 2 }, cx, cy) } : {};
+  return { kind, lv: level, cx, cy, refusal, hover: null, upgrade: null, ...dir, detail: roleOf(kind), label: refusal ? refusalText(refusal, kind, level) : `${nameAt(kind, level)} · ${costOf(kind, level)} scrap` };
 }
 
 /** One chip on the build bar: what its key or a tap on it picks (a wall at a tier, a turret, a utility), or `upgrade` for the hovered building. */
@@ -302,7 +305,7 @@ export const BUILD_ROLES: Record<Exclude<BuildingKind, 'wall'>, string> = {
   cannon: 'Cannon: one huge round through plate and a line of zombies',
   mortar: `Mortar: long range, can't hit inside ${BUILDINGS.mortar.turret.minRange} px`,
   tesla: `Tesla: stuns and marks — +${Math.round((MARK.gunMul - 1) * 100)}% gun damage to marked`,
-  vent: 'Flame vent: sets alight what walks over it, best at a chokepoint',
+  vent: `Flame vent: a ${BUILDINGS.vent.turret.range} px jet of fire one way, best down a gap · R turns it`,
   salvage: `Salvage yard: +${Math.round(UTILITY.salvage.bonus[0] * 100)}% scrap from kills nearby`,
   post: 'Medic post: heals and slowly revives the squad nearby',
   spikes: 'Spike strip: slows and cuts what crosses it',

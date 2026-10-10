@@ -297,29 +297,30 @@ test('spikes can kill: a weak zombie crossing a long field does not live to the 
   assert.equal(w.run!.scrap - scrap, ZOMBIES.walker.scrap, 'and its scrap came to the bank');
 });
 
-test('a flame vent sets alight what walks over it for a fuel a puff: the fire burns on after it, stacks a little, and its kills are the vent\'s', () => {
+test('a flame vent sets alight what walks through its jet for a fuel a puff: the fire burns on after it, stacks a little, and its kills are the vent\'s', () => {
   const def = BUILDINGS.vent.turret, burn = def.burn!;
   const lane = (vent: boolean, ammo = def.ammo) => {
     const w = nightWorld();
     w.run!.bastionFireAt = Infinity;
     const owner = spawnAt(w, 1150, 1600);
-    if (vent) w.floor.push({ id: newId(w), kind: 'vent', cx: 29, cy: 37, hp: BUILDINGS.vent.hp, owner: owner.id, ammo, nextFireAt: 0, flareUntil: 0 });
-    // The core's cell is the goal; a zombie due south walks straight north, over the vent.
-    const z = zombieAt(w, 1475, 1950);
+    // Beside the lane, its jet east across it: a zombie due south of the core walks straight north, through the jet.
+    if (vent) w.buildings.push({ id: newId(w), kind: 'vent', cx: 28, cy: 39, hp: BUILDINGS.vent.hp, owner: owner.id, ammo, nextFireAt: 0, flareUntil: 0, dir: 0 });
+    w.buildingsVersion++;
+    const z = zombieAt(w, 1475, 2100);
     return { w, z, owner };
   };
   const { w, z } = lane(true);
   let lit = false;
   for (let t = 0; t < 1500 && !lit; t += TICK_MS) { step(w, TICK_MS); lit = !!z.burn; }
-  assert.ok(lit && z.burn!.dps === def.damage, 'it caught fire on the vent');
-  const vent = w.floor[0]!;
+  assert.ok(lit && z.burn!.dps === def.damage, 'it caught fire in the jet');
+  const vent = w.buildings[0]!;
   assert.ok('ammo' in vent && vent.ammo === def.ammo - 1, 'for one fuel');
   assert.equal(snapshotFor(w, w.players.values().next().value!.id).zombies!.find((v) => v[0] === z.id)![5], 2, 'the fire is a bit on its snapshot entry');
   run(w, 1000);
   assert.ok(z.burn && z.burn.stacks > 1 && z.burn.stacks <= burn.stacks, `licked again on the way over: ${z.burn?.stacks} stacks`);
   const left = z.hp;
   run(w, 1000);
-  assert.ok(Math.hypot(z.x - 1475, z.y - 1875) > def.range + 40 && left - z.hp > def.damage * 0.9, 'it burns on past the vent');
+  assert.ok(z.y < 1975 - 60 && left - z.hp > def.damage * 0.9, `it burns on past the jet, at y ${z.y.toFixed(0)}`);
   run(w, burn.ms + 200);
   assert.equal(z.burn, undefined, 'and goes out after its burn');
   // Dry, it puffs no more.
@@ -365,9 +366,8 @@ test('dawn restocks every turret and flame vent to a full load for free, says ho
   run1.core.hp = 1e9;
   const sentry = { id: newId(w), kind: 'sentry' as const, cx: 30, cy: 33, hp: 1e9, owner: owner.id, ammo: 3, nextFireAt: Infinity };
   const full = { id: newId(w), kind: 'cannon' as const, cx: 31, cy: 33, hp: 1e9, owner: owner.id, ammo: turretDef('cannon', 2).ammo, nextFireAt: Infinity, lv: 2 };
-  const vent = { id: newId(w), kind: 'vent' as const, cx: 32, cy: 36, hp: 1e9, owner: owner.id, ammo: 0, nextFireAt: 0, flareUntil: 0 };
-  w.buildings.push(sentry, full);
-  w.floor.push(vent);
+  const vent = { id: newId(w), kind: 'vent' as const, cx: 32, cy: 36, hp: 1e9, owner: owner.id, ammo: 0, nextFireAt: 0, flareUntil: 0, dir: 1 as const };
+  w.buildings.push(sentry, full, vent);
   w.buildingsVersion++;
   run1.scrap = 0;
   run(w, 200);

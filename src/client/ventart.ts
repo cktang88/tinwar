@@ -1,15 +1,15 @@
-import { UTILITY, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { UTILITY, ZOMBIE_KINDS, ZOMBIES, type VentDir } from '../shared/defs.ts';
 import { ZOMBIE_FX, type BuildingView, type ZombieView } from '../shared/protocol.ts';
-import { cellRect, levelOf, reachAt, turretDef } from '../shared/sim/build.ts';
+import { cellRect, jetOf, levelOf, reachAt, turretDef, type Jet } from '../shared/sim/build.ts';
 import { glowSprite } from './coreart.ts';
 import { INK, tint } from './palette.ts';
 import { LIGHT } from './tilt.ts';
 import { seeded, wearStage, type Wear } from './turretart.ts';
 
 /**
- * The two buildables that are neither gun nor wall: the flame vent, a grate in the floor that sets alight what walks over it, and the decoy beacon,
- * a mast with a loudspeaker and a blinking lamp that draws the horde off the walls. Their bodies are drawn with the floor and the buildings, their light
- * (the vent's flame and embers, the beacon's lamp and its pull) over the night's shade. Also the marks the horde carries: a coil's charge, a vent's fire.
+ * The two buildables that are neither gun nor wall: the flame vent, a flamer on a base that throws a jet of fire one way, and the decoy beacon,
+ * a mast with a loudspeaker and a blinking lamp that draws the horde off the walls. Their bodies are drawn with the buildings (the vent's scorch with the floor),
+ * their light (the vent's jet and embers, the beacon's lamp and its pull) over the night's shade. Also the marks the horde carries: a coil's charge, a vent's fire.
  */
 
 const TAU = Math.PI * 2;
@@ -19,177 +19,239 @@ const SPARK = '#bfe3ff';
 /** How long a vent's flame burns on after its last puff, as the sim has it (`TurretDef.burn.patchMs`). */
 export const ventFlameMs = (lv: number) => turretDef('vent', lv).burn!.patchMs;
 
-/**
- * A flame vent lying in the floor: a scorched steel plate with a round grate over the burner, a fuel line out to one side and a pilot nub,
- * hazard-striped at its corners. A bigger burner ring at each level; badly damaged, its plate is buckled and black. The gauge's cells show the fuel.
- */
-export function drawVent(ctx: CanvasRenderingContext2D, b: BuildingView, now: number) {
-  const { x, y, w } = cellRect(b.cx, b.cy);
-  const cx = x + w / 2, cy = y + w / 2, lv = levelOf(b), wear = wearStage(b.hp);
-  // Soot fanned round it on the floor, deeper the more it has burned.
-  ctx.fillStyle = 'rgba(24, 20, 17, 0.32)';
+/** A vent's facing from its view (east when a view carries none). */
+const dirOfView = (b: BuildingView): VentDir => ('dir' in b && b.dir !== undefined ? b.dir : 0);
+/** Points along a jet: `along` px out from its start, `across` px off its line (positive to the facing's right). */
+const jetPoint = (j: Jet, along: number, across: number) => ({ x: j.x0 + j.ux * along - j.uy * across, y: j.y0 + j.uy * along + j.ux * across });
+/** The jet's outline, nozzle to tip, as the sim judges it (`inJet`). */
+function jetPath(ctx: CanvasRenderingContext2D, j: Jet, grow = 0) {
+  const a = jetPoint(j, 0, -(j.w0 + grow)), b2 = jetPoint(j, j.len + grow, -(j.w1 + grow)), c = jetPoint(j, j.len + grow, j.w1 + grow), d = jetPoint(j, 0, j.w0 + grow);
   ctx.beginPath();
-  ctx.ellipse(cx, cy, 24, 22, 0, 0, TAU);
-  ctx.fill();
-  // The plate, a slab sunk into the floor: ink rim, lit top-left edge, shaded bottom-right.
-  const p = 19;
-  ctx.fillStyle = wear === 2 ? '#3d3a37' : '#5a5f68';
-  ctx.beginPath();
-  ctx.roundRect(cx - p, cy - p, p * 2, p * 2, 4);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-  ctx.fillRect(cx - p + 2, cy - p + 1.5, p * 2 - 4, 1.6);
-  ctx.fillStyle = 'rgba(10, 12, 16, 0.3)';
-  ctx.fillRect(cx - p + 2, cy + p - 3, p * 2 - 4, 1.6);
-  // Hazard stripes on two corners.
-  ctx.save();
-  ctx.beginPath();
-  ctx.roundRect(cx - p, cy - p, p * 2, p * 2, 4);
-  ctx.clip();
-  for (const [sx, sy] of [[-1, -1], [1, 1]] as const) {
-    for (let i = 0; i < 3; i++) {
-      ctx.fillStyle = i % 2 ? INK : '#e0a43a';
-      ctx.beginPath();
-      const o = 4 + i * 4;
-      ctx.moveTo(cx + sx * p, cy + sy * (p - o));
-      ctx.lineTo(cx + sx * (p - o), cy + sy * p);
-      ctx.lineTo(cx + sx * (p - o - 4), cy + sy * p);
-      ctx.lineTo(cx + sx * p, cy + sy * (p - o - 4));
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.roundRect(cx - p, cy - p, p * 2, p * 2, 4);
-  ctx.stroke();
-  // Corner bolts.
-  ctx.fillStyle = '#8d939c';
-  for (const [bx, by] of [[-1, 1], [1, -1]] as const) { ctx.beginPath(); ctx.arc(cx + bx * (p - 4), cy + by * (p - 4), 1.7, 0, TAU); ctx.fill(); ctx.stroke(); }
-  // The burner: a dark round mouth with a grate of bars across it, a brass ring round it, bigger each level.
-  const r = 9 + lv * 1.5;
-  ctx.fillStyle = '#b79a4a';
-  ctx.beginPath();
-  ctx.arc(cx, cy, r + 2.4, 0, TAU);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = SOOT;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, TAU);
-  ctx.fill();
-  // The burner's throat glows a little even at rest, a pilot flame below the grate.
-  const breathe = 0.5 + 0.5 * Math.sin(now / 300 + b.cx);
-  ctx.fillStyle = tint(FLAME_DEEP, -0.35);
-  ctx.globalAlpha = 0.4 + 0.25 * breathe;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.55, 0, TAU);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = '#6d727b';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = -2; i <= 2; i++) {
-    const off = (i * r) / 2.6, half = Math.sqrt(Math.max(0, r * r - off * off));
-    ctx.moveTo(cx + off, cy - half);
-    ctx.lineTo(cx + off, cy + half);
-  }
-  ctx.stroke();
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r + 2.4, 0, TAU);
-  ctx.stroke();
-  // The fuel line out to the right, with its valve wheel.
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 4.4;
-  ctx.beginPath();
-  ctx.moveTo(cx + r + 2, cy + 4);
-  ctx.lineTo(cx + p - 2, cy + 4);
-  ctx.stroke();
-  ctx.strokeStyle = '#a8552e';
-  ctx.lineWidth = 2.4;
-  ctx.stroke();
-  ctx.fillStyle = '#d0573a';
-  ctx.beginPath();
-  ctx.arc(cx + p - 6, cy + 4, 2.6, 0, TAU);
-  ctx.fill();
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-  if (wear === 2) {
-    const rnd = seeded(b.cx * 31 + b.cy);
-    ctx.fillStyle = 'rgba(18, 15, 13, 0.55)';
-    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(cx + (rnd() - 0.5) * 30, cy + (rnd() - 0.5) * 30, 3 + rnd() * 3, 0, TAU); ctx.fill(); }
-  }
-  // The fuel gauge along the bottom edge: five cells, orange while there is fuel, red when dry.
-  const ammo = 'ammo' in b ? b.ammo : 10, cells = 5, lit = ammo === 0 ? 0 : Math.max(1, Math.ceil((ammo / 10) * cells));
-  for (let i = 0; i < cells; i++) {
-    ctx.fillStyle = i < lit ? FLAME : ammo === 0 && Math.floor(now / 250) % 2 === 0 ? '#e5484d' : '#2a2e36';
-    ctx.fillRect(cx - 12 + i * 4.8 + 0.5, cy + p - 6.5, 3.8, 3);
-  }
+  ctx.moveTo(a.x, a.y); ctx.lineTo(b2.x, b2.y);
+  ctx.quadraticCurveTo(...(Object.values(jetPoint(j, j.len + grow + j.w1 * 0.6, 0)) as [number, number]), c.x, c.y);
+  ctx.lineTo(d.x, d.y);
+  ctx.closePath();
 }
 
 /**
- * A vent's flame, over the night: while it burns (for `ventFlameMs` after a puff), a roaring column of tongues licking up out of the grate and
- * a hot pool on the floor; embers riding up off it and fading. `since` is how long ago it last puffed. Reduced motion holds the tongues still.
+ * The scorch a flame vent leaves on the floor down its jet: a soot tongue widening from the nozzle, darkest in the middle, with a few
+ * charred streaks along it. Drawn with the floor, under bodies.
+ */
+export function drawVentScorch(ctx: CanvasRenderingContext2D, b: BuildingView) {
+  const j = jetOf(b.cx, b.cy, dirOfView(b), levelOf(b));
+  ctx.save();
+  ctx.fillStyle = 'rgba(24, 20, 17, 0.2)';
+  jetPath(ctx, j, 4);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(18, 15, 13, 0.24)';
+  jetPath(ctx, { ...j, w0: j.w0 * 0.55, w1: j.w1 * 0.6, len: j.len * 0.85 });
+  ctx.fill();
+  const rnd = seeded(b.cx * 41 + b.cy * 7);
+  ctx.strokeStyle = 'rgba(14, 12, 10, 0.35)';
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {
+    const off = (rnd() - 0.5) * j.w0 * 1.4, from = rnd() * j.len * 0.3, to = from + j.len * (0.35 + rnd() * 0.45);
+    const p0 = jetPoint(j, from, off), p1 = jetPoint(j, to, off * 1.5);
+    ctx.lineWidth = 1.5 + rnd() * 2;
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+  ctx.restore();
+}
+
+/**
+ * A flame vent: a squat steel base sandbagged on its cell, a fuel tank strapped to its back with a hazard band, and a stubby flamer nozzle on a
+ * bracket pointing down its facing, a pilot flame at the tip. A longer nozzle with a heat shroud at level 2, a second tank at level 3. Badly damaged,
+ * the tank is dented black and the nozzle droops. The fuel gauge's cells show the fuel.
+ */
+export function drawVentHead(ctx: CanvasRenderingContext2D, b: { cx: number; cy: number; hp: number; lv?: number; dir?: VentDir; ammo?: number }, cx: number, cy: number, now: number) {
+  const lv = levelOf(b), wear = wearStage(b.hp), dir = b.dir ?? 0;
+  const ang = [0, Math.PI / 2, Math.PI, -Math.PI / 2][dir]!;
+  // The base: a rounded steel block on the floor.
+  ctx.fillStyle = 'rgba(24, 20, 17, 0.3)';
+  ctx.beginPath();
+  ctx.ellipse(cx + 2, cy + 4, 21, 18, 0, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = wear === 2 ? '#3d3a37' : '#5a5f68';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.roundRect(cx - 17, cy - 17, 34, 34, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+  ctx.fillRect(cx - 15, cy - 15.5, 30, 1.8);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(ang);
+  // The tank (two at level 3) across the back, with a hazard band.
+  const tanks = lv >= 3 ? [-6.5, 6.5] : [0];
+  for (const ty of tanks) {
+    ctx.fillStyle = wear === 2 ? '#2f2b28' : '#b3412b';
+    ctx.beginPath();
+    ctx.roundRect(-16, ty - 6, 15, 12, 5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e0a43a';
+    ctx.fillRect(-11, ty - 6, 3, 12);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.fillRect(-14, ty - 4.5, 10, 1.5);
+  }
+  // The fuel line and the nozzle on its bracket, pointing out along the facing; a droop when badly damaged.
+  if (wear === 2) ctx.rotate(0.22);
+  const len = 16 + lv * 3;
+  ctx.fillStyle = '#3a3f48';
+  ctx.beginPath();
+  ctx.roundRect(-3, -6, 10, 12, 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#8d939c';
+  ctx.beginPath();
+  ctx.moveTo(4, -4); ctx.lineTo(len, -2.6); ctx.lineTo(len, 2.6); ctx.lineTo(4, 4); ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  if (lv >= 2) {
+    // A slotted heat shroud over the barrel.
+    ctx.fillStyle = '#4b5059';
+    ctx.fillRect(7, -4, len - 12, 8);
+    ctx.strokeRect(7, -4, len - 12, 8);
+    ctx.fillStyle = INK;
+    for (let x = 9; x < len - 6; x += 3) ctx.fillRect(x, -2.6, 1.2, 5.2);
+  }
+  // The muzzle ring and its pilot.
+  ctx.fillStyle = SOOT;
+  ctx.beginPath();
+  ctx.roundRect(len - 1, -3.8, 4, 7.6, 1.5);
+  ctx.fill();
+  ctx.stroke();
+  const breathe = 0.5 + 0.5 * Math.sin(now / 300 + b.cx);
+  ctx.fillStyle = FLAME;
+  ctx.globalAlpha = 0.55 + 0.35 * breathe;
+  ctx.beginPath();
+  ctx.ellipse(len + 4.5, 0, 2.6 + breathe, 1.6, 0, 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  // The fuel gauge along the base's bottom edge: five cells, orange while there is fuel, red when dry.
+  const ammo = b.ammo ?? 10, cells = 5, lit = ammo === 0 ? 0 : Math.max(1, Math.ceil((ammo / 10) * cells));
+  for (let i = 0; i < cells; i++) {
+    ctx.fillStyle = i < lit ? FLAME : ammo === 0 && Math.floor(now / 250) % 2 === 0 ? '#e5484d' : '#2a2e36';
+    ctx.fillRect(cx - 12 + i * 4.8 + 0.5, cy + 12, 3.8, 3);
+  }
+}
+
+/** The ghost of a vent's jet in build mode: the area it would torch, washed and dash-edged in the ghost's colour, so it can be aimed down a gap. */
+export function drawVentJetPreview(ctx: CanvasRenderingContext2D, cx: number, cy: number, dir: VentDir, lv: number, color: string, now: number) {
+  const j = jetOf(cx, cy, dir, lv);
+  ctx.save();
+  ctx.globalAlpha = 0.18 + 0.06 * Math.sin(now / 200);
+  ctx.fillStyle = color;
+  jetPath(ctx, j);
+  ctx.fill();
+  ctx.globalAlpha = 0.9;
+  ctx.setLineDash([8, 6]);
+  ctx.lineDashOffset = -now / 50;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Chevrons down its line, pointing the way it faces.
+  ctx.globalAlpha = 0.75;
+  ctx.lineWidth = 2.4;
+  for (let at = 30; at < j.len; at += 40) {
+    const tip = jetPoint(j, at + 6, 0), l = jetPoint(j, at - 4, -7), r = jetPoint(j, at - 4, 7);
+    ctx.beginPath(); ctx.moveTo(l.x, l.y); ctx.lineTo(tip.x, tip.y); ctx.lineTo(r.x, r.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * A vent's jet, over the night: while it burns (for `ventFlameMs` after a puff), a roaring tongue of fire shooting out of the nozzle down its facing,
+ * flickering tongues in three heats that lick out to its tip and widen with it, a hot glow along it, embers thrown off its edges and a heat shimmer
+ * at its end. `since` is how long ago it last puffed. At rest only the pilot glows. Reduced motion holds the tongues still and drops the embers.
  */
 export function drawVentFlame(ctx: CanvasRenderingContext2D, b: BuildingView, since: number, now: number, pxPerUnit: number, reduced: boolean, dark: number) {
-  const lv = levelOf(b), burn = ventFlameMs(lv);
-  const { x, y, w } = cellRect(b.cx, b.cy);
-  const cx = x + w / 2, cy = y + w / 2;
+  const lv = levelOf(b), burn = ventFlameMs(lv), dir = dirOfView(b);
+  const j = jetOf(b.cx, b.cy, dir, lv);
   const pilot = 0.25 + 0.15 * (reduced ? 0.5 : Math.sin(now / 200 + b.cx));
   if (!(since >= 0 && since < burn)) {
-    // At rest, only the pilot's glow under the grate.
+    const tip = jetPoint(j, 4, 0);
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = pilot * (0.4 + 0.6 * dark);
-    ctx.drawImage(glowSprite(FLAME_DEEP, pxPerUnit), cx - 14, cy - 14, 28, 28);
+    ctx.drawImage(glowSprite(FLAME_DEEP, pxPerUnit), tip.x - 12, tip.y - 12, 24, 24);
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     return;
   }
-  // Full for most of its burn, then guttering out.
+  // Full for most of its burn, then guttering back to the nozzle.
   const k = Math.min(1, (burn - since) / 300) * Math.min(1, (since + 60) / 120);
-  const reach = turretDef('vent', lv).range + 16;
+  const t = reduced ? 0 : now;
+  const reach = j.len * (0.55 + 0.45 * k);
+  // The glow along the jet.
   ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.65 * k;
-  ctx.drawImage(glowSprite(FLAME_DEEP, pxPerUnit), cx - reach * 2.2, cy - reach * 2.2, reach * 4.4, reach * 4.4);
-  ctx.globalAlpha = 0.5 * k;
-  ctx.drawImage(glowSprite(FLAME, pxPerUnit), cx - reach, cy - reach, reach * 2, reach * 2);
+  for (let i = 0; i <= 4; i++) {
+    const p = jetPoint(j, (reach * i) / 4, 0), r = 30 + (j.w1 + 20) * (i / 4);
+    ctx.globalAlpha = 0.32 * k;
+    ctx.drawImage(glowSprite(i < 2 ? FLAME : FLAME_DEEP, pxPerUnit), p.x - r, p.y - r, r * 2, r * 2);
+  }
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
-  // Tongues: chunky teardrops leaning up and away from the light, each its own flicker, in three heats.
-  const t = reduced ? 0 : now;
-  const n = 7 + lv * 2;
-  for (const [col, s, lift] of [[FLAME_DEEP, 1, 1], [FLAME, 0.72, 0.85], [FLAME_HOT, 0.42, 0.7]] as const) {
+  // Tongues: licks of flame shot out along the jet, each its own flicker and length, in three heats, the hottest nearest the line.
+  const n = 9 + lv * 3;
+  const rnd = seeded(b.cx * 53 + b.cy * 29);
+  for (const [col, s] of [[FLAME_DEEP, 1], [FLAME, 0.7], [FLAME_HOT, 0.4]] as const) {
     ctx.fillStyle = col;
-    ctx.globalAlpha = k * (col === FLAME_DEEP ? 0.9 : 1);
+    ctx.globalAlpha = k * (col === FLAME_DEEP ? 0.85 : 1);
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + (b.cx * 1.7) % TAU;
-      const flick = 0.65 + 0.35 * Math.sin(t / (70 + (i % 4) * 23) + i * 2.1);
-      const bx = cx + Math.cos(a) * reach * 0.45 * s, by = cy + Math.sin(a) * reach * 0.35 * s;
-      const h = (16 + lv * 4) * s * flick * lift, wd = 5.5 * s + 1;
+      const phase = rnd() * 1000, speed = 90 + rnd() * 60;
+      const f = reduced ? (i + 0.5) / n : ((t + phase * speed) % (speed * 6)) / (speed * 6);
+      const along = f * reach;
+      const half = (j.w0 + (j.w1 - j.w0) * (along / j.len)) * s;
+      const across = (rnd() - 0.5) * 2 * half * 0.7 + Math.sin(t / 90 + i) * 2;
+      const c = jetPoint(j, along, across);
+      const size = (9 + 11 * f) * s * (0.7 + 0.3 * Math.sin(t / 60 + i * 1.7));
+      // Each tongue is a lick of flame stretched down the jet, wobbling as it goes.
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.rotate(Math.atan2(j.uy, j.ux) + Math.sin(t / 80 + i * 2.3) * 0.25);
       ctx.beginPath();
-      ctx.moveTo(bx - wd, by);
-      ctx.quadraticCurveTo(bx - wd * 0.8, by - h * 0.6, bx - LIGHT.x * 3, by - h);
-      ctx.quadraticCurveTo(bx + wd * 0.8, by - h * 0.6, bx + wd, by);
-      ctx.arc(bx, by, wd, 0, Math.PI);
+      ctx.moveTo(-size * 0.9, 0);
+      ctx.quadraticCurveTo(-size * 0.4, -size * 0.75, size * 0.6, -size * 0.35);
+      ctx.quadraticCurveTo(size * 1.9, 0, size * 0.6, size * 0.35);
+      ctx.quadraticCurveTo(-size * 0.4, size * 0.75, -size * 0.9, 0);
       ctx.fill();
+      ctx.restore();
     }
   }
+  // The white-hot core at the nozzle.
+  const mouth = jetPoint(j, 6, 0);
+  ctx.fillStyle = FLAME_HOT;
+  ctx.globalAlpha = k;
+  ctx.beginPath();
+  ctx.ellipse(mouth.x + j.ux * 8, mouth.y + j.uy * 8, j.ux ? 14 : 6, j.uy ? 14 : 6, 0, 0, TAU);
+  ctx.fill();
   ctx.globalAlpha = 1;
   if (reduced) return;
-  // Embers: specks riding up off the flame on its heat, drifting and fading, each on its own loop.
-  const rnd = seeded(b.cx * 97 + b.cy * 13);
-  for (let i = 0; i < 10; i++) {
-    const period = 700 + rnd() * 600, ph = rnd() * period, f = ((now + ph) % period) / period;
-    const ex = cx + (rnd() - 0.5) * reach + Math.sin(now / 260 + i) * 4, ey = cy - f * (40 + rnd() * 30);
+  // Embers thrown off the jet's edges, drifting up and fading; a shimmer of heat rings at its tip.
+  for (let i = 0; i < 14; i++) {
+    const period = 600 + rnd() * 600, f = ((now + rnd() * period) % period) / period;
+    const along = (0.2 + 0.8 * rnd()) * reach, side = rnd() < 0.5 ? -1 : 1;
+    const p = jetPoint(j, along + f * 20, side * (j.w0 + (j.w1 - j.w0) * (along / j.len) + f * 18));
     ctx.globalAlpha = k * (1 - f);
     ctx.fillStyle = i % 3 ? FLAME : FLAME_HOT;
     ctx.beginPath();
-    ctx.arc(ex, ey, 1.1 + rnd() * 0.9, 0, TAU);
+    ctx.arc(p.x, p.y - f * 14, 1.1 + rnd() * 1.1, 0, TAU);
     ctx.fill();
+  }
+  const end = jetPoint(j, reach, 0);
+  ctx.strokeStyle = 'rgba(255, 220, 170, 0.5)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 3; i++) {
+    const f = ((now / 500) + i / 3) % 1;
+    ctx.globalAlpha = k * 0.5 * (1 - f);
+    ctx.beginPath();
+    ctx.ellipse(end.x + j.ux * f * 18, end.y + j.uy * f * 18 - f * 8, j.w1 * (0.5 + f * 0.6), j.w1 * (0.25 + f * 0.3), 0, 0, TAU);
+    ctx.stroke();
   }
   ctx.globalAlpha = 1;
 }

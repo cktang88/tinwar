@@ -1,4 +1,4 @@
-import { isFloorKind, isTurretKind, UTILITY, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
+import { isFloorKind, isTurretKind, UTILITY, WORLD, ZOM, type BuildingKind, type VentDir } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt, costOf, levelOf, maxLevelOf, reachAt, salvageBonusOf } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
@@ -14,7 +14,7 @@ import { buildingSolid, drawSolids, LIGHT, standsUp } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
 import type { Rect } from '../shared/sim/movement.ts';
 import { bakedSprite, char, dent, drawEmbers, drawPips, drawTurret, drawTurretLit, lampStutters, seeded, streaks, wearStage, type Wear } from './turretart.ts';
-import { drawDecoy, drawDecoyLamp, drawDecoyPull, drawVent, drawVentFlame, drawZombieFx } from './ventart.ts';
+import { drawDecoy, drawDecoyLamp, drawDecoyPull, drawVentFlame, drawVentHead, drawVentJetPreview, drawVentScorch, drawZombieFx } from './ventart.ts';
 import { drawRangeRings, rangeRings } from './turretrange.ts';
 
 const TAU = Math.PI * 2;
@@ -311,13 +311,14 @@ function drawPostLamp(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv:
 }
 
 /** What stands on a cell, drawn over its pad (centred on `cx`, `cy`): a turret's emplacement and gun turned to `angle` (turretart.ts), a coil, a salvage yard's heap and crane, a medic post's tent or a decoy's mast (ventart.ts). */
-function drawHead(ctx: CanvasRenderingContext2D, b: { kind: BuildingKind; lv?: number; hp: number }, cx: number, cy: number, angle: number, sinceShot: number, now: number, pxPerUnit: number) {
+function drawHead(ctx: CanvasRenderingContext2D, b: { kind: BuildingKind; lv?: number; hp: number; cx?: number; cy?: number; dir?: VentDir; ammo?: number }, cx: number, cy: number, angle: number, sinceShot: number, now: number, pxPerUnit: number) {
   const lv = levelOf(b);
   if (b.kind === 'salvage' || b.kind === 'post') {
     ctx.drawImage(utilitySprite(b.kind, lv, wearStage(b.hp), pxPerUnit), cx - UTILITY_HALF, cy - UTILITY_HALF, UTILITY_HALF * 2, UTILITY_HALF * 2);
     if (b.kind === 'post') drawPostLamp(ctx, cx, cy, lv, wearStage(b.hp), now);
   } else if (b.kind === 'decoy') drawDecoy(ctx, cx, cy, lv, wearStage(b.hp));
-  else if (isTurretKind(b.kind) && b.kind !== 'vent') drawTurret(ctx, { kind: b.kind, lv, hp: b.hp, x: cx, y: cy, angle, sinceShot }, pxPerUnit);
+  else if (b.kind === 'vent') drawVentHead(ctx, { cx: b.cx ?? 0, cy: b.cy ?? 0, hp: b.hp, lv, dir: b.dir, ammo: b.ammo }, cx, cy, now);
+  else if (isTurretKind(b.kind)) drawTurret(ctx, { kind: b.kind, lv, hp: b.hp, x: cx, y: cy, angle, sinceShot }, pxPerUnit);
 }
 
 /** A spike strip: a steel rail with a row of spikes standing up from it, ink-edged, lit on one side and shaded on the other, fewer of them as it is trampled. */
@@ -353,11 +354,11 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, b: BuildingView, now: 
   }
 }
 
-/** Floor items lie under bodies, so they are drawn before the horde and the squad: spike strips and flame vents (ventart.ts). */
+/** Floor items lie under bodies, so they are drawn before the horde and the squad: spike strips, and the scorch down each flame vent's jet (ventart.ts). */
 export function drawFloorItems(ctx: CanvasRenderingContext2D, items: readonly BuildingView[], now: number) {
   for (const b of items) {
     if (b.kind === 'spikes') drawSpikes(ctx, b, now);
-    else if (b.kind === 'vent') drawVent(ctx, b, now);
+    else if (b.kind === 'vent') drawVentScorch(ctx, b);
   }
 }
 
@@ -631,9 +632,8 @@ function drawGhostCell(ctx: CanvasRenderingContext2D, ghost: Ghost, cx: number, 
   const { x, y, w, h } = cellRect(cx, cy);
   if (preview) {
     ctx.globalAlpha = 0.6;
-    const at = { cx, cy, hp: 10, kind: ghost.kind, lv: ghost.lv } as BuildingView;
+    const at = { cx, cy, hp: 10, kind: ghost.kind, lv: ghost.lv, ...(ghost.kind === 'vent' && { dir: ghost.dir ?? 0, ammo: 10 }) } as BuildingView;
     if (ghost.kind === 'spikes') drawSpikes(ctx, at, now);
-    else if (ghost.kind === 'vent') drawVent(ctx, at, now);
     else {
       if (onPad(at)) drawSolids(ctx, [buildingSolid(at)]);
       if (ghost.kind !== 'wall') drawHead(ctx, at, x + w / 2, y + h / 2, awayFromCore(at, core), Infinity, now, pxPerUnit);
@@ -680,7 +680,11 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
       ctx.fillStyle = c.refusal === null ? '#ffffff' : '#ffb3a8';
       ctx.fillText(`${cost}`, at.x + at.w / 2, at.y + at.h / 2);
     }
-  } else drawGhostCell(ctx, ghost, ghost.cx, ghost.cy, color, ghost.refusal !== 'taken', core, now, pxPerUnit);
+  } else {
+    // A flame vent about to go up shows the jet it would throw, to aim it down a gap (R turns it).
+    if (ghost.kind === 'vent' && ghost.refusal !== 'taken' && ghost.dir !== undefined) drawVentJetPreview(ctx, ghost.cx, ghost.cy, ghost.dir, 1, color, now);
+    drawGhostCell(ctx, ghost, ghost.cx, ghost.cy, color, ghost.refusal !== 'taken', core, now, pxPerUnit);
+  }
   if (!ghost.label) return;
   const lines = ghost.detail ? [ghost.label, ...ghost.detail.split('\n')] : [ghost.label];
   // The plate is drawn in the world, so zoomed out it grows to stay readable.

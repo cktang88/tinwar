@@ -345,7 +345,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
       case 'build': {
-        const refused = 'cells' in msg ? buildLine(world, id, msg.kind, msg.cells, msg.lv) : [build(world, id, msg.kind, msg.cx, msg.cy, msg.lv)];
+        const refused = 'cells' in msg ? buildLine(world, id, msg.kind, msg.cells, msg.lv) : [build(world, id, msg.kind, msg.cx, msg.cy, msg.lv, msg.dir)];
         const built = refused.filter((r) => r === null).length;
         if (built) profile(id, { zom: { built } });
         return;

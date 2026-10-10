@@ -7,6 +7,7 @@ import { build, demolish } from '../src/shared/sim/run.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
 import { createWorld, newId, solidRects, spawnPoint, type Player, type World } from '../src/shared/sim/world.ts';
 import { press, run, spawnAt } from './helpers.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { repairScrapPerHp } from '../src/shared/sim/build.ts';
 
 /** The builder stands just west of the core; cell (26, 30) is beside them. */
@@ -92,21 +93,25 @@ for (const kind of TURRET_KINDS.filter((k) => k !== 'vent')) {
   });
 }
 
-test('a flame vent goes up on the floor for its own cost, fuelled for its builder, walked over, and comes down for half back', () => {
+test('a flame vent goes up solid for its own cost, fuelled for its builder, facing out from the core or where it was set, and comes down for half back', () => {
   const { w, p } = dayWorld();
   w.run!.scrap = 1000;
   assert.equal(build(w, p.id, 'vent', CELL.cx, CELL.cy), null);
   assert.equal(1000 - w.run!.scrap, BUILDINGS.vent.cost);
-  assert.deepEqual(w.buildings, []);
-  assert.deepEqual(w.floor.map((b) => ({ ...b, id: 0 })), [{ id: 0, kind: 'vent', cx: CELL.cx, cy: CELL.cy, hp: BUILDINGS.vent.hp, owner: p.id, ammo: BUILDINGS.vent.turret.ammo, nextFireAt: 0, flareUntil: 0 }]);
+  assert.deepEqual(w.floor, []);
+  // The cell is west of the core, so with no facing given it faces west, out from the core.
+  assert.deepEqual(w.buildings.map((b) => ({ ...b, id: 0 })), [{ id: 0, kind: 'vent', cx: CELL.cx, cy: CELL.cy, hp: BUILDINGS.vent.hp, owner: p.id, ammo: BUILDINGS.vent.turret.ammo, nextFireAt: 0, flareUntil: 0, dir: 2 }]);
+  assert.deepEqual(snapshotFor(w, p.id).buildings, [{ kind: 'vent', cx: CELL.cx, cy: CELL.cy, hp: 10, ammo: 10, dir: 2 }], 'its facing goes over the wire');
   assert.equal(build(w, p.id, 'wall', CELL.cx, CELL.cy), 'taken');
   press(w, p, { left: true });
   run(w, 1000);
-  assert.ok(p.x < CELL.cx * ZOM.cell, `walked over the vent to x ${p.x.toFixed(1)}`);
-  p.x = (CELL.cx + 1.5) * ZOM.cell;
+  assert.ok(p.x >= (CELL.cx + 1) * ZOM.cell + 24 - 0.01, `walked into the vent to x ${p.x.toFixed(1)}`);
   const scrap = w.run!.scrap;
   assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);
-  assert.deepEqual([w.floor.length, w.run!.scrap - scrap], [0, Math.floor(BUILDINGS.vent.cost * ZOM.demolishRefund)]);
+  assert.deepEqual([w.buildings.length, w.run!.scrap - scrap], [0, Math.floor(BUILDINGS.vent.cost * ZOM.demolishRefund)]);
+  press(w, p, {});
+  assert.equal(build(w, p.id, 'vent', CELL.cx, CELL.cy - 1, 1, 3), null);
+  assert.equal(w.buildings[0]!.kind === 'vent' && w.buildings[0]!.dir, 3, 'a facing set in build mode is kept');
 });
 
 test('build and demolish messages carry whole grid cells only', () => {

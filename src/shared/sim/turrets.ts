@@ -86,7 +86,8 @@ export function tickTurrets(w: World, run: Run, core: { x: number; y: number }, 
     run.bastionFireAt = nextShot(run.bastionFireAt, w.now, dtMs, (BASTION_GUN.fireMs * ZOM.survivors) / run.survivors);
   }
   for (const t of w.buildings) {
-    if (!('ammo' in t) || t.ammo < 1 || w.now < t.nextFireAt) continue;
+    // A flame vent burns down its jet in tickVents, not here.
+    if (!('ammo' in t) || t.kind === 'vent' || t.ammo < 1 || w.now < t.nextFireAt) continue;
     const def = turretDef(t.kind, levelOf(t));
     const x = (t.cx + 0.5) * ZOM.cell, y = (t.cy + 0.5) * ZOM.cell;
     const target = targetOf(w.zombies, cover, x, y, def);

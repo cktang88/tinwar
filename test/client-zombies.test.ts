@@ -385,7 +385,7 @@ test('the hover names the next level and what it brings in round steps against t
   assert.equal(upgradeGains('tesla', 2), 'Tesla coil III: 2× dmg · +4 jumps · 1.5× rate · +20% range · 2× ammo · 3× hp');
   assert.equal(upgradeGains('cannon', 1), 'Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
   assert.equal(upgradeGains('scatter', 1), 'Scatter II: 1.5× shove · 1.25× rate · +10% range · 1.5× ammo · 2× hp', 'a scatter grips harder, not hits harder');
-  assert.equal(upgradeGains('vent', 1), 'Flame vent II: 1.5× burn · 1.25× rate · 1.5× fuel · 2× hp');
+  assert.equal(upgradeGains('vent', 1), 'Flame vent II: 1.5× burn · 1.25× rate · +10% jet · 1.5× fuel · 2× hp');
   assert.equal(upgradeGains('decoy', 2), 'Decoy beacon III: +50% pull reach · 3× hp');
   assert.equal(upgradeGains('salvage', 1), 'Salvage yard II: +75% scrap · +25% reach · 2× hp');
   assert.equal(upgradeGains('salvage', 2), 'Salvage yard III: +100% scrap · +50% reach · 3× hp');

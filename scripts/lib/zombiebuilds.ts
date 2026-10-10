@@ -28,7 +28,7 @@ export type FortSetup = {
   tend?: boolean;
   /** Keep streaming zombies while fewer than this are alive. */
   alive?: number;
-  /** A one-cell gap left open in the south face, two cells west of its middle: a chokepoint every zombie walks through to the core, and then in again from the south. A flame vent lies in it. */
+  /** A one-cell gap left open in the south face, two cells west of its middle: a chokepoint every zombie walks through to the core, and then in again from the south. A flame vent stands beside its inner mouth, its jet across it. */
   gap?: boolean;
   /** A decoy beacon at this level out in the open, four cells south of the south face, in the horde's way. */
   decoy?: number;
@@ -78,13 +78,15 @@ export function playFort(s: FortSetup): FortRun {
       if (real) south.push(b);
     }
   }
-  // A flame vent lies on the floor: in the gap, or just outside the south face's middle, a second one a cell further out.
+  // A flame vent stands just inside the wall: beside the gap's inner mouth, its jet across the way every zombie walks in by (a second one a row further in),
+  // or inside the south face's middle, its jet out through the face onto the horde piled at it (a second one beside it).
   let vents = 0;
   const turrets: (Turret | Vent)[] = (s.turrets ?? []).map((t, i, all) => {
     const at = { id: newId(w), hp: maxHpOf(t.kind, t.lv), ...(t.lv > 1 && { lv: t.lv }), owner: -1, ammo: turretDef(t.kind, t.lv).ammo, nextFireAt: 0 };
     if (t.kind === 'vent') {
-      const v: Vent = { ...at, kind: 'vent', cx: s.gap ? gap.cx : c, cy: c + RING + (s.gap ? 0 : 1) + vents++, flareUntil: 0 };
-      w.floor.push(v);
+      const n = vents++;
+      const v: Vent = s.gap ? { ...at, kind: 'vent', cx: gap.cx - 1, cy: gap.cy - 1 - n, flareUntil: 0, dir: 0 } : { ...at, kind: 'vent', cx: c + n, cy: c + RING - 1, flareUntil: 0, dir: 1 };
+      w.buildings.push(v);
       return v;
     }
     const cx = c + i - Math.floor((all.length - 1) / 2);
@@ -124,7 +126,7 @@ export function playFort(s: FortSetup): FortRun {
   const dryAt = new Map<Turret | Vent, number>();
   const hpOf = new Map<Zombie, number>();
   const farY = (c + RING + 1) * ZOM.cell + 150;
-  const standing = (b: Turret | Vent) => (b.kind === 'vent' ? w.floor.includes(b) : w.buildings.includes(b));
+  const standing = (b: Turret | Vent) => w.buildings.includes(b);
   for (let t = 0; t < ms; t += TICK_MS) {
     if (w.now >= spawnAt && w.zombies.length < (s.alive ?? 30)) {
       spawnPack(mix[next++ % mix.length]!);

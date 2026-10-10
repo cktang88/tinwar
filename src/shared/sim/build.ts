@@ -1,4 +1,4 @@
-import { BUILDINGS, isFloorKind, MAX_LEVEL, UPGRADE, UTILITY, WALL_TIERS, ZOM, zombieRole, type BuildingKind, type GunId, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
+import { BUILDINGS, isFloorKind, MAX_LEVEL, UPGRADE, UTILITY, WALL_TIERS, type VentDir, ZOM, zombieRole, type BuildingKind, type GunId, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
 import type { BuildingView } from '../protocol.ts';
 import { circleHitsRect, dist2, rectsOverlap, type Rect } from './movement.ts';
 import type { Building, FloorItem } from './world.ts';
@@ -98,7 +98,7 @@ export function buildRefusal(site: BuildSite, kind: BuildingKind, cx: number, cy
   const cell = cellRect(cx, cy);
   if (site.cover.some((r) => rectsOverlap(r, cell))) return 'cover';
   if (rectsOverlap(core, cell)) return 'core';
-  // A spike strip or a flame vent lies flat, so anyone may stand on its cell.
+  // A spike strip lies flat, so anyone may stand on its cell.
   if (!isFloorKind(kind) && site.bodies.some((b) => circleHitsRect(b.x, b.y, b.r, cell))) return 'body';
   if (site.scrap < costOf(kind, lv)) return 'scrap';
   return null;
@@ -148,7 +148,29 @@ const loadTenths = (ammo: number, max: number) => (Math.floor(ammo) < 1 ? 0 : te
 export function buildingView(b: Building | FloorItem): BuildingView {
   const lv = levelOf(b);
   const at = { cx: b.cx, cy: b.cy, hp: tenths(b.hp, maxHpOf(b.kind, lv)), ...(lv > 1 && { lv }) };
+  if (b.kind === 'vent') return { ...at, kind: b.kind, ammo: loadTenths(b.ammo, turretDef(b.kind, lv).ammo), dir: b.dir };
   return 'ammo' in b ? { ...at, kind: b.kind, ammo: loadTenths(b.ammo, turretDef(b.kind, lv).ammo) } : { ...at, kind: b.kind };
+}
+
+/** A facing's unit step: 0 east, 1 south, 2 west, 3 north. */
+export const dirStep = (dir: VentDir) => [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 0, y: -1 }][dir]!;
+/** The facing straight away from the core for a vent on cell (`cx`, `cy`): along whichever axis the cell sits farther out on. */
+export function awayFrom(core: Pose, cx: number, cy: number): VentDir {
+  const dx = (cx + 0.5) * ZOM.cell - core.x, dy = (cy + 0.5) * ZOM.cell - core.y;
+  return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 0 : 2) : dy >= 0 ? 1 : 3;
+}
+/** A flame vent's jet at `lv`: it starts at the cell's edge on its facing (`x0`, `y0`) and runs `len` px along (`ux`, `uy`), `w0` px either side at the nozzle widening to `w1`. */
+export type Jet = { x0: number; y0: number; ux: number; uy: number; len: number; w0: number; w1: number };
+export function jetOf(cx: number, cy: number, dir: VentDir, lv = 1): Jet {
+  const def = turretDef('vent', lv), u = dirStep(dir), half = ZOM.cell / 2;
+  return { x0: (cx + 0.5) * ZOM.cell + u.x * half, y0: (cy + 0.5) * ZOM.cell + u.y * half, ux: u.x, uy: u.y, len: def.range, w0: def.jet!.w0, w1: def.jet!.w1 };
+}
+/** Whether a body of radius `r` at (`x`, `y`) is in the jet. */
+export function inJet(j: Jet, x: number, y: number, r = 0): boolean {
+  const dx = x - j.x0, dy = y - j.y0, along = dx * j.ux + dy * j.uy;
+  if (along < -r || along > j.len + r) return false;
+  const k = Math.min(1, Math.max(0, along / j.len));
+  return Math.abs(dx * -j.uy + dy * j.ux) <= j.w0 + (j.w1 - j.w0) * k + r;
 }
 
 /** Mending prices a building by what is invested in it, so a steel wall costs more a point than a barricade. */

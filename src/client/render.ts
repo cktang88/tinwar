@@ -135,7 +135,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const z of zones) drawZoneFloor(ctx, z, now, dark, reducedMotion());
   for (const t of snap.thrown) if (t.kind === 'claymore') drawThrown(ctx, t, now);
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
-  if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => !standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), now);
+  if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => (!standsUp(b) || b.kind === 'vent') && inView(view, b.cx * ZOM.cell - 4 * ZOM.cell, b.cy * ZOM.cell - 4 * ZOM.cell, 9 * ZOM.cell, 9 * ZOM.cell)), now);
   drawScorches(ctx, now, view);
   // Last Standing: the caches' tier glow and the recon towers' capture circles lie on the floor, under every body (lootart.ts).
   const royale = snap.royale;
@@ -221,7 +221,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
       buildings: all.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), all, aims: s.turretAims, core: snap.run.core, day, ghost: f.ghost ?? null,
       cursor: day && !f.ghost ? f.cursor ?? null : null, upgrade: day && !f.ghost ? upgradeTarget(snap, s.lastSelf)?.b ?? null : null, squadRings: dark > 0.5 && turretRangesOn(),
       walls: s.walls, crates: snap.crates, now, pxPerUnit: k, scale: cam.scale, reduced: reducedMotion(), dark,
-      floor: all.filter((b) => b.kind === 'vent' && inView(view, b.cx * ZOM.cell - ZOM.cell, b.cy * ZOM.cell - ZOM.cell * 2, ZOM.cell * 3, ZOM.cell * 3)), zombies,
+      floor: all.filter((b) => b.kind === 'vent' && inView(view, b.cx * ZOM.cell - 4 * ZOM.cell, b.cy * ZOM.cell - 4 * ZOM.cell, 9 * ZOM.cell, 9 * ZOM.cell)), zombies,
     });
   }
   if (rangeLayout && reach && mine && snap.targets) {

@@ -1,5 +1,5 @@
 import { UTILITY, ZOM, ZOMBIES, type ZombieKind } from '../defs.ts';
-import { auraOf, levelOf, maxHpOf, reachAt, salvageBonusOf, turretDef } from './build.ts';
+import { auraOf, inJet, jetOf, levelOf, maxHpOf, reachAt, salvageBonusOf, turretDef } from './build.ts';
 import { damageZombie } from './run.ts';
 import { effectiveStats } from './stats.ts';
 import { dist2 } from './movement.ts';
@@ -130,22 +130,23 @@ export function tickUtilities(w: World, run: Run, dtMs: number) {
 export const burnMul = (stacks: number) => 1 + 0.5 * (stacks - 1);
 
 /**
- * Flame vents: while a zombie stands in a vent's flame (`range` of its centre, the zombie's own size besides) the vent puffs, one fuel, and its flame then
- * burns on `patchMs` free. Every `fireMs` the flame licks whatever stands in it: alight for `burn.ms`, a lick more (up to `burn.stacks`) on one already burning.
- * Each puff says so in a `turret` event, as a gun turret's shot does.
+ * Flame vents: while a zombie stands in a vent's jet (`jetOf`, the zombie's own size besides) the vent puffs, one fuel, and its jet then burns on
+ * `patchMs` free. Every `fireMs` the jet licks whatever stands in it: alight for `burn.ms`, a lick more (up to `burn.stacks`) on one already burning.
+ * Each puff says so in a `turret` event, its angle the vent's facing, as a gun turret's shot does.
  */
 export function tickVents(w: World) {
-  for (const v of w.floor) {
+  for (const v of w.buildings) {
     if (v.kind !== 'vent' || w.now < v.nextFireAt) continue;
-    const def = turretDef('vent', levelOf(v)), burn = def.burn!;
-    const at = centerOf(v);
-    const inFlame = w.zombies.filter((z) => dist2(z.x, z.y, at.x, at.y) <= (def.range + ZOMBIES[z.kind].radius) ** 2);
+    const lv = levelOf(v), def = turretDef('vent', lv), burn = def.burn!;
+    const jet = jetOf(v.cx, v.cy, v.dir, lv);
+    const inFlame = w.zombies.filter((z) => inJet(jet, z.x, z.y, ZOMBIES[z.kind].radius));
     if (inFlame.length === 0) continue;
     if (w.now >= v.flareUntil) {
       if (v.ammo < 1) continue;
       v.ammo--;
       v.flareUntil = w.now + burn.patchMs;
-      w.events.push({ e: 'turret', kind: 'vent', x: at.x, y: at.y, angle: 0 });
+      const at = centerOf(v);
+      w.events.push({ e: 'turret', kind: 'vent', x: at.x, y: at.y, angle: Math.round(Math.atan2(jet.uy, jet.ux) * 100) / 100 });
     }
     v.nextFireAt = w.now + def.fireMs;
     for (const z of inFlame) {

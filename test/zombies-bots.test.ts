@@ -82,7 +82,7 @@ test('a squad bot reloads a turret short of ammo near the core while no zombie i
   w.buildings.push(turret);
   w.buildingsVersion++;
   assert.ok(play(w, [bot], 15_000, () => turret.ammo >= BUILDINGS.sentry.turret.ammo * 0.9), `the turret is reloaded, at ${turret.ammo.toFixed(0)}`);
-  assert.ok(w.run!.scrap < ZOM.startScrap, 'for scrap');
+  assert.equal(w.run!.scrap, ZOM.startScrap, 'for free');
   assert.equal(w.buildings.length, 1, 'and builds nothing new');
 });
 

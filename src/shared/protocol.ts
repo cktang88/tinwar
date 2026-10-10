@@ -1,5 +1,5 @@
 import {
-  AIRDROP, ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, GUN_IDS, LEVELS, MAX_LEVEL, PERK_TIERS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
+  AIRDROP, ARMOR_IDS, BUILDING_KINDS, VENT_DIRS, type VentDir, COLOR_IDS, GUN_IDS, LEVELS, MAX_LEVEL, PERK_TIERS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type PropKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind, type LootTier,
 } from './defs.ts';
 import { MAP_IDS, MAPS, type MapId, type WallMaterial } from './maps.ts';
@@ -63,8 +63,11 @@ export type ClientMsg =
   /** Zombies and the range: tune the room's radio. The server drops it in any other room and rate-limits it. */
   | { t: 'radio'; station: StationId }
   | { t: 'respawn'; loadout: Loadout }
-  /** Zombies: put a building on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. A wall's `lv` is its tier (1 when absent). */
-  | { t: 'build'; kind: BuildingKind; cx: number; cy: number; lv?: number }
+  /**
+   * Zombies: put a building on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. A wall's `lv` is its tier (1 when absent). A flame vent's `dir` is its facing
+   * (`VENT_DIRS`: 0 east, 1 south, 2 west, 3 north), straight out from the core when absent; any other kind ignores it.
+   */
+  | { t: 'build'; kind: BuildingKind; cx: number; cy: number; lv?: number; dir?: VentDir }
   /**
    * Zombies: a line dragged out in build mode, its cells `[cx, cy]` in order from where the drag began, one straight run along a row or a column, at most `ZOM.lineMax`,
    * of a kind in `ZOM.lineKinds`. The server builds each cell by the single build's rules in that order, so the line goes up as far as the scrap lasts and a cell that cannot take it is passed over.
@@ -172,7 +175,7 @@ export const ZOMBIE_FX = { marked: 1, burning: 2 } as const;
  * `hp` is tenths of full health, 1..10, and a turret's `ammo` tenths of a full load, 0 once it cannot fire.
  * A turret's aim is not here: it turns only to fire, and each `turret` event carries its angle, so this sticky field stays unchanged while it fires.
  */
-export type BuildingView = { cx: number; cy: number; hp: number; /** The upgrade level (a wall's tier), 2 or 3; absent at level 1. */ lv?: number } & ({ kind: Exclude<BuildingKind, TurretKind> } | { kind: TurretKind; ammo: number });
+export type BuildingView = { cx: number; cy: number; hp: number; /** The upgrade level (a wall's tier), 2 or 3; absent at level 1. */ lv?: number } & ({ kind: Exclude<BuildingKind, TurretKind> } | { kind: Exclude<TurretKind, 'vent'>; ammo: number } | { kind: 'vent'; ammo: number; /** Its facing, `VENT_DIRS`. */ dir: VentDir });
 /** `turretKills` counts the squad's turrets' kills by turret kind; a player's `kills` are their own. `won` once the Bastion held through the Tide. */
 export type RunReport = {
   night: number; won: boolean; survivors: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>; bastionKills: number;
@@ -524,7 +527,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       }
       const cx = gridCell(v.cx), cy = gridCell(v.cy);
       if (cx === null || cy === null) return null;
-      return { t: 'build', kind: v.kind, cx, cy, ...(lv !== undefined && { lv }) };
+      const dir = v.dir === undefined ? undefined : (VENT_DIRS as readonly unknown[]).includes(v.dir) ? (v.dir as VentDir) : null;
+      if (dir === null) return null;
+      return { t: 'build', kind: v.kind, cx, cy, ...(lv !== undefined && { lv }), ...(dir !== undefined && { dir }) };
     }
     case 'upgrade': {
       const cx = gridCell(v.cx), cy = gridCell(v.cy);

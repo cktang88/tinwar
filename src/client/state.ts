@@ -1,4 +1,4 @@
-import type { BuildingKind, TurretKind, ZombieKind } from '../shared/defs.ts';
+import type { BuildingKind, TurretKind, VentDir, ZombieKind } from '../shared/defs.ts';
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { MapId } from '../shared/maps.ts';
 import type { KillEvent, Loss } from './derive.ts';
@@ -87,6 +87,8 @@ export type Session = {
   buildKind: BuildingKind;
   /** The tier a wall goes up at in build mode, 1 to 3. */
   buildTier: number;
+  /** The facing a flame vent goes up at, set by R in build mode; unset, each faces straight out from the core. */
+  ventDir?: VentDir | null;
   /** The cell under the cursor in build mode as last judged (main.ts), for the build bar's upgrade chip. */
   buildGhost: Ghost | null;
   /** Each turret's aim by cell (`cx,cy`). */

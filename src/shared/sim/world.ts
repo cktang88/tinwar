@@ -1,5 +1,5 @@
 import type { Cos } from '../cosmetics.ts';
-import { AIRDROP, BARREL, byTurret, PERK_TIERS, PROPS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type LootTier, type GunId, type ModeId, type PerkId, type PlayerKind, type PropKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { AIRDROP, BARREL, byTurret, type VentDir, PERK_TIERS, PROPS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type LootTier, type GunId, type ModeId, type PerkId, type PlayerKind, type PropKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -197,11 +197,11 @@ export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: n
 type Cell = { id: number; cx: number; cy: number; hp: number; lv?: number };
 /** A turret fires for `owner`, its builder, who gets the score for its kills. */
 export type Turret = Cell & { kind: Exclude<TurretKind, 'vent'>; owner: number; ammo: number; nextFireAt: number };
-/** A flame vent: a turret on the floor, its load its fuel; its flame burns on until `flareUntil` after its last puff. */
-export type Vent = Cell & { kind: 'vent'; owner: number; ammo: number; nextFireAt: number; flareUntil: number };
-/** What stands on a cell and blocks the way: a wall, a turret, a salvage yard, a medic post or a decoy. Spike strips and flame vents are floor, in `World.floor`, and are walked over. */
-export type Building = (Cell & { kind: 'wall' | 'salvage' | 'post' | 'decoy' }) | Turret;
-export type FloorItem = (Cell & { kind: 'spikes' }) | Vent;
+/** A flame vent: a flamer facing `dir` (`VENT_DIRS`), its load its fuel; its jet burns on until `flareUntil` after its last puff. */
+export type Vent = Cell & { kind: 'vent'; owner: number; ammo: number; nextFireAt: number; flareUntil: number; dir: VentDir };
+/** What stands on a cell and blocks the way: a wall, a turret (a flame vent too), a salvage yard, a medic post or a decoy. Spike strips are floor, in `World.floor`, and are walked over. */
+export type Building = (Cell & { kind: 'wall' | 'salvage' | 'post' | 'decoy' }) | Turret | Vent;
+export type FloorItem = Cell & { kind: 'spikes' };
 
 /** `n` zombies of one kind that walk in together from one side. */
 export type HordeUnit = { kind: ZombieKind; side: Side; n: number };

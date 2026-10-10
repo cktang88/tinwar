@@ -1,9 +1,9 @@
-import { ARMORS, hordeCount, isFloorKind, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, zombieBounty, zombieRole, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
+import { ARMORS, hordeCount, isFloorKind, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, zombieBounty, zombieRole, type BuildingKind, type Burst, type VentDir, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
-import { buildingView, buildRefusal, buildsNow, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
+import { awayFrom, buildingView, buildRefusal, buildsNow, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
 import { medicReviveAt, salvageAt, tickBurns, tickTraps, tickUtilities, tickVents, trapWatch } from './utility.ts';
 import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
@@ -85,7 +85,7 @@ function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
 }
 
 /** Puts `kind` up on a cell for its price; a wall goes up at tier `lv` (1 to 3), anything else at its first level. */
-export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number, lv = 1): BuildRefusal | null {
+export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number, lv = 1, dir?: VentDir): BuildRefusal | null {
   const p = w.players.get(id);
   const run = w.run;
   const core = coreRect(w);
@@ -96,8 +96,11 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
   run.scrap -= costOf(kind, level);
   const at = { id: newId(w), cx, cy, hp: maxHpOf(kind, level), ...(level > 1 && { lv: level }) };
   if (kind === 'spikes') w.floor.push({ ...at, kind });
-  else if (kind === 'vent') w.floor.push({ ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0, flareUntil: 0 });
-  else {
+  else if (kind === 'vent') {
+    // A flamer faces where its builder set it, or straight out from the core.
+    w.buildings.push({ ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0, flareUntil: 0, dir: dir ?? awayFrom(MAPS[w.map].siege!.core, cx, cy) });
+    w.buildingsVersion++;
+  } else {
     w.buildings.push(kind === 'wall' || kind === 'salvage' || kind === 'post' || kind === 'decoy' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0 });
     w.buildingsVersion++;
   }

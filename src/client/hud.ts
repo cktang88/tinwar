@@ -1,7 +1,7 @@
 import { abilityCooldownMs } from '../shared/sim/stats.ts';
 import { raiseWatch, reticleLook } from './raise.ts';
 import { SPRINT_RING, STICK_RADIUS, stickVector, sticksSprint, type Sticks } from './touch.ts';
-import { ARMOR_IDS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, SIDES, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ZombieKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { ARMOR_IDS, BUILDINGS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, SIDES, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ZombieKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot, Team, ZoneView } from '../shared/protocol.ts';
 import { flagOf, zoneLetter, zonesOf } from './zoneart.ts';
@@ -1337,7 +1337,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
       : [{ key: 'B', what: NIGHT_BUILD_HINT }];
     hintBar(ctx, s, hints, w / 2, row, null);
     const up = upgradeTarget(hud.snap, s.lastSelf);
-    if (up && run.scrap >= up.cost) platedLine(ctx, `U to upgrade the ${up.b.kind === 'wall' ? 'wall' : up.b.kind} to ${up.to} · ${up.cost} scrap`, w / 2, h * 0.64 + 34, TYPE.body, PALETTE.gold, 700, ACCENT);
+    if (up && run.scrap >= up.cost) platedLine(ctx, `U to upgrade the ${up.b.kind === 'wall' ? 'wall' : BUILDINGS[up.b.kind].name.toLowerCase()} to ${up.to} · ${up.cost} scrap`, w / 2, h * 0.64 + 34, TYPE.body, PALETTE.gold, 700, ACCENT);
   }
 }
 

@@ -1,4 +1,4 @@
-import { pickOptions, WORLD, ZOM, type BuildingKind, type ModeId } from '../shared/defs.ts';
+import { pickOptions, WORLD, ZOM, type BuildingKind, type ModeId, type VentDir } from '../shared/defs.ts';
 import { linesOf } from '../shared/sim/build.ts';
 import type { MapId } from '../shared/maps.ts';
 import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
@@ -675,7 +675,7 @@ function buildClick(s: Session, e: MouseEvent) {
   if (e.button === 2 && drag) { drag = null; return; }
   // A press on an open cell with a wall or spike strip picked starts a line; letting go builds it (`finishDrag`), a press let go where it began builds the one.
   if (e.button === 0 && linesOf(ghost.kind) && ghost.refusal !== 'taken') { drag = { cx: ghost.cx, cy: ghost.cy }; return; }
-  if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, ...(ghost.kind === 'wall' && ghost.lv > 1 && { lv: ghost.lv }) });
+  if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, ...(ghost.kind === 'wall' && ghost.lv > 1 && { lv: ghost.lv }), ...(ghost.dir !== undefined && { dir: ghost.dir }) });
   else if (e.button === 0 && ghost.refusal === 'taken' && ghost.upgrade === null) send(s.ws, { t: 'upgrade', cx: ghost.cx, cy: ghost.cy });
   else if (e.button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
   else return;
@@ -812,10 +812,10 @@ function drawFrame(realNow: number) {
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   if (drag && (!site || !linesOf(s.buildKind))) drag = null;
-  ghost = site && (drag ? lineGhostAt(site, s.buildKind, drag, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier) : ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier));
+  ghost = site && (drag ? lineGhostAt(site, s.buildKind, drag, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier) : ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier, s.ventDir ?? null));
   // With the cursor on the build bar, the cell last hovered stays judged (and shown), so the bar's upgrade chip has a building to act on.
   const held = s.buildGhost;
-  if (site && held && !drag && buildChipAt(mouse.x, mouse.y) !== null) ghost = ghostAt(site, s.buildKind, { x: (held.cx + 0.5) * ZOM.cell, y: (held.cy + 0.5) * ZOM.cell }, s.worldSize, s.buildTier);
+  if (site && held && !drag && buildChipAt(mouse.x, mouse.y) !== null) ghost = ghostAt(site, s.buildKind, { x: (held.cx + 0.5) * ZOM.cell, y: (held.cy + 0.5) * ZOM.cell }, s.worldSize, s.buildTier, s.ventDir ?? null);
   s.buildGhost = ghost;
   if (delight.drawKillcam(ctx, s, state.phase === 'dead', view, realNow)) {
     // The killcam's world is lit like the live one: the shader pass must take THIS frame, or its canvas keeps showing the last live frame (the normal camera) while the 2D one has been cleared for it.
@@ -943,6 +943,12 @@ function onKeyDown(e: KeyboardEvent) {
       const near = snap && upgradeTarget(snap, s.lastSelf);
       if (near && snap.run && snap.run.scrap >= near.cost) sendUpgrade(s, near.b.cx, near.b.cy);
     }
+    return;
+  }
+  // With a flame vent picked, R turns its facing a quarter clockwise instead of reloading.
+  if (e.code === 'KeyR' && !e.repeat && state.phase === 'playing' && s.building && s.buildKind === 'vent') {
+    s.ventDir = (((ghost?.dir ?? s.ventDir ?? 0) + 1) % 4) as VentDir;
+    playClick(s);
     return;
   }
   if (e.code === 'KeyQ' && !e.repeat && state.phase === 'playing' && s.building) {
