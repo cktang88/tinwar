@@ -251,6 +251,8 @@ export type Run = {
    * steps off it, and takes no post on it, so a bot never stands for good where the next building should go. Absent until a build is first refused so.
    */
   wanted?: { cx: number; cy: number; until: number }[];
+  /** Tonight's damage to the horde and kills, by source (`receiptKey`): a player's id, or the kind of building or blast that dealt it. Read only at dawn (`takeReceipt`). */
+  tally?: Map<number | string, [dealt: number, kills: number]>;
 };
 
 export type Ring =

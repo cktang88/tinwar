@@ -43,15 +43,15 @@ The engine is `src/client/musicpop.ts`. The themes, one `PopSpec` each, are in `
    heartbeat. Kill stings ring the current chord's tones, so they are always in key, and the win and loss cadences sit on
    the theme's tonic.
 7. **Own identity.** Each map has its own tempo, key, groove and band, and no two themes share a lead voice or an opening
-   hook. Four themes have the phonk and trap energy players asked for: Quarry (drift phonk, cowbell hook, distorted 808),
-   Sub Pen (dark trap, sonar hook, 808 slides), Airbase (trap anthem, brass hook, half-time 808 drop) and Wasteland
-   (western phonk, whistle hook, cowbell counter, 808).
+   hook. Five themes have the phonk and trap energy players asked for: Old Town (back-alley phonk, koto hook, church-bell
+   counter, 808 glides), Quarry (drift phonk, cowbell hook, distorted 808), Sub Pen (dark trap, sonar hook, 808 slides),
+   Airbase (trap anthem, brass hook, half-time 808 drop) and Wasteland (western phonk, whistle hook, cowbell counter, 808).
 
 ## The themes
 
 | Map | Theme | Tempo, key | Progression | Hook |
 | --- | --- | --- | --- | --- |
-| Old Town | Cobblestone Kolo | 136, A minor | i-VII-VI-V | bandoneon, a skipping pickup leaping to the octave with a G# twist; violin in a fight |
+| Old Town | Back Alley Drift | 146, D minor | i-VII-VI-V | koto, a stuttered D climbing to the fifth and stepping back down; overdriven guitar in a fight; church-bell counter; 808 glides |
 | Quarry | Rockfall Phonk | 144, G minor | i-VI-iv-V | cowbell 3-3-2 tresillo climbing to the fifth; a saw an octave under in a fight |
 | Causeway | Harbour Lights | 112 swung, D dorian | i-VII-VI-VII | accordion shanty call with a dotted pickup; fiddle in a fight; stomp-clap kit |
 | Night Market | Lantern Arcade | 132, E major | I-V-vi-IV | chiptune arpeggio up and back down (the stand-in: Skiff's recording plays the map) |

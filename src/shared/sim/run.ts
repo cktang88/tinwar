@@ -1,5 +1,6 @@
 import { ARMORS, hordeCount, isFloorKind, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, zombieBounty, zombieRole, type BuildingKind, type Burst, type VentDir, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
+import type { ReceiptRow } from '../protocol.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
@@ -179,13 +180,36 @@ function markHit(w: World, z: Zombie, dealt: number, attacker: number | null) {
 }
 
 /**
- * Only a player's own direct hit is sent to the client: a blast's boom already shows, and a crowd's worth of blast or turret hits would fill the snapshot.
+ * Where tonight's receipt books a hit: a turret's or the Bastion's under its kind, whoever built it; a player's own shot, blade or blast under their id;
+ * anything else under the `source` its caller names (a spike strip), else as a stray `blast` (a burst zombie, a barrel).
  */
-export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | Shooter = 'hit') {
+export const receiptKey = (attacker: Player | null, via: 'hit' | 'blast' | Shooter, source?: string): number | string =>
+  source ?? (via !== 'hit' && via !== 'blast' ? via : attacker ? attacker.id : 'blast');
+
+/** Books a hit on tonight's tally; it only counts, so it never touches the sim. */
+function tallyHit(run: Run, key: number | string, dealt: number, killed: boolean) {
+  const tally = (run.tally ??= new Map());
+  const row = tally.get(key);
+  if (row) { row[0] += dealt; row[1] += killed ? 1 : 0; } else tally.set(key, [dealt, killed ? 1 : 0]);
+}
+
+/** Dawn's receipt: the night's tally, damage rounded to whole points, most first; the tally starts over. */
+export function takeReceipt(run: Run): ReceiptRow[] {
+  const rows = [...(run.tally ?? [])].map(([key, [dealt, kills]]): ReceiptRow => [key, Math.round(dealt), kills]).filter(([, d, k]) => d > 0 || k > 0);
+  run.tally = new Map();
+  return rows.sort((a, b) => b[1] - a[1] || b[2] - a[2]);
+}
+
+/**
+ * Only a player's own direct hit is sent to the client: a blast's boom already shows, and a crowd's worth of blast or turret hits would fill the snapshot.
+ * `source` names who the receipt books it to when neither a player nor a turret dealt it (`receiptKey`).
+ */
+export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | Shooter = 'hit', source?: string) {
   const run = w.run;
   if (!run || z.hp <= 0) return;
   const dealt = Math.min(z.hp, amount);
   z.hp -= amount;
+  tallyHit(run, receiptKey(attacker, via, source), dealt, z.hp <= 0);
   if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null);
   if (attacker && (via === 'hit' || via === 'blast')) { statsFor(run, attacker).dealt += dealt; perkOnZombieHit(w, attacker, z, dealt, via); }
   if (z.hp > 0) return;
@@ -275,6 +299,7 @@ function placeAtCore(w: World, p: Player) {
  * Bites wear armor as bullets do, and the outpost has no armor packs, so the squad re-kits at dawn: whoever is standing gets a full pool again.
  */
 function dawn(w: World, run: Run) {
+  w.events.push({ e: 'receipt', night: run.night, rows: takeReceipt(run) });
   run.scrap += run.survivors * ZOM.scrapPerSurvivor;
   // Every turret and flame vent is restocked to a full load, free, so ammo is a night's worry and never a building's job.
   let restocked = 0;
@@ -349,6 +374,7 @@ export function tickRun(w: World, dtMs: number) {
         run.ready.clear();
         run.lost = 0;
         delete run.restocked;
+        run.tally = new Map();
       }
       break;
     case 'night':

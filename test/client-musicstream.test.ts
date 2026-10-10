@@ -1,15 +1,15 @@
 /// <reference types="node" />
 /**
- * The recordings: Night Market keeps Eric Skiff's, the radio-only stations theirs, and every other map plays its synthesized theme. Each recording
+ * The recordings: Night Market keeps Eric Skiff's, and every other map plays its synthesized theme. Each recording (and the bass-drop sting)
  * is licensed, credited and on disk, nothing else is left in the folder, and CREDITS.md is what scripts/music-credits.ts writes. The director plays
- * a recording (falling back to a synthesized theme while it loads or if it fails) and the radio dial reaches all of them. One file, one module
+ * a recording (falling back to a synthesized theme while it loads or if it fails) and the radio dial reaches every track. One file, one module
  * instance: music.ts keeps its state in module scope.
  */
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
-import { EXTRA_IDS, STATION_IDS, TRACK_IDS, cycleStation, isStationId, type StationId } from '../src/shared/radio.ts';
-import { allCredits, DROP, LICENCE_URL, setStreamFactory, STREAMS, streamKeyFor, synthFor, type StreamKey } from '../src/client/musicstream.ts';
+import { STATION_IDS, TRACK_IDS, cycleStation, isStationId, type StationId } from '../src/shared/radio.ts';
+import { allCredits, DROP, LICENCE_URL, resetStreamFailures, setStreamFactory, STREAMS, streamKeyFor, synthFor } from '../src/client/musicstream.ts';
 import { MAP_TRACK, TRACKS } from '../src/client/musictracks.ts';
 import { EMPTY_BUFFER } from '../src/client/interp.ts';
 
@@ -22,7 +22,7 @@ test('Night Market keeps Skiff\'s recording and every other map its synthesized 
     assert.equal(key, null, `${map} plays its synthesized theme`);
     assert.ok(TRACKS[id].pop || id === 'march', `${map}: a theme or the march`);
   }
-  for (const id of EXTRA_IDS) assert.ok(STREAMS[id], `radio-only ${id} has a recording`);
+  assert.deepEqual(Object.keys(STREAMS), ['market'], 'Night Market\'s is the only recording; there are no radio-only stations');
   // The folder holds exactly the files the registry names, and the credits are what the script writes.
   const files = readdirSync(pub('music/tracks')).filter((f) => f.endsWith('.mp3')).sort();
   assert.deepEqual(files, [...Object.values(STREAMS).map((s) => s.file), DROP.file].map((f) => f.split('/').pop()!).sort(), 'every recording on disk is used, and every one used is on disk');
@@ -48,19 +48,23 @@ test('Night Market keeps Skiff\'s recording and every other map its synthesized 
   // The credits file and the in-game list name every recording with its artist and licence.
   const md = readFileSync(pub('music/tracks/CREDITS.md'), 'utf8');
   for (const c of [...allCredits(), DROP.credit]) for (const bit of [c.title, c.artist, c.licenceUrl, c.source]) assert.ok(md.includes(bit), `CREDITS.md names ${bit}`);
-  assert.equal(allCredits().length, Object.keys(STREAMS).length);
-  // A real spread of genres, not one everywhere: at least four artists' worth of sources and several licensors.
-  assert.ok(new Set(allCredits().map((c) => c.artist)).size >= 3);
+  // The sting is credited on its own, in the list and in the pause menu, now that its track is not a station.
+  assert.equal(allCredits().length, Object.keys(STREAMS).length + 1);
+  assert.ok(allCredits().includes(DROP.credit), 'the bass-drop sting is credited in its own right');
+  assert.ok(DROP.credit.title && DROP.credit.artist && /^https:\/\//.test(DROP.credit.source) && DROP.credit.licenceUrl === LICENCE_URL[DROP.credit.licence]);
 });
 
-test('the radio dial reaches every recording, the radio-only stations and the original march, each named for what it plays', async () => {
+test('the radio dial reaches every track, the recording and the original march, each named for what it plays, and nothing else', async () => {
   const { stationLabel } = await import('../src/client/radio.ts');
   let at: StationId | null = null;
   const seen = new Set<StationId | null>();
   for (let i = 0; i < STATION_IDS.length; i++) { at = cycleStation(at, false); seen.add(at); }
-  for (const id of [...TRACK_IDS, ...EXTRA_IDS]) assert.ok(seen.has(id) && isStationId(id), `${id} is on the dial`);
+  for (const id of TRACK_IDS) assert.ok(seen.has(id) && isStationId(id), `${id} is on the dial`);
   assert.ok(seen.has('off'));
-  for (const id of EXTRA_IDS) { assert.equal(stationLabel(id), STREAMS[id].credit.title); assert.equal(synthFor(id), 'march', 'a radio-only station borrows the march while it loads'); }
+  assert.equal(STATION_IDS.length, TRACK_IDS.length + 1, 'the tracks and Off, nothing more');
+  // A station saved before the radio-only recordings were taken off is not a station any more, so a saved tuning falls back to the map's own.
+  for (const gone of ['groove', 'dizzy', 'chibi', 'dekalb', 'wraghstep']) assert.equal(isStationId(gone), false, `${gone} is off the dial`);
+  assert.equal(stationLabel('oldtown'), 'Back Alley Drift');
   assert.equal(stationLabel('march'), 'Toy March (original)');
   assert.equal(stationLabel('market'), "We're All Under the Stars");
   assert.equal(stationLabel('harbor'), 'Harbour Lights', 'a synthesized theme goes by its own name');
@@ -87,8 +91,8 @@ function fakeAudioContext(now: () => number) {
 test('the director plays a map\'s recording, crossfades between maps, retunes at once, and lets the synth stand in while a file is late or broken', async () => {
   let clock = 0;
   // Files load in 0.4 s, except the ones this test breaks or holds back.
-  const broken = new Set<string>(['music/tracks/chibi.mp3']);
-  const slow = new Map<string, number>([['music/tracks/groove.mp3', 3]]);
+  const broken = new Set<string>();
+  const slow = new Map<string, number>();
   const players: { file: string; started: boolean; stopped: boolean }[] = [];
   setStreamFactory((c, file) => {
     const born = clock;
@@ -135,45 +139,51 @@ test('the director plays a map\'s recording, crossfades between maps, retunes at
   for (let i = 0; i < 80 && music.getCrossfade(); i++) step(0.1);
   assert.equal(music.getCrossfade(), null);
 
-  // A radio retune is instant: the old recording stops at once and the new station's starts.
-  music.setRoomStation('dekalb');
-  step(0.03);
-  assert.equal(music.getPlayingTrack(), 'dekalb');
-  assert.equal(music.getCrossfade(), null, 'no crossfade: the old station is cut');
-  assert.ok(players.find((p) => p.file === STREAMS.market.file)!.stopped, 'the market\'s file is let go');
-  for (let i = 0; i < 6; i++) step(0.1);
-  assert.equal(music.getDeckState(), 'playing');
-  assert.ok(players.some((p) => p.file === STREAMS.dekalb.file && p.started));
-
-  // A broken file: the synthesized march stands in at once, and the station still changed.
-  music.setRoomStation('chibi');
-  step(0.03); step(0.05);
-  assert.equal(music.getPlayingTrack(), 'chibi');
-  assert.equal(music.getDeckState(), 'fallback');
-  for (let i = 0; i < 30; i++) step(0.1);
-  assert.ok(music.musicProbe().lastBar!.voices.length > 0, 'the stand-in plays');
-  assert.equal(music.musicProbe().lastBar!.stream, null);
-
-  // A synthesized station: the Quarry's theme, on its hook at once.
+  // A radio retune is instant: the recording stops at once and the station plays, on its hook.
   music.setRoomStation('quarry');
   step(0.03);
   assert.equal(music.getPlayingTrack(), 'quarry');
+  assert.equal(music.getCrossfade(), null, 'no crossfade: the old station is cut');
+  assert.ok(players.find((p) => p.file === STREAMS.market.file)!.stopped, 'the market\'s file is let go');
   assert.equal(music.getDeckState(), 'synth');
   assert.ok(music.musicProbe().lastBar!.tune.length > 0, 'the cowbell hook');
 
   // A late file: silence for a moment, then the stand-in, then the recording swells in over it when it arrives.
-  music.setRoomStation('groove');
+  slow.set(STREAMS.market.file, 3);
+  music.setRoomStation('market');
   step(0.03);
+  assert.equal(music.getPlayingTrack(), 'market');
   assert.equal(music.getDeckState(), 'waiting');
   for (let i = 0; i < 15; i++) step(0.1);
   assert.equal(music.getDeckState(), 'fallback', 'past the grace the synth stands in');
   for (let i = 0; i < 20; i++) step(0.1);
   assert.equal(music.getDeckState(), 'playing', 'and the recording takes over when it arrives');
+  slow.clear();
+
+  // A broken file: the theme stands in at once, and the station still changed.
+  music.setRoomStation('oldtown');
+  step(0.03);
+  broken.add(STREAMS.market.file);
+  music.setRoomStation('market');
+  step(0.03); step(0.05);
+  assert.equal(music.getPlayingTrack(), 'market');
+  assert.equal(music.getDeckState(), 'fallback');
+  for (let i = 0; i < 30; i++) step(0.1);
+  assert.ok(music.musicProbe().lastBar!.voices.length > 0, 'the stand-in plays');
+  assert.equal(music.musicProbe().lastBar!.stream, null);
+  broken.clear();
+  resetStreamFailures();
+
+  // Back on the synthesized station, then untuned: the map's own recording plays again.
+  music.setRoomStation('oldtown');
+  for (let i = 0; i < 6; i++) step(0.1);
+  assert.equal(music.getDeckState(), 'synth');
 
   // Untuned: back to the map's own.
   music.setRoomStation(null);
   for (let i = 0; i < 20; i++) step(0.1);
   assert.equal(music.getPlayingTrack(), 'market');
+  assert.equal(music.getDeckState(), 'playing');
 
   // The hype: a kill streak of five over a recording drops the bass (the sting file loads when a streak gets going).
   const fetched: string[] = [];

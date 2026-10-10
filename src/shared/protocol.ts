@@ -177,6 +177,7 @@ export const ZOMBIE_FX = { marked: 1, burning: 2 } as const;
  */
 export type BuildingView = { cx: number; cy: number; hp: number; /** The upgrade level (a wall's tier), 2 or 3; absent at level 1. */ lv?: number } & ({ kind: Exclude<BuildingKind, TurretKind> } | { kind: Exclude<TurretKind, 'vent'>; ammo: number } | { kind: 'vent'; ammo: number; /** Its facing, `VENT_DIRS`. */ dir: VentDir });
 /** `turretKills` counts the squad's turrets' kills by turret kind; a player's `kills` are their own. `won` once the Bastion held through the Tide. */
+export type ReceiptRow = [source: number | string, dealt: number, kills: number];
 export type RunReport = {
   night: number; won: boolean; survivors: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>; bastionKills: number;
 };
@@ -255,6 +256,11 @@ export type GameEvent =
    * a player's own kill times their gun's bounty (`zombieBounty`); absent when it paid nothing (burnt at first light).
    */
   | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null; scrap?: number }
+  /**
+   * Dawn's receipt for the night just held, sent once to the whole squad: what each source dealt the horde and killed, `[source, damage, kills]`,
+   * the source a player's id or the kind of what dealt it (a building kind, `bastion`, `blast`); the damage counts only what the zombie had left.
+   */
+  | { e: 'receipt'; night: number; rows: ReceiptRow[] }
   /** A turret at cell center (`x`, `y`) fired toward `angle`, to 0.01 rad. Its rounds stay off `bullets`: the client draws each from this. */
   /** `reach` is how far a lobbed round flies before it bursts. */
   | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number; reach?: number }

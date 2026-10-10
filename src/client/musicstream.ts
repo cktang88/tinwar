@@ -1,12 +1,11 @@
 /**
- * The recordings: Eric Skiff's "We're All Under the Stars" on Night Market (players asked to keep it), and the radio-only stations. Every
- * other map plays its synthesized theme (musicthemes.ts), and the menu and the Plaza the original march. Each file is in public/music/tracks/,
+ * The recordings: Eric Skiff's "We're All Under the Stars" on Night Market (players asked to keep it), and the bass-drop sting. Every other
+ * map plays its synthesized theme (musicthemes.ts), and the menu and the Plaza the original march. Each file is in public/music/tracks/,
  * trimmed, loudness-matched to -16 LUFS and credited in public/music/tracks/CREDITS.md (scripts/music-credits.ts writes it) and the pause menu's
  * credits. Files stream through an <audio> element into the music bus (so a track costs a few hundred kilobytes of memory, not the ~70 MB a
  * decoded buffer would); while one loads, or if it fails, a synthesized theme plays instead.
  */
-import type { ExtraId, SongId, TrackId } from '../shared/radio.ts';
-import { TRACK_IDS } from '../shared/radio.ts';
+import type { SongId, TrackId } from '../shared/radio.ts';
 
 export type Licence = 'CC BY 4.0' | 'CC BY 3.0' | 'CC0 1.0';
 export const LICENCE_URL: Record<Licence, string> = {
@@ -25,69 +24,56 @@ export type StreamDef = {
   tonic: number | null;
   minor: boolean;
   credit: Credit;
-  /** Why it is this map's (or station's) track. */
+  /** Why it is this map's track. */
   why: string;
 };
-/** The songs with a recording: Night Market's, and the radio-only stations. */
-export type StreamKey = 'market' | ExtraId;
+/** The songs with a recording: Night Market's. */
+export type StreamKey = 'market';
 
-const MACLEOD = 'Kevin MacLeod (incompetech.com)';
 const SKIFF = 'Eric Skiff (ericskiff.com)';
-const mac = (title: string, isrc: string, changes: string): Credit => ({
-  title, artist: MACLEOD, source: `https://incompetech.com/music/royalty-free/index.html?isrc=${isrc}`, licence: 'CC BY 4.0', licenceUrl: LICENCE_URL['CC BY 4.0'], changes,
-});
 const skiff = (title: string, changes: string): Credit => ({ title, artist: SKIFF, source: 'https://ericskiff.com/music/', licence: 'CC BY 4.0', licenceUrl: LICENCE_URL['CC BY 4.0'], changes });
 const STD = 'Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3';
-const CUT = (s: number) => `Cut to its first ${s} s, ${STD.charAt(0).toLowerCase()}${STD.slice(1)}`;
-// Pitch classes: D 2, E 4, F 5, G 7 (keys estimated from each file's chroma, kept only where the estimate was clear).
-const D = 2, E = 4, F = 5, G = 7;
+// Pitch classes (keys estimated from each file's chroma, kept only where the estimate was clear).
+const E = 4;
 
 const def = (key: StreamKey, bpm: number, tonic: number | null, minor: boolean, credit: Credit, why: string): StreamDef => ({ key, file: `music/tracks/${key}.mp3`, bpm, tonic, minor, credit, why });
 
 export const STREAMS: Record<StreamKey, StreamDef> = {
   market: def('market', 132, E, false, skiff("We're All Under the Stars", `Starts at 0:45 of the original (where the hook comes in), cut to 200 s; ${STD.charAt(0).toLowerCase()}${STD.slice(1)}`),
     'Warm, singable 8-bit melody under neon: the night market as an arcade, catchy from the first bar.'),
-  groove: def('groove', 140, null, false, mac('Laser Groove', 'USUAN1700017', STD),
-    'Radio only: 80s synthwave mutated by trap drums.'),
-  dizzy: def('dizzy', 150, G, true, skiff('A Night Of Dizzy Spells', STD),
-    'Radio only: a fast, fizzing chiptune anthem.'),
-  chibi: def('chibi', 140, F, false, skiff('Chibi Ninja', STD),
-    'Radio only: bright, bouncing chiptune.'),
-  dekalb: def('dekalb', 72, D, true, mac('Lewis and Dekalb', 'USUAN1600027', CUT(200)),
-    'Radio only: southern-trap low end, deep sub bass and a slow, menacing swagger.'),
-  wraghstep: def('wraghstep', 140, null, false, {
-    title: 'Wraghstep [v2]', artist: 'Of Far Different Nature (opengameart.org)', source: 'https://opengameart.org/content/huge-loop-box-2-heavy-bass-music-for-action-racing-fighting-rpg-adventure-and-cutscenes',
-    licence: 'CC BY 4.0', licenceUrl: LICENCE_URL['CC BY 4.0'], changes: STD,
-  }, 'Radio only: a heavy dubstep loop, the bass drop on repeat.'),
 };
 
-/** The hype drop: a few seconds of Wraghstep's drop, played over the track (which ducks under it) on a big streak. */
+/**
+ * The hype drop: a few seconds of the drop from "Wraghstep [v2]", played over the track (which ducks under it) on a big streak. Only this
+ * excerpt ships (the full track is no longer a radio station), so it carries its own credit.
+ */
 export const DROP = {
   file: 'music/tracks/drop.mp3',
   /** Seconds from the start of the file to the drop itself. */
   hitAt: 0.95,
-  credit: { ...STREAMS.wraghstep.credit, changes: 'A 5.2 s excerpt (9.3 s to 14.5 s, the drop) used as a sting, faded out and loudness-normalised' } satisfies Credit,
+  credit: {
+    title: 'Wraghstep [v2]', artist: 'Of Far Different Nature (opengameart.org)', source: 'https://opengameart.org/content/huge-loop-box-2-heavy-bass-music-for-action-racing-fighting-rpg-adventure-and-cutscenes',
+    licence: 'CC BY 4.0', licenceUrl: LICENCE_URL['CC BY 4.0'], changes: 'A 5.2 s excerpt (9.3 s to 14.5 s, the drop) used as a sting, faded out and loudness-normalised',
+  } satisfies Credit,
 };
 
 /** The synthesized music (no files), credited in the same list: the original march and every map's theme. */
 export const MARCH_CREDIT = 'Toy March (original) and the map themes: composed for Tinwar and synthesized live in the browser';
 
-/** The file a song plays from, if it has one (Night Market and the radio-only stations); every other song is synthesized. */
+/** The file a song plays from, if it has one (Night Market); every other song is synthesized. */
 export const streamKeyFor = (song: SongId): StreamKey | null => (song in STREAMS ? (song as StreamKey) : null);
 
-const SYNTH: ReadonlySet<string> = new Set(TRACK_IDS);
-/** The synthesized track that plays a song, or stands in for its recording while the file loads (radio-only stations borrow the march). */
-export const synthFor = (song: SongId): TrackId => (SYNTH.has(song) ? (song as TrackId) : 'march');
+/** The synthesized track that plays a song, or stands in for its recording while the file loads (Night Market's theme for its recording). */
+export const synthFor = (song: SongId): TrackId => song;
 
 /** The radio's name for a station with a recording: the recording's title (the pause menu's credits name the artists); null for a synthesized one. */
 export const songLabel = (song: SongId): string | null => STREAMS[song as StreamKey]?.credit.title ?? null;
-export const isExtra = (song: SongId): song is ExtraId => !SYNTH.has(song);
 
-/** Every credit, once each, in the order the soundtrack lists them. */
+/** Every credit, once each, in the order the soundtrack lists them: the recordings, then the bass-drop sting. */
 export function allCredits(): Credit[] {
   const seen = new Set<string>();
   const out: Credit[] = [];
-  for (const s of Object.values(STREAMS)) if (!seen.has(s.credit.title)) { seen.add(s.credit.title); out.push(s.credit); }
+  for (const c of [...Object.values(STREAMS).map((s) => s.credit), DROP.credit]) if (!seen.has(c.title)) { seen.add(c.title); out.push(c); }
   return out;
 }
 

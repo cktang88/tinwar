@@ -63,7 +63,7 @@ const march = (label: string, trim: number, sting: Inst): TrackDef => ({
 
 export const TRACKS: Record<TrackId, TrackDef> = {
   march: march('Toy March (original)', 1.0, 'glock'),
-  oldtown: fromPop(OLDTOWN, 1.18, 'bandoneon'),
+  oldtown: fromPop(OLDTOWN, 1.1, 'koto'),
   quarry: fromPop(QUARRY, 1.02, 'cowbell'),
   harbor: fromPop(HARBOR, 1.17, 'accordion'),
   market: fromPop(MARKET, 1.17, 'chime'),

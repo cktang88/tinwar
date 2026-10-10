@@ -1,7 +1,7 @@
 /**
  * The soundtrack director. The menu and the Plaza play the original seeded march (musicclassic.ts), and every other map its own synthesized
- * theme (musicthemes.ts, arranged by musicpop.ts), bar by bar, in layers that swell with the fight. Night Market and the radio-only stations
- * play recordings (musicstream.ts), opened up from a muffled low-pass when calm to full range in a fight, with kill stings in their key over them,
+ * theme (musicthemes.ts, arranged by musicpop.ts), bar by bar, in layers that swell with the fight. Night Market plays
+ * a recording (musicstream.ts), opened up from a muffled low-pass when calm to full range in a fight, with kill stings in their key over them,
  * a bass drop on a big streak, and a synthesized theme standing in while the file loads or if it fails. Maps crossfade; radios retune at once
  * under the static. `musicStart` runs from a user gesture, `musicUpdate` once a frame; `onBeat` and `getBeat` give the visuals a clock.
  */

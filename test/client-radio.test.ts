@@ -82,9 +82,8 @@ test('the fixed radio turns at once and tells the server, and the squad\'s stati
   onRoomRadio('wasteland', 600);
   assert.equal(getStation(), 'wasteland');
   assert.equal(stationLabel('wasteland'), 'Dust Devil', 'a synthesized station is named for its theme');
-  assert.equal(stationLabel('dizzy'), 'A Night Of Dizzy Spells', 'a recorded station is named for its recording');
+  assert.equal(stationLabel('market'), "We're All Under the Stars", 'a recorded station is named for its recording');
   assert.equal(stationLabel('march'), 'Toy March (original)');
-  assert.equal(stationLabel('dekalb'), 'Lewis and Dekalb', 'and the radio-only stations too');
   assert.equal(stationLabel('off'), 'Off');
   sent.length = 0;
   radioPress(state, 700, (m) => sent.push(m));

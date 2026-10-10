@@ -26,6 +26,7 @@ import { inside, isPhoneLandscape, phoneLayout, STICK_REST, type Box, type Phone
 import { loadoutSlots, progressLine, slotBoxes, type LoadoutSlot, type Progress, type SlotBox, type SlotKind } from './loadout.ts';
 import { FOCUS, feedKeeps, labelsOn, phoneFocus, type PhoneElement } from './phonefocus.ts';
 import { phoneDomState, syncPhoneFocus } from './phonehud.ts';
+import type { RightRoom } from './receipt.ts';
 
 /** The kit's condensed face (style.css), with the system face standing in until it loads. */
 const HUD_FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
@@ -184,6 +185,25 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks, dpr: n
   ctx.globalAlpha = 1;
 }
 
+/**
+ * The free stretch of the right edge as last drawn, in CSS px, for the dawn receipt (receipt.ts): under the board and over the minimap
+ * on a desktop; on a phone under the top-right row, over the feed's lines, and above the context, reload and ability buttons, clear of the play area.
+ */
+let rightRoom: RightRoom | null = null;
+export const drawnRightRoom = (): RightRoom | null => rightRoom;
+
+function noteRightRoom({ w, h, P }: Hud, boardBottom: number, mapSize: number) {
+  const k = hudScale;
+  if (P) {
+    const right = w - (P.cog.x + P.cog.w);
+    rightRoom = { top: P.feed.y * k, bottom: (Math.min(P.context.y, P.reload.y) - SPACE.sm) * k, right: right * k, width: (P.cog.x + P.cog.w - (P.safe.x + P.safe.w) - SPACE.sm) * k, k, phone: true, boardOpen: boardBottom > P.board.y + P.board.h + 1 };
+    return;
+  }
+  // A touch screen keeps its minimap top left, so the right edge is free to the bottom.
+  const mapTop = touchScreen ? h - EDGE : h - EDGE - inset().b - mapSize - 16;
+  rightRoom = { top: (boardBottom + SPACE.md) * k, bottom: (mapTop - SPACE.md) * k, right: (EDGE + inset().r) * k, width: w * 0.3 * k, k, phone: false, boardOpen: false };
+}
+
 /** `spread` is your current aim spread, or null when no reticle should be drawn. */
 /** The whole HUD, panels and text alike, draws on a virtual screen 1 / `scale` as large: see UI_SCALE (uiscale.ts). */
 let hudScale = 1;
@@ -231,7 +251,9 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   drawHurtVignette(hud);
   drawHurtArcs(hud);
   const boardBottom = P && F ? (F.board ? drawBoardChip(hud, P, fullBoard) : P.board.y + P.board.h) : drawLeaderboard(hud, compact, fullBoard);
-  drawMinimap(hud, P && F ? (F.minimapOpen ? P.minimapOpen.w : P.minimap.w) - 16 : compact ? 96 : 160);
+  const mapSize = P && F ? (F.minimapOpen ? P.minimapOpen.w : P.minimap.w) - 16 : compact ? 96 : 160;
+  drawMinimap(hud, mapSize);
+  noteRightRoom(hud, boardBottom, mapSize);
   const below = P && F ? drawPhoneTop(hud, P, F) : drawPill(hud, compact);
   // On a phone on its side the feed keeps a line or two under the top-right row (hidden while the board is open over it), and
   // only your own lines and the big events, briefly; on another small touch screen the right column is the leaderboard, so a

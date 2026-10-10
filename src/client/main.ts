@@ -20,7 +20,7 @@ import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
 import { createMedalToasts } from './medaltoasts.ts';
 import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
-import { ABILITY_SCORE, abilityHint, boardNameAt, buildChipAt, drawnBoardNames, drawHud, drawnPhoneLayout, drawSticks, hudScaleFor, noteAbilityDenied, noteTopup, phoneBoardTap, setBoardHover, setHudFriends, setHudInsets } from './hud.ts';
+import { ABILITY_SCORE, abilityHint, boardNameAt, buildChipAt, drawnBoardNames, drawHud, drawnRightRoom, drawnPhoneLayout, drawSticks, hudScaleFor, noteAbilityDenied, noteTopup, phoneBoardTap, setBoardHover, setHudFriends, setHudInsets } from './hud.ts';
 import { createFriendsUi } from './friends.ts';
 import { applyPhoneHud } from './phonehud.ts';
 import { createAutoFullscreen, requestFullscreen } from './fullscreen.ts';
@@ -64,6 +64,7 @@ import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
 import { duckFor, emoteCue, soundsFor, type SoundCue } from './sfx.ts';
 import { emitSfxAt, setSfxSink } from './sfxbus.ts';
+import { createReceipt } from './receipt.ts';
 import { startTopup } from './reloadanim.ts';
 import { topupCues, topupOf } from './topup.ts';
 import { committed, NO_FIRING, sendInput, spreadOf } from './fire.ts';
@@ -416,6 +417,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   noteGains(snap, s.myId, now);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   celebrate.onSnap(snap, now);
+  receipt.onSnap(snap, s.myId);
   const topped = topupOf(prev, snap, s.myId);
   if (topped > 0) onTopup(s, topped, now);
   chatter.onSnap(snap, s.myId, now);
@@ -822,6 +824,7 @@ function drawFrame(realNow: number) {
     // The killcam's world is lit like the live one: the shader pass must take THIS frame, or its canvas keeps showing the last live frame (the normal camera) while the 2D one has been cleared for it.
     if (processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr)) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
     overlays.update(state, s, latest, now, muted);
+    receipt.update(latest, null);
     return;
   }
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, fxNow: realNow, selfAngle, killerId, ghost, cursor: mouseAiming && state.phase === 'playing' ? screenToWorld(aimCamera, mouse) : null });
@@ -844,6 +847,7 @@ function drawFrame(realNow: number) {
   xpCard.update(realNow);
   touchButtons(buttonFaces(snap.self, abilityHint(snap.self.pending)[0] === 'Ability' ? ABILITY_SCORE : undefined));
   overlays.update(state, s, latest, now, muted);
+  receipt.update(latest, state.phase === 'menu' ? null : drawnRightRoom());
   delight.drawReel(s, latest, realNow);
 }
 
@@ -1056,6 +1060,8 @@ canvas.addEventListener('mousedown', (e) => {
     const pick = boardNameAt(mouse.x, mouse.y);
     if (pick) return friendsUi.openMenu(pick);
     if (friendsUi.isMenuOpen()) return friendsUi.closeMenu();
+    // With the pointer locked a click lands here even over dawn's receipt: on it, it tears the slip off rather than firing.
+    if (receipt.hit(mouse.x, mouse.y)) return receipt.tear();
   }
   if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e);
   if (e.button !== 0) return;
@@ -1197,6 +1203,7 @@ const overlays = createOverlays(pick, sendFromDeath, toggleMuted, () => loadout)
 const delight = createDelight();
 const rangeUi = createRangeUi(hudEl, (msg) => { const s = sessionOf(state); if (s) send(s.ws, msg); }, () => { const s = sessionOf(state); if (s) playClick(s); });
 const celebrate = createCelebration(document.body);
+const receipt = createReceipt(document.body);
 const wheel = createEmoteWheel(hudEl, (id) => {
   const s = sessionOf(state);
   if (!s) return;

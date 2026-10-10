@@ -8,8 +8,9 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-10',
     items: [
+      'Old Town has a new back-alley phonk theme, Back Alley Drift, and five radio-only songs are off the dial',
       'Every perk, attachment and ability now earns its slot in Zombies too, with its own line on the pick panel',
-      'Zombies: every gun and turret has its own job, plus an aimable flamer, a decoy beacon, a salvage yard and a medic post that revives; turret ammo is free and restocks at dawn',
+      'Zombies: every gun and turret has its own job, plus an aimable flamer, a decoy beacon, a salvage yard, a medic post that revives and a dawn receipt of who dealt what; turret ammo is free and restocks at dawn',
     ],
   },
   {
@@ -41,8 +42,7 @@ export const CHANGELOG: ChangelogDay[] = [
     date: '2026-10-07',
     items: [
       'Polygon walls, doors and roofs, with six new or reworked maps',
-      'Levels, 98 cosmetics, and daily and weekly challenges',
-      'Killcam, slow-mo, emotes, celebrations, barrels and airdrops, plus medals and profiles',
+      'Levels, 98 cosmetics, challenges, medals and profiles, plus killcam, slow-mo, emotes, celebrations, barrels and airdrops',
     ],
   },
 ];
