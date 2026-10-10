@@ -415,7 +415,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string; zom?: strin
 export const perkLine = (perk: PerkId, zombies: boolean): string => (zombies && PERK_INFO[perk].zom) || PERK_INFO[perk].desc;
 
 export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
-  fragGrenade: 7000, gasGrenade: 8000, claymore: 9000, knife: 4000, engineer: 30000, dash: 3500, radar: 15000, healPole: 16000,
+  fragGrenade: 7000, gasGrenade: 8000, claymore: 18000, knife: 4000, engineer: 30000, dash: 3500, radar: 15000, healPole: 16000,
 };
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;

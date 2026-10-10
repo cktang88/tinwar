@@ -31,7 +31,7 @@ const THROW_SPEED = 700;
  * `seePx` of them (`spotsClaymore`), people and bots alike. That is far enough past the trigger cone to stop or step aside even at a
  * sprint, so one is always avoidable, but whoever runs in looking elsewhere stumbles on it.
  */
-export const CLAYMORE = { armMs: 800, reach: 190, cone: 0.7, pellets: 16, spread: 0.75, damage: 26, range: 320, lifeMs: 60_000, max: 2, seePx: 430, seeFov: Math.PI / 4 } as const;
+export const CLAYMORE = { armMs: 800, reach: 190, cone: 0.7, pellets: 16, spread: 0.75, damage: 39, range: 320, lifeMs: 60_000, max: 2, seePx: 430, seeFov: Math.PI / 4 } as const;
 
 /** Whether a viewer at (x, y) aiming along `angle` spots a claymore at `t`: in their 90 degree view cone and within `CLAYMORE.seePx`. */
 export function spotsClaymore(x: number, y: number, angle: number, t: { x: number; y: number }): boolean {
