@@ -1,7 +1,7 @@
 import { GUNS, WORLD } from '../shared/defs.ts';
 import type { BulletView } from '../shared/protocol.ts';
 import {
-  BLAST_MS, clamp01, DEBRIS, easeOut, fx, GHOST_MS, ghostPlayers, ghostsOf, SCORCH_MS, seeded, SLASH_MS, where, type BlastKind, type PKind, type Where,
+  BLAST_MS, clamp01, DEBRIS, easeOut, fx, GHOST_MS, ghostPlayers, ghostsOf, seeded, SLASH_MS, where, type BlastKind, type PKind, type Where,
 } from './blastfx.ts';
 import { lightingEnabled } from './lighting.ts';
 import { INK } from './palette.ts';
@@ -83,60 +83,8 @@ function discs(ctx: CanvasRenderingContext2D, color: string, alpha: number, list
   ctx.fill();
 }
 
-// ---------------------------------------------------------------- scorch decals (floor level)
-
-const SCORCH_LOOK = [
-  { char: INK, ash: '#3a342e', rim: null },
-  { char: '#3a2c1f', ash: '#6b5238', rim: '#8a6f4c' },
-  { char: '#46502c', ash: '#6f7a4e', rim: null },
-  { char: INK, ash: '#26231f', rim: '#5a2c18' },
-] as const;
-const lobes: number[] = [];
 const one: number[] = [0, 0, 0];
-const two: number[] = [0, 0, 0, 0, 0, 0];
 
-export function drawScorches(ctx: CanvasRenderingContext2D, now: number, view: View) {
-  for (const s of fx.scorches.slots) {
-    const age = now - s.born;
-    if (age < 0 || age >= SCORCH_MS || !near(view, s.x, s.y, s.r * 1.9)) continue;
-    // It holds for 60% of its life, then fades.
-    const fade = age < SCORCH_MS * 0.6 ? 1 : 1 - (age - SCORCH_MS * 0.6) / (SCORCH_MS * 0.4);
-    const look = SCORCH_LOOK[s.tone] ?? SCORCH_LOOK[0];
-    const rand = seeded(s.seed);
-    lobes.length = 0;
-    lobes.push(s.x, s.y, s.r * 0.78);
-    for (let i = 0; i < 10; i++) {
-      const a = rand() * TAU, d = s.r * (0.42 + rand() * 0.32);
-      lobes.push(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d * 0.9, s.r * (0.2 + rand() * 0.2));
-    }
-    // A churned-dirt rim (a mine) or a rust ring (a barrel) around the char.
-    if (look.rim) { one[0] = s.x; one[1] = s.y; one[2] = s.r * 0.98; discs(ctx, look.rim, 0.28 * fade, one); }
-    discs(ctx, look.char, 0.3 * fade, lobes);
-    one[2] = s.r * 0.54;
-    discs(ctx, '#0e1014', 0.28 * fade, one);
-    two[0] = s.x; two[1] = s.y; two[2] = s.r * 0.34; two[3] = s.x + s.r * 0.08; two[4] = s.y - s.r * 0.05; two[5] = s.r * 0.22;
-    discs(ctx, look.ash, 0.34 * fade, two);
-    // Radial streaks thrown outward along the floor: tapered wedges and a few flecks, one flat shape.
-    ctx.globalAlpha = 0.11 * fade;
-    ctx.fillStyle = look.char;
-    ctx.beginPath();
-    const streaks = 10;
-    for (let i = 0; i < streaks; i++) {
-      const a = (i / streaks) * TAU + (rand() - 0.5) * 0.9, r0 = s.r * 0.6, r1 = s.r * (0.95 + rand() * rand() * 0.8), w = 0.08 + rand() * 0.09;
-      ctx.moveTo(s.x + Math.cos(a - w) * r0, s.y + Math.sin(a - w) * r0 * 0.94);
-      ctx.lineTo(s.x + Math.cos(a) * r1, s.y + Math.sin(a) * r1 * 0.94);
-      ctx.lineTo(s.x + Math.cos(a + w) * r0, s.y + Math.sin(a + w) * r0 * 0.94);
-      ctx.closePath();
-      if (rand() < 0.6) {
-        const d = r1 + 5 + rand() * 8, sx = s.x + Math.cos(a) * d, sy = s.y + Math.sin(a) * d * 0.94;
-        ctx.moveTo(sx + 2.4, sy);
-        ctx.arc(sx, sy, 2.4, 0, TAU);
-      }
-    }
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-}
 
 // ---------------------------------------------------------------- live particles, gathered once a frame
 
@@ -170,7 +118,7 @@ const SMOKE_TONES: readonly SmokeTone[] = [
   { base: '#6c665f', cap: '#a39c91', shade: '#4a4540' },
   { base: '#9a8a6c', cap: '#cdbd9a', shade: '#6f634d' },
   { base: '#7f9440', cap: '#b6cc5a', shade: '#55662c' },
-  { base: '#4a4642', cap: '#7a746b', shade: '#322f2c' },
+  { base: '#8f8a82', cap: '#c9c3b9', shade: '#6e6962' },
 ];
 const SBINS = 8;
 const smokeAlpha = (k: number) => 0.5 * Math.min(1, k / 0.1) * (1 - (Math.max(0, k - 0.1) / 0.9) ** 1.4);

@@ -4,7 +4,7 @@ import type { LookSides } from '../../shared/lookahead.ts';
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
-import { coolSpray, sprayCap } from '../../shared/sim/trigger.ts';
+import { coolSpray, coolsAfter, sprayCap } from '../../shared/sim/trigger.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, BOT_SKILL, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, skilled, slowHand, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
 import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type BotArena, type StandingLeaf } from './arena.ts';
 import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
@@ -319,7 +319,7 @@ export function holdsFire(gun: GunId, r: Rhythm, s: ShotRead): boolean {
 
 /**
  * Its own bloom as the bot reckons it, the way a person watches the reticle: a round gone from the magazine kicks it a shot, a reload
- * settles it, and with nothing fired for the gun's `settleMs` it comes back down at the sim's rate (`Rhythm.recover`).
+ * settles it, and with nothing fired for as long as the sim holds the heat (`coolsAfter`) it comes back down at the sim's rate (`Rhythm.recover`).
  */
 export function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: number, tick: number): { spray: number; firedTick: number } {
   const { bloom } = rulesOf(GUNS[gun]);
@@ -328,7 +328,7 @@ export function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: 
   const was = tap?.ammo ?? ammo;
   if (ammo < was) { spray = Math.min(sprayCap(bloom), spray + (was - ammo)); firedTick = tick - 1; }
   else if (ammo > was) spray = 0;
-  else if ((tick - firedTick) * TICK_MS > bloom.settleMs) spray = coolSpray(spray, bloom, TICK_MS, r.recover);
+  else if ((tick - firedTick) * TICK_MS > coolsAfter(bloom, GUNS[gun].fireMs, TICK_MS)) spray = coolSpray(spray, bloom, TICK_MS, r.recover);
   return { spray, firedTick };
 }
 

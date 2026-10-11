@@ -57,7 +57,7 @@ import { flinchOf, flinchOffset } from './flinch.ts';
 import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
 import { drawCacheFloor, drawCacheOverlay, drawCaches, drawFloorGuns, drawFloorPlates, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
-import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
+import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
 import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
 import { reloadFoley } from './reloadsfx.ts';
@@ -136,7 +136,6 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const t of snap.thrown) if (t.kind === 'claymore') drawThrown(ctx, t, now);
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
   if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => (!standsUp(b) || b.kind === 'vent') && inView(view, b.cx * ZOM.cell - 4 * ZOM.cell, b.cy * ZOM.cell - 4 * ZOM.cell, 9 * ZOM.cell, 9 * ZOM.cell)), now);
-  drawScorches(ctx, now, view);
   // Last Standing: the caches' tier glow and the recon towers' capture circles lie on the floor, under every body (lootart.ts).
   const royale = snap.royale;
   if (royale?.caches?.length) drawCacheFloor(ctx, royale.caches, now, view);

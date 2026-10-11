@@ -28,6 +28,15 @@ export const sprayCap = (b: Bloom): number => b.free + (b.maxMul - 1) / b.perSho
  */
 export const coolSpray = (spray: number, b: Bloom, ms: number, recover = 1): number => Math.max(0, spray - (sprayCap(b) * ms * recover) / b.recoverMs);
 
+/**
+ * How long after a round a spray's heat starts to cool: the gun's `settleMs`, but never before the gun could fire again (its cadence, a
+ * burst gun's gap between bursts, and a tick of grace) when its heat would otherwise be gone by then. Otherwise a semi-auto or burst gun
+ * fired as fast as it goes (a held trigger, or the quickest clicking) would start every round cold and never bloom; slower taps still cool.
+ * A gun whose heat outlasts its cadence anyway (a bolt-action's, which settles over seconds) keeps its own settle.
+ */
+export const coolsAfter = (b: Bloom, fireMs: number, tickMs: number): number =>
+  b.settleMs + b.recoverMs < fireMs ? Math.max(b.settleMs, fireMs + tickMs) : b.settleMs;
+
 export function consumePresses(seen: { shotsSeen: number }, shots: number): boolean {
   const pressed = shots > seen.shotsSeen;
   seen.shotsSeen = Math.max(seen.shotsSeen, shots);
@@ -39,7 +48,7 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   const { bloom, spinUp } = rulesOf(def);
   s.spin = spinUp ? clamp(s.spin + (pull.fire ? tickMs / spinUp.upMs : -tickMs / spinUp.downMs), 0, 1) : 0;
   const fireMs = spinUp ? def.fireMs * (1 + (spinUp.startMul - 1) * (1 - s.spin)) : def.fireMs;
-  if (bloom && now - s.firedAt > bloom.settleMs) s.spray = coolSpray(s.spray, bloom, tickMs, gun.bloomRecover);
+  if (bloom && now - s.firedAt > coolsAfter(bloom, fireMs, tickMs)) s.spray = coolSpray(s.spray, bloom, tickMs, gun.bloomRecover);
   if (s.reloadUntil !== null && now >= s.reloadUntil) { s.ammo = gun.mag; s.reloadUntil = null; }
   if (s.reloadUntil === null && (s.ammo <= 0 || (pull.reload && s.ammo < gun.mag))) {
     s.reloadUntil = now + gun.reloadMs;

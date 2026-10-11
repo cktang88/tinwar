@@ -3,17 +3,16 @@ import { test } from 'node:test';
 import { at, CAPS, createBlastFx, fx, isPop, liveCount, scaleOf, seeded, startBoom, startDust, trackDash, ghostsOf, GHOST_MS } from '../src/client/blastfx.ts';
 
 test('pools are fixed-size rings that overwrite the oldest entry', () => {
-  const sizes = [fx.particles.slots.length, fx.blasts.slots.length, fx.scorches.slots.length, fx.slashes.slots.length];
+  const sizes = [fx.particles.slots.length, fx.blasts.slots.length, fx.slashes.slots.length];
   for (let i = 0; i < 200; i++) startBoom(i, i, 160, i);
   for (let i = 0; i < 100; i++) startDust({ x: 0, y: 0, w: 100, h: 20 }, 1000 + i);
-  assert.deepEqual([fx.particles.slots.length, fx.blasts.slots.length, fx.scorches.slots.length, fx.slashes.slots.length], sizes);
-  assert.deepEqual(sizes, [CAPS.particles, CAPS.blasts, CAPS.scorches, CAPS.slashes]);
+  assert.deepEqual([fx.particles.slots.length, fx.blasts.slots.length, fx.slashes.slots.length], sizes);
+  assert.deepEqual(sizes, [CAPS.particles, CAPS.blasts, CAPS.slashes]);
   assert.ok(liveCount(fx.particles, 150) <= CAPS.particles);
 });
 
-test('a pop leaves no scorch, a blast does', () => {
-  const f = createBlastFx();
-  assert.equal(f.scorches.slots.every((s) => s.born === -Infinity), true);
+test('a pop is small, a blast big', () => {
+  assert.ok(createBlastFx().blasts.slots.every((s) => s.born === -Infinity));
   assert.ok(isPop(40) && !isPop(90));
   assert.ok(scaleOf(10) === 0.45 && scaleOf(1000) === 1.8);
 });
@@ -36,11 +35,11 @@ test('dash ghosts age out and are capped', () => {
   assert.equal(ghostsOf(1).length, 0);
 });
 
-import { BLAST_MS, DEBRIS, GRAVITY, heightAt, kindOfRadius, lightsFor, markBlast, noteThrown, SCORCH_MS, startShell, where } from '../src/client/blastfx.ts';
+import { BLAST_MS, DEBRIS, GRAVITY, heightAt, kindOfRadius, lightsFor, markBlast, noteThrown, startShell, where } from '../src/client/blastfx.ts';
 import { flightAt } from '../src/client/grenadeart.ts';
 import { FIRE_RAMP, mixHex, rampAt } from '../src/client/blastdraw.ts';
 
-const reset = () => { for (const r of [fx.particles, fx.blasts, fx.scorches, fx.slashes, fx.shells]) for (const s of r.slots as { born: number }[]) s.born = -Infinity; };
+const reset = () => { for (const r of [fx.particles, fx.blasts, fx.slashes, fx.shells]) for (const s of r.slots as { born: number }[]) s.born = -Infinity; };
 const lastBlast = () => fx.blasts.slots.reduce((a, b) => (b.born > a.born ? b : a));
 const rng = () => { let s = 11; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
 
@@ -94,18 +93,15 @@ test('each kind throws its own debris, and a frag fires the sim\'s sixteen fragm
   assert.ok(fx.particles.slots.some((p) => p.kind === 'chip' && p.born >= 0 && p.tone === DEBRIS.indexOf('#6b5238')));
 });
 
-test('layers: smoke climbs and a scorch is laid; a gas pop is green and leaves no scorch', () => {
+test('layers: smoke climbs, pale and never near-black; a gas pop is green', () => {
   reset();
   startBoom(0, 0, 160, 0, rng(), 'grenade');
   const smoke = fx.particles.slots.filter((p) => p.kind === 'smoke' && p.born >= 0);
   const w = { x: 0, y: 0, z: 0, k: 0, grounded: false };
   const highest = Math.min(...smoke.map((p) => where(p, p.born + 1500, w).y));
   assert.ok(highest < -110, `the column rises screen-up (${highest})`);
-  assert.equal(fx.scorches.slots.filter((s) => s.born === 0).length, 1);
-  assert.ok(SCORCH_MS >= 14000 && SCORCH_MS <= 16000);
   reset();
   startBoom(0, 0, 40, 0, rng(), 'gas');
-  assert.equal(fx.scorches.slots.filter((s) => s.born === 0).length, 0);
   assert.ok(fx.particles.slots.some((p) => p.kind === 'smoke' && p.born >= 0 && p.tone === 2));
 });
 

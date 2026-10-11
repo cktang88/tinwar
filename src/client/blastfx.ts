@@ -1,18 +1,18 @@
 /**
  * Explosion, slash, dash and engineer-dust state. Everything here is launch conditions in fixed, capped ring buffers (the
  * oldest entry is overwritten), and a frame is drawn as a pure function of `now`, so redrawing never advances anything.
- * Drawing lives in blastdraw.ts (the blast, its debris and its scorch) and grenadeart.ts (the thrown bodies).
+ * Drawing lives in blastdraw.ts (the blast and its debris) and grenadeart.ts (the thrown bodies).
  *
  * A blast is told in layers, as the art bible asks: a white-hot flash and a light, then the shape (fireball, shock ring,
  * dust ring), then particles (debris that tumbles and bounces, sparks, embers, a smoke column that mushrooms), then the
- * residue (cinders on the floor, lingering smoke, a scorch decal). What kind of blast it is decides the mix.
+ * residue (cinders on the floor, lingering smoke; no scorch decal, whose dark blot read as a black circle). What kind of blast it is decides the mix.
  */
 import { addLight, addShockwave, type LightSpec } from './lighting.ts';
 import { reducedMotion } from './screenfx.ts';
 
 export const SMOKE_WIND = { x: 16, y: -11 } as const;
 
-export const CAPS = { particles: 1100, blasts: 24, scorches: 32, slashes: 16, shells: 12 } as const;
+export const CAPS = { particles: 1100, blasts: 24, slashes: 16, shells: 12 } as const;
 
 export type PKind = 'spark' | 'chip' | 'stave' | 'smoke' | 'ember' | 'dust' | 'streak' | 'cinder' | 'ichor';
 export type Particle = {
@@ -25,12 +25,10 @@ export type Particle = {
 export type BlastKind = 'pop' | 'grenade' | 'frag' | 'gas' | 'mine' | 'slug' | 'shell' | 'barrel' | 'propane' | 'bloater';
 export type Blast = { x: number; y: number; r: number; born: number; seed: number; pop: boolean; kind: BlastKind; calm: boolean };
 /** `tone`: 0 charred floor, 1 churned dirt (a mine), 2 ichor (a bloater), 3 oil-black (a barrel). */
-export type Scorch = { x: number; y: number; r: number; born: number; seed: number; tone: number };
 export type Slash = { x: number; y: number; angle: number; born: number };
 /** A mortar shell on its way: it leaves (x, y) along `angle`, lands `reach` px out, and arcs high between. */
 export type Shell = { x: number; y: number; angle: number; reach: number; speed: number; born: number };
 
-export const SCORCH_MS = 15000;
 export const BLAST_MS = 700;
 export const SLASH_MS = 240;
 export const GRAVITY = 1500;
@@ -50,7 +48,6 @@ function put<T extends object>(r: Ring<T>, v: Partial<T> & Record<string, unknow
 export type BlastFx = {
   particles: Ring<Particle>;
   blasts: Ring<Blast>;
-  scorches: Ring<Scorch>;
   slashes: Ring<Slash>;
   shells: Ring<Shell>;
 };
@@ -59,7 +56,6 @@ export function createBlastFx(caps: typeof CAPS = CAPS): BlastFx {
   return {
     particles: ring(caps.particles, blank),
     blasts: ring(caps.blasts, () => ({ x: 0, y: 0, r: 0, born: -Infinity, seed: 0, pop: false, kind: 'grenade' as BlastKind, calm: false })),
-    scorches: ring(caps.scorches, () => ({ x: 0, y: 0, r: 0, born: -Infinity, seed: 0, tone: 0 })),
     slashes: ring(caps.slashes, () => ({ x: 0, y: 0, angle: 0, born: -Infinity })),
     shells: ring(caps.shells, () => ({ x: 0, y: 0, angle: 0, reach: 0, speed: 700, born: -Infinity })),
   };
@@ -68,7 +64,7 @@ export function createBlastFx(caps: typeof CAPS = CAPS): BlastFx {
 /** The one pool the client draws from; a new match simply lets the old entries expire. */
 export const fx = createBlastFx();
 
-/** A grenade-sized pop (a gas canister, a crate) rather than a real blast: no scorch and a small puff. */
+/** A grenade-sized pop (a gas canister, a crate) rather than a real blast: a small puff. */
 export const isPop = (r: number) => r <= 48;
 export const scaleOf = (r: number) => Math.min(1.8, Math.max(0.45, r / 100));
 export const easeOut = (k: number) => 1 - (1 - k) * (1 - k) * (1 - k);
@@ -121,7 +117,7 @@ export function at(p: Particle, now: number): { x: number; y: number; k: number 
 
 export const liveCount = (pool: Ring<Particle>, now: number) => pool.slots.reduce((n, p) => n + (now >= p.born && now - p.born < p.life ? 1 : 0), 0);
 
-/** A tiny deterministic generator so a blast or scorch draws the same shape every frame. */
+/** A tiny deterministic generator so a blast draws the same shape every frame. */
 export function seeded(seed: number): () => number {
   let s = (seed >>> 0) || 1;
   return () => {
@@ -297,7 +293,6 @@ export function startBoom(x: number, y: number, r: number, now: number, rand: ()
   const seed = Math.floor(rand() * 1e9);
   const blast: Blast = { x, y, r, born: now, seed, pop, kind: k, calm };
   put(fx.blasts, blast);
-  if (!pop) put(fx.scorches, { x, y, r: r * (0.5 + 0.12 * rand()) * (k === 'shell' ? 1.15 : 1), born: now, seed: Math.floor(rand() * 1e9), tone: k === 'mine' ? 1 : k === 'bloater' ? 2 : k === 'barrel' || k === 'propane' ? 3 : 0 });
   const green = k === 'gas' || k === 'bloater';
 
   // Ground dust, kicked outward in a ring along the floor, riding the shock ring.

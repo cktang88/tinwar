@@ -76,7 +76,10 @@ test('a sniper\'s patient rounds stay inside its still cone standing and stray f
   }
   assert.ok(widest(patient) <= minSpreadOf(GUNS.sniper) && widest(patient) > 0, 'standing still, re-settled: within its small floor, never exactly on the line');
   assert.ok(widest(spray('sniper', false, 20)) > 2 * cone, 'walking');
-  assert.ok(widest(spray('pistol', false, 20)) <= spreadFor('pistol', {}, false), 'a pistol walking stays in its slightly wider walking cone');
+  // A pistol fired as fast as it cycles keeps its first five rounds on its walking cone, then blooms (`coolsAfter`).
+  const pistol = spray('pistol', false, 20);
+  assert.ok(widest(pistol.slice(0, 5)) <= spreadFor('pistol', {}, false), 'a pistol walking keeps its first rounds in its slightly wider walking cone');
+  assert.ok(widest(pistol) > spreadFor('pistol', {}, false), 'and a long spray of it blooms past it');
 });
 
 test('an assault rifle held down blooms from its second round up to its cap, and paced taps stay tight', () => {

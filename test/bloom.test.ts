@@ -120,10 +120,14 @@ test('tapping stays tight: single taps never bloom past the first round, and eac
     const slack = rulesOf(GUNS[gun]).spinUp ? 1.01 : 1.001;
     assert.ok(Math.max(...bursts) <= held(gun, { rounds: tap })[tap - 1]! * slack, `${gun}: and no tap blooms past a fresh one`);
   }
-  // A burst flies on its first round's cone, and the burst guns recover between bursts: a held Battle Rifle or Carbine never blooms.
+  // A burst flies on its first round's cone; held, the heat carries from burst to burst (`coolsAfter`), so bursts fired as fast as the gun
+  // goes bloom like any spray, while bursts paced apart start cold each time.
   for (const gun of ['battleRifle', 'carbine', 'machinePistol'] as const) {
     const s = held(gun, { rounds: 18 });
-    assert.ok(Math.max(...s) <= s[0]! * 1.001, `${gun}: held bursts stay tight`);
+    assert.ok(Math.max(...s) > s[0]! * 1.3, `${gun}: held bursts bloom (${s[0]!.toFixed(4)} to ${Math.max(...s).toFixed(4)})`);
+    const count = GUNS[gun].burst!.count;
+    const paced = held(gun, { tap: { rounds: count, gapMs: 900 }, rounds: 4 * count });
+    for (let i = 0; i < paced.length; i += count) assert.ok(paced[i]! <= s[0]! * 1.001, `${gun}: a paced burst ${i / count + 1} starts on the first round's cone`);
   }
 });
 
