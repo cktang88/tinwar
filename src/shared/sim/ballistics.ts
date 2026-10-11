@@ -25,6 +25,9 @@ export const MUZZLE_PX = WORLD.playerRadius + 4;
 
 type Point = { x: number; y: number };
 
+/** The longest flight a lead is reckoned over. */
+const MAX_LEAD_SEC = 3;
+
 /**
  * Where to aim so a round fired from `from` meets a target moving at (vx, vy): the round's flight time depends on how far the
  * meeting point is, and the meeting point on the flight time, so a few rounds of refinement settle it. Rounds leave from
@@ -33,7 +36,9 @@ type Point = { x: number; y: number };
 export function intercept(from: Point, e: Point & { vx: number; vy: number }, cruise: number, boost: number, muzzle: number, leadMul = 1): Point & { sec: number } {
   let at: Point = e, sec = 0;
   for (let i = 0; i < 4; i++) {
-    sec = flightSec(cruise, Math.max(0, Math.hypot(at.x - from.x, at.y - from.y) - muzzle), boost) * leadMul;
+    // Capped, and never non-finite: a wild read of his speed must not throw the lead point (and the aim built on it) to infinity.
+    sec = Math.min(MAX_LEAD_SEC, flightSec(cruise, Math.max(0, Math.hypot(at.x - from.x, at.y - from.y) - muzzle), boost) * leadMul);
+    if (!Number.isFinite(sec)) sec = MAX_LEAD_SEC;
     at = { x: e.x + e.vx * sec, y: e.y + e.vy * sec };
   }
   return { ...at, sec };

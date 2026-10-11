@@ -152,11 +152,19 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   for (const p of assisters) addScore(w, p, WORLD.assistScore);
   if (!credited) return;
   credited.kills++;
+  if (credited.life.k === 'dead') {
+    // A kill landed after its maker died (a grenade, a claymore, a slow round): the life it belongs to was paid when it ended, so this one
+    // is paid on its own record; it extends no streak and earns no medal for a life that is over.
+    w.lifeRecords.push({ id: credited.id, name: credited.name, kills: 1, score: WORLD.killScore, died: false });
+    MODES[w.mode].onKill(w, credited, victim);
+    return;
+  }
   credited.lifeKills++;
   if (revenge) credited.nemesis = null;
   addScore(w, credited, WORLD.killScore);
   // Every medal one kill earns is paid and announced, however many there are.
-  const barrel = how.chain !== undefined && credited.id !== victim.id;
+  // Kaboom and the chain's kills are for the one who set the barrel off, not for whoever is credited with a victim the barrel finished.
+  const barrel = how.chain !== undefined && credited === killer && credited.id !== victim.id;
   for (const medal of [...killMedals(w, credited, victim, { bounty, revenge, ended }), ...weaponMedals(w, credited, victim, how, credited === killer), ...(barrel ? ['kaboom' as const] : []), ...propMedals(w, credited, victim, how.medal, credited === killer)]) award(w, credited, medal);
   const chain = barrel ? w.chains.get(how.chain!) : undefined;
   if (chain) { chain.kills++; payChain(w, chain); }

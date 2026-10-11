@@ -321,14 +321,16 @@ export function holdsFire(gun: GunId, r: Rhythm, s: ShotRead): boolean {
  * Its own bloom as the bot reckons it, the way a person watches the reticle: a round gone from the magazine kicks it a shot, a reload
  * settles it, and with nothing fired for as long as the sim holds the heat (`coolsAfter`) it comes back down at the sim's rate (`Rhythm.recover`).
  */
-export function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: number, tick: number): { spray: number; firedTick: number } {
+export function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: number, tick: number, mag: number): { spray: number; firedTick: number } {
   const { bloom } = rulesOf(GUNS[gun]);
   let spray = tap?.spray ?? 0, firedTick = tap?.firedTick ?? -Infinity;
   if (!r || !bloom) return { spray: 0, firedTick };
   const was = tap?.ammo ?? ammo;
-  if (ammo < was) { spray = Math.min(sprayCap(bloom), spray + (was - ammo)); firedTick = tick - 1; }
-  else if (ammo > was) spray = 0;
-  else if ((tick - firedTick) * TICK_MS > coolsAfter(bloom, GUNS[gun].fireMs, TICK_MS)) spray = coolSpray(spray, bloom, TICK_MS, r.recover);
+  // As the sim steps it: the heat cools first (on the last round's clock), then this step's rounds add to it.
+  if ((tick - firedTick) * TICK_MS > coolsAfter(bloom, GUNS[gun].fireMs, TICK_MS)) spray = coolSpray(spray, bloom, TICK_MS, r.recover);
+  if (ammo < was) { spray = Math.min(sprayCap(bloom), spray + (was - ammo)); firedTick = tick; }
+  // A reload empties the heat; a round fired on the very tick it finished shows as a fuller magazine short of full.
+  else if (ammo > was) { spray = Math.min(sprayCap(bloom), mag - ammo); if (mag > ammo) firedTick = tick; }
   return { spray, firedTick };
 }
 
@@ -438,7 +440,9 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
         const from = closing || backing || !danger ? t.p : danger;
         const run = dodgeLeg(me, from, dodge, leg, c.arena, v.solids, v.tick);
         const stance = { ...m.stance, step: run.to ? run.dodge.side : 0, heading: run.heading, planted: dodge.stop } as Motor['stance'];
-        return { steer: fight(run.to ?? (closing && !dodge.stop ? t.p : null), run.to ? run.heading : null), stance, dodge: run.dodge };
+        // A planted gun holds still between its own shots, but one too far off to shoot at all keeps closing (two out of range would freeze).
+        const outOfReach = t.d >= GUNS[me.gun].range * 0.95;
+        return { steer: fight(run.to ?? (closing && (!dodge.stop || outOfReach) ? t.p : null), run.to ? run.heading : null), stance, dodge: run.dodge };
       }
       const stance = nextStance(m, v, c, !closing && !backing && plants(v, c, t.d, false));
       const step = stance.step;
@@ -816,7 +820,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const aimSurvivesCover = (id: number) => intent.k === 'peekAndHide' && intent.target === id;
   const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || aimSurvivesCover(id));
   let engaged = t ? null : m.engaged && held(m.engaged.id) ? m.engaged : null;
-  const before = m.aim ?? freshAim(me.angle);
+  const before = m.aim && Number.isFinite(m.aim.angle) ? m.aim : freshAim(me.angle);
   const mine = m.aim ? { x: (me.x - m.last.x) * WORLD.tickHz, y: (me.y - m.last.y) * WORLD.tickHz } : { x: 0, y: 0 };
   // An enemy in sight is what it looks at, whatever it was about (a reload, a walk, the spot the last one was), and one well off its
   // facing it turns to quickly (`HANDS.startle`); it takes him in, and aims and fires, only once its reaction time has passed.
@@ -839,7 +843,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     engaged = engage(tracked, t.p, sharp, v.tick, c.rand, c.persona.reactMul * (preAimed ? PRE_AIMED_REACT : 1));
     const shot = barrelToShoot(me, barrels, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range)
       ?? propToShoot(me, props, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range);
-    const blocked = !shot && (shotWouldBurnMe(barrels, me, t.p) || shotWouldHurtMe(props, me, t.p));
+    // Glass and an enemy's one-way Shield are seen through but stop rounds: a bot does not empty its magazine into them.
+    const blocked = !shot && (shotWouldBurnMe(barrels, me, t.p) || shotWouldHurtMe(props, me, t.p) || !clearShot(c.arena.walls, me, t.p));
     track = { id: t.p.id, sharp, shoot: shot ? { x: shot.x, y: shot.y } : null, fire: !blocked };
     if (v.tick >= engaged.noticeAtTick) threat = { d: t.d };
   } else if (s.crates && snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading) {
@@ -907,7 +912,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul * (c.skill?.patienceMul ?? 1), snap.self.perks, snap.self.suppression, c.skill?.sprayMul);
   // Being shot, or the enemy about to walk out of its sight: the round goes now, bloom or not.
   const urgent = v.underFire || (t !== undefined && breaksSight(me, engaged, v.solids));
-  const own = ownBloom(rhythm, me.gun, m.tap, snap.self.ammo, v.tick);
+  const own = ownBloom(rhythm, me.gun, m.tap, snap.self.ammo, v.tick, snap.self.mag);
   const rests = resting(rhythm, me.gun, own, { d: t?.d ?? null, still: !anyKey(keys), lateral: crossing(me, engaged), urgent, settle: snap.self.settle ?? 0, settleMs: snap.self.settleMs ?? 0 }, m.tap, v.tick);
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, wanted, m.shots);
   const tap = nextTap(rhythm, fire, m.tap, v.tick, own, snap.self.ammo);
@@ -1003,7 +1008,7 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
   const drive = h.keys ? { keys: h.keys, dir: m.dir, dirSince: m.dirSince, pace: m.pace } : keysToward(m, me, at, tick);
   const keys = drive.keys;
 
-  const before = m.aim ?? freshAim(me.angle);
+  const before = m.aim && Number.isFinite(m.aim.angle) ? m.aim : freshAim(me.angle);
   const mine = m.aim ? { x: (me.x - m.last.x) * WORLD.tickHz, y: (me.y - m.last.y) * WORLD.tickHz } : { x: 0, y: 0 };
   const foe = h.track ? b.find(h.track.id) : null;
   let engaged = m.engaged, engagedSeen = m.engagedSeen, d: number | null = null;
@@ -1023,7 +1028,7 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
     if (h.turn.holdFire) wantsFire = false;
   }
   if (h.stillToFire && anyKey(keys)) wantsFire = false;
-  const own = ownBloom(h.rhythm, me.gun, m.tap, b.ammo, tick);
+  const own = ownBloom(h.rhythm, me.gun, m.tap, b.ammo, tick, h.mag);
   const settleMs = h.settleMs ?? 0;
   const rests = resting(h.rhythm, me.gun, own, { d, still: !anyKey(keys), lateral: crossing(me, engaged), urgent: !!h.urgent, settle: settleShare(b.settleLeftMs ?? 0, settleMs), settleMs }, m.tap, tick);
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, b.abilityReady ? h.ability : null, m.shots);

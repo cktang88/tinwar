@@ -1,8 +1,8 @@
-import { GUNS, settleRulesOf, WORLD, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
+import { GUNS, rulesOf, settleRulesOf, WORLD, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
 import { walks } from '../shared/sim/movement.ts';
 import { bloomRecoverMul, easeDownTicks, easedSpread, easeSpread, isDeployed, isSteady, reloadMsFor, settleShare, spreadFor, sprintWanted } from '../shared/sim/stats.ts';
-import { consumePresses, pullTrigger } from '../shared/sim/trigger.ts';
+import { consumePresses, pullTrigger, sprayCap } from '../shared/sim/trigger.ts';
 import { worksBolt } from './reloadbeats.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
@@ -157,6 +157,25 @@ function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigge
 }
 
 /**
+ * Shots the server fired that the page never predicted (it fires on its own clock when your inputs run dry: a burst's next round, a held
+ * trigger) are drawn late; the rebuilt trigger takes them too, or it would fire the same round again on the next input: a second shell.
+ * Each one steps the burst, the gun's clock and its heat as the server's did, about the acknowledged tick.
+ */
+function consumeUnmatched(t: Trigger, n: number, now: number): Trigger {
+  if (n <= 0 || !t.alive) return t;
+  const def = GUNS[t.gun], bloom = rulesOf(def).bloom, out = { ...t };
+  for (let i = 0; i < n; i++) {
+    if (out.burstLeft <= 0) out.burstLeft = def.burst?.count ?? 1;
+    out.burstLeft--;
+    out.pressUntil = -Infinity;
+    out.nextFireAt = Math.max(out.nextFireAt, now + (out.burstLeft > 0 && def.burst ? def.burst.gapMs : def.fireMs));
+    if (bloom) out.spray = Math.min(sprayCap(bloom), out.spray + 1);
+    out.firedAt = now;
+  }
+  return out;
+}
+
+/**
  * Takes in a snapshot: its `shots` own shot events confirm the oldest predicted shots, any beyond them are `unmatched`
  * and still need drawing, and a prediction the server has gone `CONFIRM_SLACK_TICKS` ticks past without firing is `rejected`.
  * The trigger is then rebuilt from the server's ammo, reload and life at `ackSeq` and stepped again over the inputs since.
@@ -171,7 +190,7 @@ export function settle(f: Firing, sv: ServerGun, ackSeq: number, shots: number, 
   const unconfirmed = waiting.filter((p) => p.seq > ackSeq - CONFIRM_SLACK_TICKS);
   const late = unconfirmed.filter((p) => p.seq <= ackSeq).length;
   const acked = f.history.filter((h) => h.seq <= ackSeq).at(-1);
-  let trigger = rebase(acked?.trigger ?? { ...UNARMED, shotsSeen: f.trigger.shotsSeen }, sv, late, ackSeq * TICK_MS);
+  let trigger = consumeUnmatched(rebase(acked?.trigger ?? { ...UNARMED, shotsSeen: f.trigger.shotsSeen }, sv, late, ackSeq * TICK_MS), unmatched, ackSeq * TICK_MS);
   const history = [{ seq: ackSeq, trigger }];
   for (const p of pending) {
     if (p.seq <= ackSeq) continue;

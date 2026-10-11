@@ -29,13 +29,20 @@ export const sprayCap = (b: Bloom): number => b.free + (b.maxMul - 1) / b.perSho
 export const coolSpray = (spray: number, b: Bloom, ms: number, recover = 1): number => Math.max(0, spray - (sprayCap(b) * ms * recover) / b.recoverMs);
 
 /**
+ * Time comparisons against a gun's clock allow this much float noise: the sim's clock is a running sum of ticks and the page's is a tick
+ * count times a tick, so a shot due exactly on a tick must read as due on both, or one fires it a tick later than the other.
+ */
+const TIME_EPS = 1e-6;
+
+/**
  * How long after a round a spray's heat starts to cool: the gun's `settleMs`, but never before the gun could fire again (its cadence, a
- * burst gun's gap between bursts, and a tick of grace) when its heat would otherwise be gone by then. Otherwise a semi-auto or burst gun
+ * burst gun's gap between bursts, in whole ticks, and a tick of grace) whenever a full spray would cool within one fire interval. Otherwise a semi-auto or burst gun
  * fired as fast as it goes (a held trigger, or the quickest clicking) would start every round cold and never bloom; slower taps still cool.
  * A gun whose heat outlasts its cadence anyway (a bolt-action's, which settles over seconds) keeps its own settle.
  */
 export const coolsAfter = (b: Bloom, fireMs: number, tickMs: number): number =>
-  b.settleMs + b.recoverMs < fireMs ? Math.max(b.settleMs, fireMs + tickMs) : b.settleMs;
+  b.recoverMs < fireMs ? Math.max(b.settleMs, (Math.ceil(fireMs / tickMs - 1e-6) + 1) * tickMs + TIME_EPS) : b.settleMs;
+
 
 export function consumePresses(seen: { shotsSeen: number }, shots: number): boolean {
   const pressed = shots > seen.shotsSeen;
@@ -49,7 +56,7 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   s.spin = spinUp ? clamp(s.spin + (pull.fire ? tickMs / spinUp.upMs : -tickMs / spinUp.downMs), 0, 1) : 0;
   const fireMs = spinUp ? def.fireMs * (1 + (spinUp.startMul - 1) * (1 - s.spin)) : def.fireMs;
   if (bloom && now - s.firedAt > coolsAfter(bloom, fireMs, tickMs)) s.spray = coolSpray(s.spray, bloom, tickMs, gun.bloomRecover);
-  if (s.reloadUntil !== null && now >= s.reloadUntil) { s.ammo = gun.mag; s.reloadUntil = null; }
+  if (s.reloadUntil !== null && now >= s.reloadUntil - TIME_EPS) { s.ammo = gun.mag; s.reloadUntil = null; }
   if (s.reloadUntil === null && (s.ammo <= 0 || (pull.reload && s.ammo < gun.mag))) {
     s.reloadUntil = now + gun.reloadMs;
     s.burstLeft = 0;
@@ -66,7 +73,7 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   // A held trigger fires every gun at its own top rate: an automatic as ever, a semi-auto as fast as it cycles (as fast as the quickest
   // clicking could), a burst gun burst after burst. A click still buffers a shot the gun is not ready for yet.
   const wantsShot = bursting || now <= s.pressUntil || pull.fire;
-  if (!gun.armed || !wantsShot || s.reloadUntil !== null || s.ammo <= 0 || now < s.nextFireAt) return false;
+  if (!gun.armed || !wantsShot || s.reloadUntil !== null || s.ammo <= 0 || now < s.nextFireAt - TIME_EPS) return false;
   if (!bursting) {
     s.pressUntil = -Infinity;
     s.burstLeft = def.burst?.count ?? 1;

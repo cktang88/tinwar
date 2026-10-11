@@ -233,5 +233,9 @@ test('DOM: when both teams pass the target in the same tick, the team further ah
   const tie = createWorld('DOM', 1, dealt('DOM')[0]);
   tie.teamScore = { red: WORLD.domWinScore + 0.1, blue: WORLD.domWinScore + 0.1 };
   run(tie, TICK_MS);
-  assert.ok(tie.match.k === 'over', 'a dead heat over the target still ends the round');
+  assert.equal(tie.match.k, 'playing', 'a dead heat over the target crowns nobody (it used to hand Red the round)');
+  tie.teamScore.blue += 1;
+  run(tie, TICK_MS);
+  const after = tie.match as { k: string; winner?: { name: string } };
+  assert.ok(after.k === 'over' && after.winner?.name === 'Blue team', 'the next point decides it');
 });

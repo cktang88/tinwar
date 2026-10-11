@@ -20,7 +20,9 @@ test('a round is drawn from its muzzle the moment it fires, its tail never reach
   const [round] = fireRounds({ ...PISTOL, owner: 7 }, MUZZLE, 0, OPEN, 1000, -1, straight);
   const [born] = drawnRounds([], [round!], NONE, 1000);
   assert.ok(born && near(born.x, 100) && near(born.y, 100) && born.owner === 7, JSON.stringify(born));
-  assert.ok(near(born.x - born.vx * TRACER.tail, 100), 'no tail behind the muzzle at birth');
+  // Sub-pixel: a fresh round keeps a whisker of velocity so a shell or rocket knows which way it points.
+  assert.ok(Math.abs(born.x - born.vx * TRACER.tail - 100) < 0.01, 'no tail behind the muzzle at birth');
+  assert.ok(born.vx > 0, 'but it keeps its heading');
   const [later] = drawnRounds([], [round!], NONE, 1100);
   assert.ok(later && near(later.x, 100 + flownAfter(GUNS.pistol.bulletSpeed, 0.1)), JSON.stringify(later));
   assert.ok(flownAfter(GUNS.pistol.bulletSpeed, 0.1) > GUNS.pistol.bulletSpeed * 0.1, 'it leaves the muzzle faster than it cruises');

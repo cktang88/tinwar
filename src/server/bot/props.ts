@@ -78,9 +78,10 @@ export type Hazard = Point & { r: number; trap?: true };
 export function hazardsOf(thrown: readonly ThrownView[], myId: number, friendly: (owner: number) => boolean = () => false): Hazard[] {
   const out: Hazard[] = [];
   for (const t of thrown) {
-    if (t.owner === myId) continue;
+    // Its own and its side's (gas, fire and claymores never hurt the thrower's team) are harmless to it.
+    if (t.owner === myId || friendly(t.owner)) continue;
     if (t.kind === 'gasCloud' || t.kind === 'fireSlick') out.push({ x: t.x, y: t.y, r: t.r });
-    else if (t.kind === 'claymore' && !friendly(t.owner)) {
+    else if (t.kind === 'claymore') {
       out.push({ ...trapCircle(t, t.angle ?? 0), trap: true });
     }
   }

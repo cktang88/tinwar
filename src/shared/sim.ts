@@ -50,8 +50,9 @@ function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: numbe
 export function removePlayer(w: World, id: number): void {
   const p = w.players.get(id);
   if (!p) return;
-  // A knocked player's life has not ended in a death yet: leaving ends it, and it is paid like a standing one's.
-  if (p.life.k !== 'dead') w.lifeRecords.push({ id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
+  // A knocked player's life has not ended in a death yet: leaving ends it, and it is paid like a standing one's. In Zombies a death never
+  // pays (the squad keeps its progress through it), so a player who leaves bled out is paid too.
+  if (p.life.k !== 'dead' || w.run) w.lifeRecords.push({ id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
   for (const f of friendsOf(w, id)) unfriend(w, id, f);
   w.players.delete(id);
 }

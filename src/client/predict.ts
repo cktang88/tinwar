@@ -12,7 +12,8 @@ import { lerp } from './interp.ts';
 type Point = { x: number; y: number };
 export type PredictedAbility = { k: 'dash' } | { k: 'knife'; enemies: readonly Point[] };
 /** `dashing`: a dash was running as the input was taken (the motion before it), which the trigger needs (fire.ts). */
-export type PendingInput = { seq: number; input: InputState; dtMs: number; ability: PredictedAbility | null; dashing?: boolean };
+/** `pressed`: the input carries a new trigger press (its `shots` went up), which ends a sprint on the server that tick. */
+export type PendingInput = { seq: number; input: InputState; dtMs: number; ability: PredictedAbility | null; dashing?: boolean; pressed?: boolean };
 
 export type Prediction = {
   pending: PendingInput[];
@@ -20,6 +21,8 @@ export type Prediction = {
   beforeNewest: Point | null;
   sampledAt: number;
   smoothingCorrection: Point;
+  /** The trigger presses (`shots`) of the newest input sent, to tell a new press in the next. */
+  lastShots?: number;
 };
 
 export const NO_PREDICTION: Prediction = {
@@ -28,7 +31,8 @@ export const NO_PREDICTION: Prediction = {
 
 /** Walking and sprinting speed; a plain number is a speed with no sprint. */
 export type Pace = number | { walk: number; sprint: number };
-const paceFor = (pace: Pace, input: InputState): number => (typeof pace === 'number' ? pace : sprintWanted(input) ? pace.sprint : pace.walk);
+/** As the server sprints (sim.ts): wanted, and no trigger press this tick (a click ends a sprint even if the button is up again). */
+const paceFor = (pace: Pace, input: InputState, pressed = false): number => (typeof pace === 'number' ? pace : sprintWanted(input) && !pressed ? pace.sprint : pace.walk);
 
 const MAX_PENDING = 90;
 export const SNAP_DIST = 150;
@@ -67,14 +71,16 @@ export function predictAbility(pred: Prediction, input: InputState, latest: Snap
     case 'knife': {
       const team = latest.players.find((p) => p.id === self.id)?.team ?? null;
       // Friends are never knifed (the server passes over them), so the lunge is not predicted to stop at one.
-      return { k: 'knife', enemies: latest.players.filter((p) => p.alive && p.id !== self.id && (team === null || p.team !== team) && !friends.has(p.id)) };
+      // The server's lunge also stops at a zombie, so the page's does too.
+      const zombies = (latest.zombies ?? []).map(([, , x, y]) => ({ x, y }));
+      return { k: 'knife', enemies: [...latest.players.filter((p) => p.alive && p.id !== self.id && (team === null || p.team !== team) && !friends.has(p.id)), ...zombies] };
     }
     default: return null;
   }
 }
 
 function stepInput(solids: readonly Rect[], at: Motion, p: PendingInput, speed: Pace, size: number): Motion {
-  const moved = moveStep(solids, at, p.input, paceFor(speed, p.input), p.dtMs, size);
+  const moved = moveStep(solids, at, p.input, paceFor(speed, p.input, p.pressed), p.dtMs, size);
   switch (p.ability?.k) {
     case 'dash': return moved.dash ? moved : { ...moved, dash: startDash(p.input) };
     case 'knife': {
@@ -98,22 +104,25 @@ function replay(solids: readonly Rect[], start: Motion, pending: readonly Pendin
 
 export function predictInput(pred: Prediction, entry: PendingInput, solids: readonly Rect[], speed: Pace, now: number, size: number): Prediction {
   const was = pred.afterNewest;
+  const before = pred.lastShots ?? pred.pending.at(-1)?.input.shots;
+  if (before !== undefined && entry.input.shots > before) entry = { ...entry, pressed: true };
+  const lastShots = entry.input.shots;
   const pending = [...pred.pending, was ? { ...entry, dashing: !!was.dash } : entry].slice(-MAX_PENDING);
-  if (!was) return { ...pred, pending };
-  return { ...pred, pending, beforeNewest: was, afterNewest: stepInput(solids, was, entry, speed, size), sampledAt: now };
+  if (!was) return { ...pred, pending, lastShots };
+  return { ...pred, pending, beforeNewest: was, afterNewest: stepInput(solids, was, entry, speed, size), sampledAt: now, lastShots };
 }
 
 export function reconcile(pred: Prediction, server: Motion | null, ackSeq: number, solids: readonly Rect[], speed: Pace, size: number): Prediction {
   const unacked = pred.pending.filter((p) => p.seq > ackSeq);
-  if (!server) return { ...NO_PREDICTION, pending: unacked };
+  if (!server) return { ...NO_PREDICTION, pending: unacked, lastShots: pred.lastShots };
   const { at: afterNewest, pending } = replay(solids, server, unacked, speed, size);
   const was = pred.afterNewest;
   if (!was || !pred.beforeNewest || Math.hypot(afterNewest.x - was.x, afterNewest.y - was.y) > SNAP_DIST) {
-    return { pending, afterNewest, beforeNewest: afterNewest, sampledAt: pred.sampledAt, smoothingCorrection: { x: 0, y: 0 } };
+    return { pending, afterNewest, beforeNewest: afterNewest, sampledAt: pred.sampledAt, smoothingCorrection: { x: 0, y: 0 }, lastShots: pred.lastShots };
   }
   const dx = afterNewest.x - was.x, dy = afterNewest.y - was.y;
   return {
-    pending, afterNewest, sampledAt: pred.sampledAt,
+    pending, afterNewest, sampledAt: pred.sampledAt, lastShots: pred.lastShots,
     beforeNewest: { x: pred.beforeNewest.x + dx, y: pred.beforeNewest.y + dy },
     smoothingCorrection: { x: pred.smoothingCorrection.x - dx, y: pred.smoothingCorrection.y - dy },
   };

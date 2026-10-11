@@ -202,8 +202,9 @@ export function observeMotion(snap: Snapshot, myId: number, now: number, colorOf
     if (!t) {
       t = { alive: p.alive, downed: !!p.downed, level: p.level, stage, x: p.x, y: p.y, seen: now, dropAt: -Infinity, landed: true, popAt: -Infinity, step: 0, heading: 0, lastSkid: -Infinity, lastSpeed: 0, calm: false };
       bodies.set(p.id, t);
-      // Everyone already here at the first frame is just standing; you, joining, drop in.
-      if (p.alive && (!first || p.id === myId)) { t.dropAt = now; t.landed = false; }
+      // Everyone already here at the first frame is just standing; you, joining, drop in. A body first seen later drops in only if it has
+      // just spawned (its spawn shield is up): one walking into view, or back into it, has been standing all along.
+      if (p.alive && (p.id === myId ? first || !!p.spawnShield : !first && !!p.spawnShield)) { t.dropAt = now; t.landed = false; }
     } else {
       const arrived = p.alive && !t.alive && !t.downed;
       if (arrived) { t.dropAt = now; t.landed = false; }

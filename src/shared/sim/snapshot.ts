@@ -215,7 +215,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const heatPx = stats.thermal ? stats.viewRadius * PERK_RULES.thermal.heatViewMul : 0;
   for (const p of w.players.values()) {
     if (p.id === me.id || p.life.k !== 'alive') continue;
-    const marked = me.life.k === 'alive' && w.now < (me.life.tracks[p.id] ?? -Infinity);
+    // Ninja keeps a player off enemy minimaps however they were marked or tagged, even before the perk was picked.
+    const ninja = hasPerk(p, 'ninja');
+    const marked = !ninja && me.life.k === 'alive' && w.now < (me.life.tracks[p.id] ?? -Infinity);
     if (marked) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, marked: true });
     else if (huntedFor(w, me, p)) {
       if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
@@ -223,9 +225,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     } else if (areFriends(w, me.id, p.id)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, friend: true });
     else if (sameTeam(me, p)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
     // A radar tag shows the tagged player to everyone not on their side, wherever they go, until it runs out.
-    else if (w.now < p.taggedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, tagged: true });
+    else if (!ninja && w.now < p.taggedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, tagged: true });
     // Thermal picks up an enemy's heat a little past the screen's edge, never a Ninja's.
-    else if (heatPx > 0 && me.life.k === 'alive' && isEnemy(me, p) && !hasPerk(p, 'ninja') && dist2(p.x, p.y, me.x, me.y) <= heatPx * heatPx) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, heat: true });
+    else if (heatPx > 0 && me.life.k === 'alive' && isEnemy(me, p) && !ninja && dist2(p.x, p.y, me.x, me.y) <= heatPx * heatPx) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, heat: true });
   }
   if (w.run) minimap.push(...zombieMarks(w, me, heatPx));
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.

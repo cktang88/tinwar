@@ -380,6 +380,9 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
     deathSub.textContent = wait > 0 ? `Respawn in ${wait}s. Change your loadout below.` : 'Ready. Change your loadout or press Space to jump back in.';
   };
 
+  // Clicking away from the chat line (or Tab) closes it: left open without focus it swallowed every key and froze the soldier.
+  chatInput.addEventListener('blur', () => { if (!chatInput.hidden) { chatInput.value = ''; chatInput.hidden = true; } });
+
   return {
     get typing() { return !chatInput.hidden; },
     openChat() {

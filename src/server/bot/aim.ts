@@ -179,6 +179,9 @@ function leadJudgment(id: number, tick: number, judgment: { mean: number; spread
   return mean + ((v - Math.floor(v)) * 2 - 1) * spread;
 }
 
+/** Further than this a tick is a teleport, not a run: about three times the fastest dash. */
+const TELEPORT_PX_PER_TICK = 120;
+
 /** `reactMul` is the bot's own temper's share of the reaction time (`Personality.reactMul`). */
 export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number, reactMul = 1): Engagement {
   if (!prev) {
@@ -189,6 +192,9 @@ export function engage(prev: Engagement | null, enemy: Point & { id: number }, s
   // Its read of his motion is over the time since it last looked (`at`), so a bot that looked away a few ticks does not read a burst of speed.
   const dt = Math.max(1, tick - (prev.at ?? tick - 1));
   if (prev.at === tick) return prev;
+  // A jump no body could make in the time (a respawn, a round's restart on a new map) is a new read of him, not a burst of speed: read as
+  // motion it threw his lead point out to infinity and the bot's aim to NaN.
+  if (Math.hypot(enemy.x - prev.x, enemy.y - prev.y) > TELEPORT_PX_PER_TICK * dt) return { ...prev, id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, at: tick };
   const k = 1 - Math.exp(-(dt * TICK_MS) / (BOT_AIM.motionTauMs * (sharpness.lagMul ?? 1)));
   const vx = prev.vx + k * (((enemy.x - prev.x) * WORLD.tickHz) / dt - prev.vx);
   const vy = prev.vy + k * (((enemy.y - prev.y) * WORLD.tickHz) / dt - prev.vy);

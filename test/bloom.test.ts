@@ -8,7 +8,7 @@ import { EVOLUTIONS, GUN_IDS, GUNS, handlingOfGun, roundsPerSec, rulesOf, SPREAD
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { easeDownTicks, easedSpread, easeSpread, spreadFor } from '../src/shared/sim/stats.ts';
+import { easeDownTicks, easedSpread, easeSpread, effectiveStats, spreadFor } from '../src/shared/sim/stats.ts';
 import { bloomShare, pullTrigger, sprayCap } from '../src/shared/sim/trigger.ts';
 import { NO_FIRING, settle, stepTrigger, type TriggerInput } from '../src/client/fire.ts';
 import { fireRhythm, ownBloom } from '../src/server/bot/motor.ts';
@@ -168,7 +168,7 @@ test('the page predicts the sim\'s spread, and a bot reckons the sim\'s bloom, t
         if (p.life.k !== 'alive') return;
         assert.ok(Math.abs(easedSpread(t.spreadHist) - easedSpread(p.life.spreadHist)) < 1e-12, `${gun}${moving ? ' walking' : ''}: the page's spread after input ${i + 1}`);
         if (!rhythm) return;
-        const own = ownBloom(rhythm, gun, tap, p.life.ammo, i + 1);
+        const own = ownBloom(rhythm, gun, tap, p.life.ammo, i + 1, effectiveStats(p).mag);
         tap = { since: null, pauseUntil: -Infinity, spray: own.spray, firedTick: own.firedTick, ammo: p.life.ammo };
         const tick = (sprayCap(rulesOf(GUNS[gun]).bloom!) * TICK_MS) / rulesOf(GUNS[gun]).bloom!.recoverMs;
         assert.ok(Math.abs(own.spray - p.life.spray) <= tick + 1e-9, `${gun}: the bot reckons ${own.spray.toFixed(3)}, the sim has ${p.life.spray.toFixed(3)} after input ${i + 1}`);

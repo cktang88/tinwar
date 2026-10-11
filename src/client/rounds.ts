@@ -26,12 +26,13 @@ export type LocalRound = { id: number; owner: number; x: number; y: number; vx: 
   aim?: { angle: number; pick: number; range: number };
 };
 
-export function roundScene(snap: Pick<Snapshot, 'players' | 'crates' | 'zombies'>, walls: readonly Rect[], shooterId: number, targets: readonly Body[] = []): RoundScene {
+/** `friends`: the shooter's friends, whom its rounds pass through as the server's do (known only for your own shots). */
+export function roundScene(snap: Pick<Snapshot, 'players' | 'crates' | 'zombies'>, walls: readonly Rect[], shooterId: number, targets: readonly Body[] = [], friends: ReadonlySet<number> = new Set()): RoundScene {
   const team = snap.players.find((p) => p.id === shooterId)?.team ?? null;
   return {
     solids: [...walls.filter((w) => !w.nb), ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))],
     bodies: [
-      ...snap.players.filter((p) => p.alive && p.id !== shooterId && (team === null || p.team !== team)).map((p) => ({ x: p.x, y: p.y, r: WORLD.playerRadius, id: p.id })),
+      ...snap.players.filter((p) => p.alive && p.id !== shooterId && (team === null || p.team !== team) && !friends.has(p.id)).map((p) => ({ x: p.x, y: p.y, r: WORLD.playerRadius, id: p.id })),
       ...(snap.zombies ?? []).map(([id, k, x, y]) => ({ x, y, r: ZOMBIES[ZOMBIE_KINDS[k]!].radius, id })),
       ...targets,
     ],
@@ -123,7 +124,8 @@ export function drawnRounds(bullets: readonly BulletView[], local: readonly Loca
     const shown = r.shown ?? 0, d = Math.max(shown, flown(r, now)), speed = Math.hypot(r.vx, r.vy);
     // The tail streaks as far as the round flies in `TRACER.tail` at its current speed, so a fresh round's tail reaches back to the muzzle.
     const fast = speedAt(speed, d, rulesOf(GUNS[r.gun]).muzzleBoost) / speed;
-    const k = Math.min(speed * fast * TRACER.tail, d - shown) / (speed * TRACER.tail);
+    // Never quite zero: a round still at its muzzle has no tail, but its velocity must keep its heading (a shell or rocket is drawn along it).
+    const k = Math.max(1e-6, Math.min(speed * fast * TRACER.tail, d - shown) / (speed * TRACER.tail));
     return { id: r.id, x: r.x + (r.vx / speed) * d, y: r.y + (r.vy / speed) * d, vx: r.vx * k, vy: r.vy * k, owner: r.owner, gun: r.gun };
   });
   return [...bullets.filter((b) => !covered.get(b.id)), ...views];

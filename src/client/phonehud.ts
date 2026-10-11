@@ -91,17 +91,19 @@ export function applyPhoneHud(root: HTMLElement, w: number, h: number, safe: Ins
   if (!on && flagged) { flagged = ''; for (const [, cls] of FLAGS) document.body.classList.remove(cls); }
   setChatterCompact(on);
   const L = on ? phoneLayout(w, h, safe, k) : null;
+  // The HUD is zoomed by --ui (a UI scale option above 100%), so a box for anything inside it is given in its zoomed px, or it lands off
+  // the screen's right and bottom edges.
+  const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui')) || 1;
+  const unzoom = (el: HTMLElement, b: Box | null): Box | null => (b && root.contains(el) && z !== 1 ? { x: b.x / z, y: b.y / z, w: b.w / z, h: b.h / z } : b);
   for (const [sel, slot, size] of PLACED) {
     const el = root.querySelector<HTMLElement>(sel) ?? document.querySelector<HTMLElement>(sel);
     if (!el) continue;
     // The context button (the radio) is a pill as wide as its word: it centres on its box.
-    place(el, L && L[slot], size, slot === 'context');
+    place(el, unzoom(el, L && L[slot]), size, slot === 'context');
   }
   // The death card takes the visible screen inside the insets, clear of the cog (deathflow.ts), and scrolls inside itself.
   const death = root.querySelector<HTMLElement>('#death');
   if (death) {
-    // The HUD is zoomed by --ui (a UI scale option above 100%), so the box is given in its zoomed px.
-    const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui')) || 1;
     const b = on ? deathBox(w, h, safe, k) : null;
     place(death, b && { x: b.x / z, y: b.y / z, w: b.w / z, h: b.h / z }, 'box');
   }
@@ -113,7 +115,7 @@ export function applyPhoneHud(root: HTMLElement, w: number, h: number, safe: Ins
     const el = root.querySelector<HTMLElement>(sel);
     if (!el) continue;
     if (!saved.has(el)) saved.set(el, { left: el.style.left, bottom: el.style.bottom, top: el.style.top });
-    Object.assign(el.style, L ? { left: `${L.bottom.x + L.bottom.w / 2}px`, bottom: `${h - L.bottom.y - L.bottom.h}px`, top: 'auto' } : saved.get(el));
+    Object.assign(el.style, L ? { left: `${(L.bottom.x + L.bottom.w / 2) / z}px`, bottom: `${(h - L.bottom.y - L.bottom.h) / z}px`, top: 'auto' } : saved.get(el));
   }
   return on;
 }

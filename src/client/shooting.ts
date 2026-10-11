@@ -48,11 +48,12 @@ export function createShooting(page: Page) {
   }
 
   /** Draws your own shot `n` (your shot count as it fires), along your aim; returns its rounds and the aim. */
-  function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number, n: number | undefined): { rounds: number[]; angle: number } {
+  /** `at`: the angle the server fired it at, for a shot drawn late (it flew then, not along today's aim). */
+  function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number, n: number | undefined, at?: number): { rounds: number[]; angle: number } {
     const { aim } = page.hands(s);
     const shot: Shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadOf(s.firing), ...(n !== undefined && { n }) };
     page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
-    const angle = Math.atan2(aim.dy, aim.dx);
+    const angle = at ?? Math.atan2(aim.dy, aim.dx);
     page.recoil(gun, angle);
     return { rounds: showShot(s, shot, s.lastSelf, angle, sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now), angle };
   }
@@ -117,7 +118,7 @@ export function createShooting(page: Page) {
       s.firing = settled.firing;
       settled.rejected.forEach((shot) => takeBack(s, shot));
       for (const ev of own.slice(own.length - settled.unmatched)) {
-        fireOwnShot(s, snap, ev.gun, ev.silenced, now, ev.n);
+        fireOwnShot(s, snap, ev.gun, ev.silenced, now, ev.n, ev.angle);
         noteLateShot();
       }
     },

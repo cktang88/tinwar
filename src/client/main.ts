@@ -227,6 +227,8 @@ function setState(next: ClientState) {
     if (!next.dial) retryTimer = setTimeout(redial, next.retry.nextAt - performance.now());
   }
   if (next.phase === 'menu') {
+    // Friendships last a match: a dropped session or a kick leaves none, and an open menu or invite must not sit over the menu card.
+    friendsUi.reset();
     overlays.reset();
     pause.reset();
     rangeUi.hide();
@@ -340,6 +342,8 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       if (msg.guest) addGuestClaim(msg.guest);
       const resumed = state.phase === 'reconnecting' ? state.s : null;
       const s = newSession(ws, pending.rejoin, msg);
+      // A rejoin is a new player to the server, with no friends: the old session's are gone.
+      friendsUi.reset();
       enterMap(msg.map);
       void checkAnniversary(msg.account);
       if (resumed) s.chat = [...resumed.chat, { from: '', text: 'Reconnected.', team: null, at: now }];
@@ -498,13 +502,17 @@ function noteDeath(s: Session, fx: Extract<EffectSpec, { kind: 'death' }>, color
 /** The enemies drawn this frame with their velocity from the two newest snapshots, for the touch aim assist. */
 let assistTargets: AssistTarget[] = [];
 
+/** How many chat lines a session keeps. */
+const CHAT_KEEP = 200;
+
 function noteAssistTargets(s: Session, drawnPlayers: readonly PlayerView[]) {
   const [older, newer] = s.snaps.snaps.slice(-2);
   const me = drawnPlayers.find((p) => p.id === s.myId);
   if (!older || !newer || !me) { assistTargets = []; return; }
   const dt = ((newer.tick - older.tick) * TICK_MS) / 1000 || 1;
   assistTargets = drawnPlayers.flatMap((p) => {
-    if (p.id === s.myId || !p.alive || p.hidden || (p.team !== null && p.team === me.team)) return [];
+    // A friend cannot be hurt, so the assist never pulls toward one.
+    if (p.id === s.myId || !p.alive || p.hidden || (p.team !== null && p.team === me.team) || friendsUi.ids().has(p.id)) return [];
     const a = older.players.find((q) => q.id === p.id), b = newer.players.find((q) => q.id === p.id);
     return [{ x: p.x, y: p.y, vx: a && b ? (b.x - a.x) / dt : 0, vy: a && b ? (b.y - a.y) / dt : 0 }];
   });
@@ -781,6 +789,8 @@ function drawFrame(realNow: number) {
     if (fx.kind === 'splat') layZombieCorpse(s, fx, now);
   }
   releaseQueued(rt, realNow);
+  // The chat keeps its last lines only: it is walked every frame, and a long session would grow it without end.
+  if (s.chat.length > CHAT_KEEP) s.chat.splice(0, s.chat.length - CHAT_KEEP);
   releaseTargetFx(rt, now, layoutOf(latest.match.map));
   s.predict = decayCorrection(s.predict, frameStep(now, lastFrameAt));
   const drawn = delight.lag > 0.5 ? null : drawnPosition(s.predict, now, INPUT_MS);
@@ -793,7 +803,7 @@ function drawFrame(realNow: number) {
   // Rounds stop at the bodies and range targets as drawn this frame, which is the moment of the past the server judges them in.
   const seenNow = { ...interpolated, players };
   const targetsNow = targetBodies(interpolated, rt);
-  s.rounds = meetBodies(s.rounds, (owner) => roundScene(seenNow, [], owner, targetsNow).bodies, now);
+  s.rounds = meetBodies(s.rounds, (owner) => roundScene(seenNow, [], owner, targetsNow, owner === s.myId ? friendsUi.ids() : undefined).bodies, now);
   const snap = { ...seenNow, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
@@ -1215,7 +1225,8 @@ const friendsUi = createFriendsUi({
   send: (msg) => { const s = sessionOf(state); if (s) send(s.ws, msg); },
   onChange: (ids) => setHudFriends(ids),
 });
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') friendsUi.closeMenu(); }, { capture: true });
+// Esc closes the innermost thing first: an open friend menu, and nothing else on that press (not the pause menu behind it).
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && friendsUi.isMenuOpen()) { friendsUi.closeMenu(); e.stopImmediatePropagation(); } }, { capture: true });
 
 const pause = createPauseMenu(hudEl, {
   audio,

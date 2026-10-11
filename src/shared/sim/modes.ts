@@ -42,7 +42,11 @@ const teamKills = (w: World, team: Team) => [...w.players.values()].reduce((sum,
 function teamWinner(w: World, target: number): RoundWinner | null {
   const lead = () => w.teamScore.red - w.teamScore.blue || teamKills(w, 'red') - teamKills(w, 'blue');
   // Both teams can pass the target in one tick (zone points accrue to each), so the team further ahead takes it, not whichever is checked first.
-  if (w.teamScore.red >= target || w.teamScore.blue >= target) return teamWin(lead() < 0 ? 'blue' : 'red');
+  // A dead heat at the target crowns nobody yet: the next point decides it.
+  if (w.teamScore.red >= target || w.teamScore.blue >= target) {
+    const ahead = lead();
+    if (ahead !== 0) return teamWin(ahead < 0 ? 'blue' : 'red');
+  }
   if (w.now < w.mapChangeAt) return null;
   const ahead = lead();
   return ahead === 0 ? null : { ...teamWin(ahead > 0 ? 'red' : 'blue'), note: 'Time ran out' };
@@ -178,6 +182,13 @@ function startRound(w: World) {
     resetProgress(p, w);
     p.kills = 0;
     p.deaths = 0;
+    // What marked a player in the last round does not follow them onto the next map: a radar tag, a reveal, a hunted ping, a near-death
+    // (Close Call) and a multi-kill chain.
+    p.taggedUntil = 0;
+    p.revealedUntil = 0;
+    p.huntedPing = null;
+    p.lowAt = null;
+    p.chain = { count: 0, at: -Infinity };
     if (p.life.k === 'alive') p.life = freshLife(p, w.now);
   }
   MODES[w.mode].start?.(w);

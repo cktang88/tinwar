@@ -438,6 +438,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     // What the mover set down or fired is theirs on their new side: a claymore, cloud or pole of theirs no longer serves the old one.
     for (const t of world.thrown) if (t.owner === move.id) t.team = stay.team;
     for (const b of world.bullets) if (b.owner === move.id) b.team = stay.team;
+    for (const b of world.barrels) if (b.by?.attacker === move.id) b.by.team = stay.team;
+    // Old-side damage between the mover and their new teammates no longer counts for kills or assists.
+    for (const q of world.players.values()) {
+      if (q.id === move.id || q.team !== stay.team) continue;
+      if (q.life.k === 'alive') q.life.hits = q.life.hits.filter((h) => h.by !== move.id);
+      if (move.life.k === 'alive') move.life.hits = move.life.hits.filter((h) => h.by !== q.id);
+    }
     friendNote(move.id, `You joined ${stay.name}'s team.`);
     balanceBots();
   }

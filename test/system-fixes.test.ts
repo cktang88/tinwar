@@ -216,3 +216,72 @@ test('server: a range cannot make profiles by changing a look, and joining and l
   assert.equal(credited.reduce((a, b) => a + b, 0), 1, 'ten joins and leaves in one round count one game');
   assert.equal(profiles.get('Acct')?.games ?? 0, 1);
 });
+
+test('sim: a kill landed after its maker died is paid on its own record; barrel credit goes only to whoever lit it', async () => {
+  const { kill } = await import('../src/shared/sim/combat.ts');
+  const { BARREL } = await import('../src/shared/defs.ts');
+  const w = emptyWorld('FFA');
+  const a = spawnAt(w, 500, 500), b = spawnAt(w, 700, 500);
+  (a.perks as Record<number, string>)[3] = 'fragGrenade';
+  if (b.life.k === 'alive') { b.life.hp = 5; b.life.shieldUntil = -Infinity; }
+  press(w, a, { angle: 0, ability: true, aimDist: 200 });
+  step(w, TICK_MS);
+  press(w, a, { angle: 0 });
+  kill(w, a, null, 'Ring');
+  w.lifeRecords.length = 0;
+  run(w, 1500);
+  assert.equal(b.life.k, 'dead', 'the grenade killed b');
+  assert.deepEqual(w.lifeRecords.filter((r) => r.id === a.id).map((r) => r.kills), [1], 'the posthumous kill is recorded');
+
+  const v = emptyWorld('FFA');
+  const p = spawnAt(v, 500, 500), q = spawnAt(v, 500, 900);
+  for (const x of [p, q]) if (x.life.k === 'alive') x.life.shieldUntil = -Infinity;
+  v.barrels.push({ id: v.nextId++, x: 560, y: 500, hp: BARREL.hp, fuseAt: null, respawnAt: null, by: null });
+  v.wallsVersion++;
+  press(v, q, { angle: -Math.PI / 2, fire: true, shots: 1 });
+  run(v, 600);
+  press(v, q, {});
+  if (p.life.k === 'alive') p.life.hp = 30;
+  press(v, p, { angle: 0, fire: true, shots: 1 });
+  const medals: string[] = [];
+  for (let i = 0; i < 60; i++) { step(v, TICK_MS); press(v, p, {}); for (const e of v.events) if (e.e === 'medal') medals.push(`${e.medal}:${e.id === q.id ? 'q' : 'p'}`); }
+  assert.equal(p.life.k, 'dead', 'p blew himself up');
+  assert.ok(!medals.includes('kaboom:q'), `q never lit the barrel: ${medals.join()}`);
+});
+
+test('sim: a radar tag and a near-death do not carry into the next round; Ninja keeps a tagged player off enemy minimaps', async () => {
+  const { WORLD } = await import('../src/shared/defs.ts');
+  const w = emptyWorld('TDM');
+  const r = spawnAt(w, 1000, 1000, { team: 'red' }), b = spawnAt(w, 1400, 1000, { team: 'blue' });
+  b.taggedUntil = w.now + 30_000;
+  b.lowAt = w.now;
+  assert.ok(snapshotFor(w, r.id).minimap.some((m) => m.tagged), 'tagged');
+  (b.perks as Record<number, string>)[2] = 'ninja';
+  assert.ok(!snapshotFor(w, r.id).minimap.some((m) => m.tagged), 'Ninja hides even an earlier tag');
+  delete (b.perks as Record<number, string>)[2];
+  w.teamScore.red = WORLD.tdmWinScore;
+  run(w, WORLD.roundRestartMs + 200);
+  assert.equal(w.match.k, 'playing', 'the next round');
+  assert.equal(b.taggedUntil, 0);
+  assert.equal(b.lowAt, null);
+});
+
+test('client: a shot the server fired unpredicted is taken by the rebuilt trigger, so the page does not fire it again', async () => {
+  const { NO_FIRING, settle } = await import('../src/client/fire.ts');
+  const sv = { gun: 'grenadier' as const, mag: 18, reloadMs: 2000, ammo: 17, reloading: false, reloadFrac: 0, alive: true, armed: true };
+  const out = settle(NO_FIRING, sv, 10, 1, []);
+  assert.equal(out.unmatched, 1, 'drawn late');
+  assert.equal(out.firing.trigger.burstLeft, 2, 'the burst has two rounds left, as on the server');
+  assert.ok(out.firing.trigger.nextFireAt > 10 * TICK_MS, 'and the gun is cycling');
+});
+
+test('client: movement prediction drops sprint on a quick click, as the server does', async () => {
+  const { NO_PREDICTION, predictInput, reconcile } = await import('../src/client/predict.ts');
+  const { IDLE_INPUT } = await import('../src/shared/sim/world.ts');
+  const pace = { walk: 200, sprint: 330 };
+  let pred = reconcile(NO_PREDICTION, { x: 0, y: 0, dash: null }, 0, [], pace, 6000);
+  pred = predictInput(pred, { seq: 1, input: { ...IDLE_INPUT, right: true, sprint: true }, dtMs: TICK_MS, ability: null }, [], pace, 0, 6000);
+  const x1 = pred.afterNewest!.x;
+  pred = predictInput(pred, { seq: 2, input: { ...IDLE_INPUT, right: true, sprint: true, shots: 1 }, dtMs: TICK_MS, ability: null }, [], pace, 0, 6000);
+  assert.ok(Math.abs(pred.afterNewest!.x - x1 - (200 * TICK_MS) / 1000) < 0.01, `walk pace on the click's tick (${pred.afterNewest!.x - x1})`);
+});

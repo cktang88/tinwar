@@ -339,9 +339,13 @@ export const beatPhase = () => getBeat().phase;
 /** 1 on the beat, decaying to 0, a ready-made pulse for HUD juice. */
 export const beatPulse = (decay = 3) => (1 - getBeat().phase) ** decay;
 
+/** Until when a streak's bass drop holds the music down: a duck in that time would cancel its dip and bring the music back over it. */
+let dropUntil = 0;
+
 function duck(depth: number, holdS: number, recoverS = 0.25) {
   if (!ctx || !rig) return;
   const t = ctx.currentTime;
+  if (t < dropUntil) return;
   for (const d of [rig.duck, rig.rawDuck]) {
     d.gain.cancelScheduledValues(t);
     d.gain.setTargetAtTime(depth, t, 0.012);
@@ -397,6 +401,7 @@ function playDrop(now: number) {
   src.start(hit - DROP.hitAt);
   src.onended = () => { src.disconnect(); g.disconnect(); };
   const len = dropBuf.duration - DROP.hitAt;
+  dropUntil = hit + len;
   for (const d of [rig.duck, rig.rawDuck]) {
     d.gain.cancelScheduledValues(now);
     d.gain.setTargetAtTime(0.5, now, 0.05);
