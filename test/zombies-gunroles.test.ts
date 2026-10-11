@@ -39,11 +39,11 @@ test('the bounty follows sustained harm, starkly: slower guns pay much more, the
   assert.ok(zombieBounty(slowest) > 1.3, `${slowest} pays x${zombieBounty(slowest)}`);
   assert.equal(zombieBounty(fastest), BOUNTY.min, `${fastest} pays the least`);
   assert.ok(zombieBounty('shotgun') > zombieBounty('lmg') && zombieBounty('pistol') > zombieBounty('minigun'));
-  // The spread is stark: every machine gun pays at most 0.6, the bolt-actions at least 2.5, the shotguns at least 2 and the assault rifle the plain price.
+  // The spread is stark: every machine gun pays at most 0.6, the bolt-actions at least 2.5, the shotguns at least 2, and the assault rifle a little over the plain price since its reload slowed past BOUNTY.par's 1.5 s.
   for (const g of GUN_IDS.filter((id) => GUNS[id].base === 'lmg')) assert.ok(zombieBounty(g) <= 0.6, `${g} x${zombieBounty(g)}`);
   for (const g of ['sniper', 'longshot', 'piercer'] as const) assert.ok(zombieBounty(g) >= 2.5, `${g} x${zombieBounty(g)}`);
   for (const g of ['shotgun', 'slugGun', 'doubleBarrel', 'sawedOff'] as const) assert.ok(zombieBounty(g) >= 2, `${g} x${zombieBounty(g)}`);
-  assert.equal(zombieBounty('assault'), 1);
+  assert.equal(zombieBounty('assault'), 1.25);
   // Mag size and reload count: the LMG's 100-round belt out-harms an assault rifle through a whole night of fire.
   assert.ok(HORDE_DPS.lmg > HORDE_DPS.assault && HORDE_DPS.assault > HORDE_DPS.sniper);
 });

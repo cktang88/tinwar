@@ -98,7 +98,7 @@ test('a rookie\'s aim error is at least 1.25 times a veteran\'s, and it is slowe
 });
 
 test('seeded bench: the scripted human beats rookies more easily than veterans, one bot at a time', () => {
-  const sum = (skill: 'rookie' | 'veteran') => [1, 2, 3, 4].map((seed) => duels(skill, seed, 60)).reduce((a, d) => ({ k: a.k + d.kills, d: a.d + d.deaths, dmg: a.dmg + d.damageTaken }), { k: 0, d: 0, dmg: 0 });
+  const sum = (skill: 'rookie' | 'veteran') => Array.from({ length: 16 }, (_, i) => i + 1).map((seed) => duels(skill, seed, 60)).reduce((a, d) => ({ k: a.k + d.kills, d: a.d + d.deaths, dmg: a.dmg + d.damageTaken }), { k: 0, d: 0, dmg: 0 });
   const rookie = sum('rookie'), veteran = sum('veteran');
   const kd = (x: typeof rookie) => x.k / Math.max(1, x.d);
   assert.ok(kd(rookie) > 1.5 * kd(veteran), `K/D ${kd(rookie).toFixed(2)} (rookies) vs ${kd(veteran).toFixed(2)} (veterans)`);

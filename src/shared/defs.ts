@@ -155,16 +155,16 @@ const GUN_SPECS: Record<GunId, GunSpec> = {
     rules: { falloff: null, bloom: { free: 1, tap: 4, settleMs: 150 }, suppress: 0.12 },
     look: { length: 1.25, width: 1.1, barrels: 1, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
 
-  smg: { name: 'SMG', desc: 'Run-and-gun rusher: deadly up close, fades fast past 350', base: 'smg', stage: 0, from: null, damage: 17, fireMs: 66, pellets: 1, spread: 0.11, range: 520, bulletSpeed: 840, mag: 32, reloadMs: 1300, kg: 2.3, cm: 50, calibre: '9mm', auto: true, look: BASE_LOOK },
-  skirmisher: { name: 'Skirmisher', desc: 'Fastest feet in the fight: flank and close', base: 'smg', stage: 1, from: 'smg', damage: 15, fireMs: 56, pellets: 1, spread: 0.11, range: 480, bulletSpeed: 870, mag: 30, reloadMs: 1100, kg: 1.5, cm: 40, calibre: '4.6mm', auto: true,
+  smg: { name: 'SMG', desc: 'Run-and-gun rusher: deadly up close, fades fast past 350', base: 'smg', stage: 0, from: null, damage: 17, fireMs: 66, pellets: 1, spread: 0.11, range: 520, bulletSpeed: 840, mag: 32, reloadMs: 1500, kg: 2.3, cm: 50, calibre: '9mm', auto: true, look: BASE_LOOK },
+  skirmisher: { name: 'Skirmisher', desc: 'Fastest feet in the fight: flank and close', base: 'smg', stage: 1, from: 'smg', damage: 15, fireMs: 56, pellets: 1, spread: 0.11, range: 480, bulletSpeed: 870, mag: 30, reloadMs: 1500, kg: 1.5, cm: 40, calibre: '4.6mm', auto: true,
     look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.5, color: '#1f5560' } } },
-  heavySmg: { name: 'Heavy SMG', desc: 'Tighter and harder-hitting: stand and trade', base: 'smg', stage: 1, from: 'smg', damage: 19, fireMs: 85, pellets: 1, spread: 0.08, range: 620, bulletSpeed: 900, mag: 30, reloadMs: 1500, kg: 4.2, cm: 72, calibre: '.45 ACP', auto: true,
+  heavySmg: { name: 'Heavy SMG', desc: 'Tighter and harder-hitting: stand and trade', base: 'smg', stage: 1, from: 'smg', damage: 19, fireMs: 85, pellets: 1, spread: 0.08, range: 620, bulletSpeed: 900, mag: 30, reloadMs: 1800, kg: 4.2, cm: 72, calibre: '.45 ACP', auto: true,
     rules: { falloff: { startPx: 260, endPx: 500, minMul: 0.45 } },
     look: { length: 1.15, width: 1.2, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
-  phantom: { name: 'Phantom', desc: 'Suppressed: heard only up close, never pinged. Strike from behind', base: 'smg', stage: 2, from: 'skirmisher', damage: 17, fireMs: 60, pellets: 1, spread: 0.11, range: 460, bulletSpeed: 870, mag: 30, reloadMs: 1100, kg: 1.8, cm: 50, calibre: '4.6mm', auto: true, silenced: true,
+  phantom: { name: 'Phantom', desc: 'Suppressed: heard only up close, never pinged. Strike from behind', base: 'smg', stage: 2, from: 'skirmisher', damage: 17, fireMs: 60, pellets: 1, spread: 0.11, range: 460, bulletSpeed: 870, mag: 30, reloadMs: 1800, kg: 1.8, cm: 50, calibre: '4.6mm', auto: true, silenced: true,
     rules: { falloff: { startPx: 170, endPx: 340, minMul: 0.3 } },
     look: { length: 1.15, width: 0.9, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.4, color: '#5a2d85' } } },
-  hornet: { name: 'Hornet', desc: 'Shreds anything at arm\'s length and empties in under two seconds', base: 'smg', stage: 2, from: 'skirmisher', damage: 11, fireMs: 31, pellets: 1, spread: 0.13, range: 460, bulletSpeed: 870, mag: 56, reloadMs: 900, kg: 2.6, cm: 50, calibre: '5.7mm', auto: true,
+  hornet: { name: 'Hornet', desc: 'Shreds anything at arm\'s length and empties in under two seconds', base: 'smg', stage: 2, from: 'skirmisher', damage: 11, fireMs: 31, pellets: 1, spread: 0.13, range: 460, bulletSpeed: 870, mag: 56, reloadMs: 1500, kg: 2.6, cm: 50, calibre: '5.7mm', auto: true,
     rules: { bloom: { free: 1, tap: 3, settleMs: 120 }, falloff: { startPx: 180, endPx: 340, minMul: 0.3 } },
     look: { length: 1, width: 1.05, barrels: 1, accent: '#f5c400', bullet: { r: 1.5, color: '#a88600' } } },
   ripper: { name: 'Ripper', desc: 'Rounds punch through a body; reaches farthest of the SMGs', base: 'smg', stage: 2, from: 'heavySmg', damage: 21, fireMs: 85, pellets: 1, spread: 0.075, range: 680, bulletSpeed: 960, mag: 30, reloadMs: 1600, kg: 4, cm: 72, calibre: '5.7mm', auto: true, penetrate: 1,
@@ -194,21 +194,21 @@ const GUN_SPECS: Record<GunId, GunSpec> = {
     rules: { falloff: { startPx: 130, endPx: 340, minMul: 0.2 }, shoveMul: 1.2 },
     look: { length: 1.15, width: 1.35, barrels: 1, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
 
-  assault: { name: 'Assault', desc: 'Anchor: stand and tap threes for lasers; spray and it drifts', base: 'assault', stage: 0, from: null, damage: 17, fireMs: 110, pellets: 1, spread: 0.035, range: 800, bulletSpeed: 1050, mag: 30, reloadMs: 1500, kg: 3.6, cm: 90, calibre: '5.56mm', auto: true, look: BASE_LOOK },
-  battleRifle: { name: 'Battle Rifle', desc: 'Heavy three-round bursts at range; one clean burst drops the unarmored', base: 'assault', stage: 1, from: 'assault', damage: 34, fireMs: 680, pellets: 1, spread: 0.03, range: 900, bulletSpeed: 1100, mag: 24, reloadMs: 1700, kg: 4.4, cm: 100, calibre: '7.62x51', auto: true, burst: { count: 3, gapMs: 70 },
+  assault: { name: 'Assault', desc: 'Anchor: stand and tap threes for lasers; spray and it drifts', base: 'assault', stage: 0, from: null, damage: 17, fireMs: 110, pellets: 1, spread: 0.035, range: 800, bulletSpeed: 1050, mag: 30, reloadMs: 2000, kg: 3.6, cm: 90, calibre: '5.56mm', auto: true, look: BASE_LOOK },
+  battleRifle: { name: 'Battle Rifle', desc: 'Heavy three-round bursts at range; one clean burst drops the unarmored', base: 'assault', stage: 1, from: 'assault', damage: 34, fireMs: 680, pellets: 1, spread: 0.03, range: 900, bulletSpeed: 1100, mag: 24, reloadMs: 2400, kg: 4.4, cm: 100, calibre: '7.62x51', auto: true, burst: { count: 3, gapMs: 70 },
     rules: { viewMul: 1.05 },
     look: { length: 1.15, width: 1.1, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
-  carbine: { name: 'Carbine', desc: 'Double-tap on the move: stays accurate while you strafe', base: 'assault', stage: 1, from: 'assault', damage: 21, fireMs: 280, pellets: 1, spread: 0.045, range: 760, bulletSpeed: 1050, mag: 30, reloadMs: 1200, kg: 2.9, cm: 76, calibre: '5.56mm', auto: true, burst: { count: 2, gapMs: 55 },
+  carbine: { name: 'Carbine', desc: 'Double-tap on the move: stays accurate while you strafe', base: 'assault', stage: 1, from: 'assault', damage: 21, fireMs: 280, pellets: 1, spread: 0.045, range: 760, bulletSpeed: 1050, mag: 30, reloadMs: 2000, kg: 2.9, cm: 76, calibre: '5.56mm', auto: true, burst: { count: 2, gapMs: 55 },
     rules: { steadyMs: 0 },
     look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
-  marksman: { name: 'Marksman', desc: 'Semi-auto three-taps: accurate shots from 500 to 900', base: 'assault', stage: 2, from: 'battleRifle', damage: 42, fireMs: 270, pellets: 1, spread: 0.02, range: 900, bulletSpeed: 1400, mag: 14, reloadMs: 1700, kg: 4.5, cm: 105, calibre: '7.62x51', auto: false,
+  marksman: { name: 'Marksman', desc: 'Semi-auto three-taps: accurate shots from 500 to 900', base: 'assault', stage: 2, from: 'battleRifle', damage: 42, fireMs: 270, pellets: 1, spread: 0.02, range: 900, bulletSpeed: 1400, mag: 14, reloadMs: 2200, kg: 4.5, cm: 105, calibre: '7.62x51', auto: false,
     rules: { bloom: { free: 3, tap: 5, settleMs: 300 }, steadyMs: 100, viewMul: 1.07 },
     look: { length: 1.4, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#b3261e' } } },
-  grenadier: { name: 'Grenadier', desc: 'Bursts of exploding rounds: punish anyone behind a corner', base: 'assault', stage: 2, from: 'battleRifle', damage: 24, fireMs: 560, pellets: 1, spread: 0.05, range: 720, bulletSpeed: 900, mag: 18, reloadMs: 1800, kg: 6, cm: 105, calibre: '7.62x51', auto: true, burst: { count: 3, gapMs: 70 }, blast: { radius: 55, damage: 14 },
+  grenadier: { name: 'Grenadier', desc: 'Bursts of exploding rounds: punish anyone behind a corner', base: 'assault', stage: 2, from: 'battleRifle', damage: 24, fireMs: 560, pellets: 1, spread: 0.05, range: 720, bulletSpeed: 900, mag: 18, reloadMs: 2300, kg: 6, cm: 105, calibre: '7.62x51', auto: true, burst: { count: 3, gapMs: 70 }, blast: { radius: 55, damage: 14 },
     look: { length: 1.2, width: 1.35, barrels: 1, accent: '#f76b15', bullet: { r: 2.8, color: '#e0661a' } } },
-  specter: { name: 'Specter', desc: 'Suppressed double-tap: heard only up close', base: 'assault', stage: 2, from: 'carbine', damage: 24, fireMs: 280, pellets: 1, spread: 0.045, range: 740, bulletSpeed: 1050, mag: 30, reloadMs: 1200, kg: 3, cm: 85, calibre: '5.56mm', auto: true, burst: { count: 2, gapMs: 55 }, silenced: true,
+  specter: { name: 'Specter', desc: 'Suppressed double-tap: heard only up close', base: 'assault', stage: 2, from: 'carbine', damage: 24, fireMs: 280, pellets: 1, spread: 0.045, range: 740, bulletSpeed: 1050, mag: 30, reloadMs: 2000, kg: 3, cm: 85, calibre: '5.56mm', auto: true, burst: { count: 2, gapMs: 55 }, silenced: true,
     look: { length: 1.2, width: 0.9, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.5, color: '#5a2d85' } } },
-  scout: { name: 'Scout', desc: 'Scoped carbine: sees farther, double-taps from 950', base: 'assault', stage: 2, from: 'carbine', damage: 24, fireMs: 300, pellets: 1, spread: 0.03, range: 950, bulletSpeed: 1160, mag: 25, reloadMs: 1300, kg: 3.4, cm: 88, calibre: '6.5mm', auto: true, burst: { count: 2, gapMs: 55 },
+  scout: { name: 'Scout', desc: 'Scoped carbine: sees farther, double-taps from 950', base: 'assault', stage: 2, from: 'carbine', damage: 24, fireMs: 300, pellets: 1, spread: 0.03, range: 950, bulletSpeed: 1160, mag: 25, reloadMs: 2000, kg: 3.4, cm: 88, calibre: '6.5mm', auto: true, burst: { count: 2, gapMs: 55 },
     rules: { viewMul: 1.12, steadyMs: 100 },
     look: { length: 1.2, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.7, color: '#1f5560' } } },
 
@@ -232,22 +232,22 @@ const GUN_SPECS: Record<GunId, GunSpec> = {
     look: { length: 1.25, width: 0.95, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.6, color: '#5a2d85' } } },
 
   lmg: { name: 'LMG', desc: 'Belt-fed: rev up and hose a lane', base: 'lmg', stage: 0, from: null, damage: 17, fireMs: 90, pellets: 1, spread: 0.055, range: 850, bulletSpeed: 960, mag: 100, reloadMs: 3500, kg: 9, cm: 110, calibre: '7.62x51', auto: true, look: BASE_LOOK },
-  heavyLmg: { name: 'Heavy LMG', desc: 'Bipod: stand half a second and it locks in tight', base: 'lmg', stage: 1, from: 'lmg', damage: 23, fireMs: 100, pellets: 1, spread: 0.055, range: 900, bulletSpeed: 1020, mag: 100, reloadMs: 3800, kg: 10, cm: 112, calibre: '7.62x51', auto: true,
+  heavyLmg: { name: 'Heavy LMG', desc: 'Bipod: stand half a second and it locks in tight', base: 'lmg', stage: 1, from: 'lmg', damage: 23, fireMs: 100, pellets: 1, spread: 0.055, range: 900, bulletSpeed: 1020, mag: 100, reloadMs: 4800, kg: 10, cm: 112, calibre: '7.62x51', auto: true,
     rules: { deploy: { ms: 500, spreadMul: 0.35, minSpread: 0.012, bloom: 0.3 }, suppress: 0.22 },
     look: { length: 1.15, width: 1.2, barrels: 1, accent: '#c8553d', bullet: { r: 2.1, color: '#7a2e1f' } } },
   lightMg: { name: 'Light MG', desc: 'Fires from the hip on the walk, no rev-up', base: 'lmg', stage: 1, from: 'lmg', damage: 15, fireMs: 75, pellets: 1, spread: 0.07, range: 800, bulletSpeed: 960, mag: 80, reloadMs: 3000, kg: 6.5, cm: 100, calibre: '5.56mm', auto: true,
     rules: { spinUp: null, deploy: null },
     look: { length: 0.95, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
-  minigun: { name: 'Minigun', desc: 'Revs for a second, then a torrent of lead; too heavy to sprint', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 16, fireMs: 33, pellets: 1, spread: 0.065, range: 900, bulletSpeed: 960, mag: 200, reloadMs: 4500, kg: 18, cm: 90, calibre: '7.62x51', auto: true,
+  minigun: { name: 'Minigun', desc: 'Revs for a second, then a torrent of lead; too heavy to sprint', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 16, fireMs: 33, pellets: 1, spread: 0.065, range: 900, bulletSpeed: 960, mag: 200, reloadMs: 6000, kg: 18, cm: 90, calibre: '7.62x51', auto: true,
     rules: { spinUp: { startMul: 2.5, upMs: 900, downMs: 800 }, deploy: { ms: 700, spreadMul: 0.7, minSpread: 0.012, bloom: 0.3 } },
     look: { length: 1.2, width: 1.25, barrels: 3, accent: '#f5c400', bullet: { r: 1.6, color: '#a88600' } } },
-  juggernaut: { name: 'Juggernaut', desc: 'Biggest rounds: plant a fortress and own the lane', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 30, fireMs: 105, pellets: 1, spread: 0.05, range: 900, bulletSpeed: 1080, mag: 150, reloadMs: 4500, kg: 10, cm: 115, calibre: '.338', auto: true,
+  juggernaut: { name: 'Juggernaut', desc: 'Biggest rounds: plant a fortress and own the lane', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 30, fireMs: 105, pellets: 1, spread: 0.05, range: 900, bulletSpeed: 1080, mag: 150, reloadMs: 6000, kg: 10, cm: 115, calibre: '.338', auto: true,
     rules: { spinUp: null, deploy: { ms: 450, spreadMul: 0.3, minSpread: 0.012, bloom: 0.3 }, suppress: 0.25 },
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#e5484d', bullet: { r: 2.3, color: '#b3261e' } } },
   ranger: { name: 'Ranger', desc: 'Lightest MG: keeps pace and stays accurate on the move', base: 'lmg', stage: 2, from: 'lightMg', damage: 16, fireMs: 75, pellets: 1, spread: 0.06, range: 800, bulletSpeed: 990, mag: 75, reloadMs: 2400, kg: 4.5, cm: 90, calibre: '5.56mm', auto: true,
     rules: { suppress: 0.1 },
     look: { length: 1, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
-  twinMg: { name: 'Twin MG', desc: 'Paired barrels: double the rounds, double the pinning', base: 'lmg', stage: 2, from: 'lightMg', damage: 11, fireMs: 85, pellets: 2, spread: 0.09, range: 760, bulletSpeed: 960, mag: 100, reloadMs: 3200, kg: 11, cm: 110, calibre: '5.56mm', auto: true,
+  twinMg: { name: 'Twin MG', desc: 'Paired barrels: double the rounds, double the pinning', base: 'lmg', stage: 2, from: 'lightMg', damage: 11, fireMs: 85, pellets: 2, spread: 0.09, range: 760, bulletSpeed: 960, mag: 100, reloadMs: 4200, kg: 11, cm: 110, calibre: '5.56mm', auto: true,
     rules: { suppress: 0.12 },
     look: { length: 1.05, width: 1.3, barrels: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
 };
@@ -865,7 +865,7 @@ export const HORDE_GUN_MUL = 0.66;
 export const zombieRole = (gun: GunId): ZombieRole => ZOMBIE_GUN_ROLES[gun] ?? ZOMBIE_CLASS_ROLES[GUNS[gun].base];
 
 /** The scrap bounty's settings (see `sustainedHarm` and `zombieBounty`). */
-export const BOUNTY = { rangePx: 300, classPow: 2.25, evolvePow: 0.5, min: 0.5, max: 3 } as const;
+export const BOUNTY = { rangePx: 300, par: 106.25, classPow: 2.25, evolvePow: 0.5, min: 0.5, max: 3 } as const;
 /**
  * Zombies only: each gun's sustained harm a second through a night of fire, its magazine and reload included: a round's harm at `BOUNTY.rangePx` (its falloff
  * applied, every pellet counted since a pellet that misses one zombie meets the next, a blast counted on two) times the magazine, over the time it takes to fire
@@ -880,14 +880,14 @@ export const sustainedHarm = (gun: GunId): number => {
 export const HORDE_DPS: Record<GunId, number> = byGun(sustainedHarm);
 /**
  * Zombies only: a player's own kill pays the zombie's scrap times their gun's bounty, so a gun slow to kill the horde builds faster instead, and starkly so.
- * A class's bounty is the assault rifle's sustained harm over its class gun's, to the power `classPow` (an LMG's belt pays about half, a bolt-action's three
+ * A class's bounty is `BOUNTY.par` (the assault rifle's sustained harm at its old 1.5 s reload, so reload changes elsewhere do not reprice the horde) over its class gun's harm, to the power `classPow` (an LMG's belt pays about half, a bolt-action's three
  * times, held between `min` and `max`); an evolution's is its class's times the square root of the class gun's harm over its own (a Minigun pays less than an LMG, a Repeater less than a
  * bolt-action). To the 0.05, held between `min` and `max`.
  */
 export const zombieBounty = (gun: GunId): number => {
   const base = GUNS[gun].base;
   const clamp = (x: number) => Math.min(BOUNTY.max, Math.max(BOUNTY.min, x));
-  const raw = clamp((HORDE_DPS.assault / HORDE_DPS[base]) ** BOUNTY.classPow) * (HORDE_DPS[base] / HORDE_DPS[gun]) ** BOUNTY.evolvePow;
+  const raw = clamp((BOUNTY.par / HORDE_DPS[base]) ** BOUNTY.classPow) * (HORDE_DPS[base] / HORDE_DPS[gun]) ** BOUNTY.evolvePow;
   return clamp(Math.round(raw * 20) / 20);
 };
 /** How many of a kind listed `listed` times come for a squad with this share of the horde. */
