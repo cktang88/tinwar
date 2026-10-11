@@ -326,7 +326,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // Shared by every room, so hopping rooms does not reset it; in memory only (a restart resets it, which is fine).
   const newProfiles = makeWindowGate(limits.newProfileGapMs, limits.newProfilesPerDay, limits.newProfileWindowMs);
   const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator, profiles, newProfiles);
-  const rooms = new Map<string, Room>(ROOM_MODES.map(([id, mode], i) => [id, newRoom(id, mode, 1000 + i)]));
+  const rooms = new Map<string, Room>(ROOM_MODES.map(([id, mode]) => [id, newRoom(id, mode, randomInt(2 ** 31))]));
   /** When each squad room last had a human in it; one empty for `squadIdleMs` closes. */
   const squadSeenAt = new Map<string, number>();
   const openSquad = (): string | null => {

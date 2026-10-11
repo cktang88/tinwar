@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { polyParts } from '../src/shared/mapgeo.ts';
 import { test } from 'node:test';
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
-import { MAP_MS, MAP_NOTICE_MS, MAPS, ROTATION, rotationMap, type MapId } from '../src/shared/maps.ts';
+import { MAP_MS, MAP_NOTICE_MS, MAPS, nextMap, ROTATION, rotationMap, type MapId } from '../src/shared/maps.ts';
 
 /** The first two maps a seed-1 room deals (the rotation is a seeded shuffle; see `rotationMap`). */
 const dealt = (mode: keyof typeof ROTATION): [MapId, MapId] => [rotationMap(mode, 1, 0), rotationMap(mode, 1, 1)];
@@ -238,4 +238,17 @@ test('DOM: when both teams pass the target in the same tick, the team further ah
   run(tie, TICK_MS);
   const after = tie.match as { k: string; winner?: { name: string } };
   assert.ok(after.k === 'over' && after.winner?.name === 'Blue team', 'the next point decides it');
+});
+
+test('a room never plays the same map twice in a row, whatever its seed', () => {
+  for (const mode of ['FFA', 'TDM', 'DOM', 'BR'] as const) {
+    for (let seed = 0; seed < 200; seed++) {
+      let at = { map: rotationMap(mode, seed, 0), at: 0 };
+      for (let round = 0; round < 3 * ROTATION[mode].length; round++) {
+        const next = nextMap({ mode, map: at.map, rotationSeed: seed, rotationAt: at.at });
+        assert.notEqual(next.map, at.map, `${mode} seed ${seed} round ${round}`);
+        at = next;
+      }
+    }
+  }
 });
