@@ -289,9 +289,10 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
       if (session === 'unclaimable') return json(res, 403, { error: GUEST_CLAIM_REFUSED, guest: 'invalid' });
       if (!session) { if (hold.claim) profiles.releaseClaim(hold.claim); return json(res, 409, { error: 'Name taken' }); }
       const claim = hold.claim!;
-      const carried = await profiles.commitClaim(claim, session.name);
-      // Guests still seated under the old name stop recording there: it is not theirs to grow back.
+      // Guests still seated under the old name stop recording there before the profile moves, in the same step: it is not theirs to grow
+      // back, and a record landing while the move is being saved would make a fresh ownerless profile under that name.
       for (const room of rooms.all.values()) room.forgetGuest(claim.from);
+      const carried = await profiles.commitClaim(claim, session.name);
       return json(res, 200, { ...session, carried });
     }
     // Logging in never takes a guest's progress, whatever the body carries: only a new account can.

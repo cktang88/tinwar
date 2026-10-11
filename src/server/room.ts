@@ -222,9 +222,15 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   };
   let roundPaid = false;
   let roundStartAt = 0;
+  /**
+   * Joining a room counts a game (the profile's and the account's `games`), but a name gets one per room per round (a Zombies run counts as
+   * one): counting every join let a client farm games, and the career medals they unlock, by joining and leaving in a loop. `counted`
+   * holds the names (lower case) that have had this round's game.
+   */
+  const counted = new Set<string>();
   /** Versus rounds pay each seated human once when the round is over, if they were there for a while. */
   function payRound() {
-    if (world.match.k !== 'over') { if (roundPaid) { roundPaid = false; roundStartAt = world.now; } return; }
+    if (world.match.k !== 'over') { if (roundPaid) { roundPaid = false; roundStartAt = world.now; if (!world.run) counted.clear(); } return; }
     if (roundPaid) return;
     roundPaid = true;
     for (const c of joined()) {
@@ -245,7 +251,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function payRun() {
     const r = world.run;
     if (!r) return;
-    if (r !== run) { run = r; runNight = r.night; nightAt = world.now; runPhase = r.phase.k; runPaid = false; }
+    if (r !== run) { run = r; runNight = r.night; nightAt = world.now; runPhase = r.phase.k; runPaid = false; counted.clear(); }
     const dusk = r.phase.k === 'night' && runPhase !== 'night';
     if (dusk) nightAt = world.now;
     runPhase = r.phase.k;
@@ -314,7 +320,6 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const p = mode === 'BR' ? seatHuman(name, msg.loadout) : addPlayer(world, name, msg.loadout, { kind: 'human', team: teamForHuman() });
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
-      if (account && !practice) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       // A guest name with no profile yet would make a permanent one: each address may make only so many (LIMITS.newProfile*).
       const unrecorded = !account && !practice && !registered(name) && profiles.get(name) === null && newProfiles !== null && !newProfiles.take(client.ip, Date.now());
       const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, guest: account || unrecorded ? null : name, lastChatAt: -Infinity, lastEmoteAt: -Infinity, lastRadioAt: -Infinity, aspect: msg.aspect, look: null, lookAt: world.now, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
@@ -327,7 +332,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, map: world.map, walls: wallViews(world), account, ...(guestClaim && { guest: guestClaim }) });
       if (radioStation) send(client.ws, { t: 'radio', station: radioStation, by: null });
       if (unrecorded) send(client.ws, { t: 'chat', from: '', text: UNRECORDED_NOTICE, team: null });
-      profile(p.id, { games: 1 });
+      // An account and a guest who held its name are different players.
+      const once = account ? `@${account.toLowerCase()}` : name.toLowerCase();
+      if (!practice && !counted.has(once)) {
+        counted.add(once);
+        if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
+        profile(p.id, { games: 1 });
+      }
       if (key) {
         // Looking is free in practice; changing a profile, or reading its news (which clears it), is not.
         if (msg.cosmetics && !practice) profiles.equip(key, msg.cosmetics);
@@ -363,6 +374,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         const p = world.players.get(id);
         const key = p && profileKey(client, p.name);
         if (!p || !key) { send(client.ws, { t: 'error', message: 'Sign in or pick another name to change your look' }); return; }
+        // Looking is free in practice; changing a profile is not (a range skips the new-profile gate, so this would make one per name).
+        if (practice) { send(client.ws, { t: 'error', message: 'Change your look from a match, not the range' }); return; }
         const r = profiles.equip(key, { [msg.slot]: msg.id }, true);
         p.cos = profiles.cos(key);
         send(client.ws, { t: 'equipped', equipped: r.equipped });

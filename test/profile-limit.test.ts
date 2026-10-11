@@ -83,7 +83,7 @@ test('a guest rejoining under a name that already has a profile still records, l
   r.join('Jo', '192.0.2.5').close();
   assert.equal(r.profiles.get('Jo')?.games, 1);
   const again = r.join('Jo', '192.0.2.5');
-  assert.equal(r.profiles.get('Jo')?.games, 2, 'the existing profile counts the game');
+  assert.equal(r.profiles.get('Jo')?.games, 1, 'the existing profile records (the same round counts one game, however often it is joined)');
   assert.equal(noticed(again), 0);
 });
 

@@ -182,3 +182,37 @@ test('a held trigger fires a semi-auto at its own top rate', () => {
   const gaps = at.slice(1).map((t, i) => t - at[i]!);
   assert.ok(gaps.every((g) => Math.abs(g - 200) < TICK_MS + 1), `about the pistol's 200 ms apart: ${gaps.map(Math.round).join()}`);
 });
+
+test('server: a range cannot make profiles by changing a look, and joining and leaving in a loop counts one game a round', async () => {
+  const { mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { LIMITS, makeWindowGate } = await import('../src/server/limits.ts');
+  const { openProfiles } = await import('../src/server/profiles.ts');
+  const { createRoom } = await import('../src/server/room.ts');
+  const { fakeSocket, PISTOL } = await import('./helpers.ts');
+  const credited: number[] = [];
+  const accounts = { stats: () => null, credit: (_n: string, d: { games: number }) => credited.push(d.games), nameForToken: (t: string) => (t === 'tok' ? 'Acct' : null) } as unknown as Parameters<typeof createRoom>[3];
+  const profiles = await openProfiles(await mkdtemp(join(tmpdir(), 'sysfix-')));
+  const range = createRoom('r-x', 'RNG', 1, accounts, 1, LIMITS, undefined, profiles, makeWindowGate(30_000, 5, 86_400_000));
+  for (let i = 0; i < 5; i++) {
+    const ws = fakeSocket();
+    range.connect(ws.socket, '198.51.100.7');
+    ws.send({ t: 'join', name: `Spam${i}`, loadout: PISTOL, aspect: 1.5 });
+    ws.send({ t: 'equip', slot: 'helmet', id: 'h_standard' });
+    assert.equal(profiles.get(`Spam${i}`), null, 'no profile made in the range');
+    ws.close();
+  }
+  range.close();
+  const room = createRoom('f-x', 'FFA', 1, accounts, 1, LIMITS, undefined, profiles);
+  for (let i = 0; i < 10; i++) {
+    const ws = fakeSocket();
+    room.connect(ws.socket, '198.51.100.8');
+    ws.send({ t: 'join', name: 'Acct', token: 'tok', loadout: PISTOL, aspect: 1.5 });
+    ws.close();
+  }
+  room.close();
+  await profiles.flush();
+  assert.equal(credited.reduce((a, b) => a + b, 0), 1, 'ten joins and leaves in one round count one game');
+  assert.equal(profiles.get('Acct')?.games ?? 0, 1);
+});
