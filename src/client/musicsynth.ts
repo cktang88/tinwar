@@ -61,6 +61,9 @@ function makeReverb(ctx: BaseAudioContext): AudioBuffer {
   return buf;
 }
 
+/** The synth mix's low cut, in Hz: the bottom of what game music keeps (its bass sits from about 82 Hz up, `BASS_FLOOR`). */
+export const LOW_CUT_HZ = 80;
+
 export function createRig(ctx: BaseAudioContext, out: AudioNode, samples: SampleBank | null = null): Rig {
   const noise = makeNoise(ctx);
   const comp = ctx.createDynamicsCompressor();
@@ -77,10 +80,14 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode, samples: Sample
   verbIn.gain.value = 0.22;
   const verbOut = ctx.createGain();
   verbOut.gain.value = 0.9;
+  // A low cut on the whole synth mix: nothing under about 80 Hz (`LOW_CUT_HZ`), so no bass, kick or pad rumbles through the walls.
+  const lowCut = ctx.createBiquadFilter();
+  lowCut.type = 'highpass'; lowCut.frequency.value = LOW_CUT_HZ; lowCut.Q.value = 0.7;
   sum.connect(duck).connect(tone);
   direct.connect(tone);
-  tone.connect(comp);
-  tone.connect(verbIn).connect(verb).connect(verbOut).connect(comp);
+  tone.connect(lowCut);
+  lowCut.connect(comp);
+  lowCut.connect(verbIn).connect(verb).connect(verbOut).connect(comp);
   comp.connect(volume).connect(out);
   const fx = ctx.createGain();
   fx.gain.value = 1;

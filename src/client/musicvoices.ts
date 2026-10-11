@@ -284,10 +284,10 @@ export function createVoices(k: Kit): Partial<Record<Inst, Voice>> {
   };
   // ---- the pop themes' voices ----
   // The 808: a sine sub with a second harmonic so it reads on small speakers, a short tick of pitch on its attack, and a quick glide in from
-  // `from` (the slide). It never sounds below A1 (`B808_FLOOR`, about 55 Hz): a sine sliding down there croaks rather than hums, so a lower
-  // note is played an octave up, and a glide is only a short step (`B808_GLIDE` semitones or less) and quick; a wider leap lands clean.
+  // `from` (the slide). It never sounds below E2 (`B808_FLOOR`, about 82 Hz, the bass floor of every theme): a sine down there croaks and
+  // rumbles rather than hums, so a lower note is played an octave up, and a glide is only a short step (`B808_GLIDE` semitones or less) and quick; a wider leap lands clean.
   // `grit` adds a soft third harmonic for the phonk 808's edge (a buzzing square under it croaked too).
-  const B808_FLOOR = 33, B808_GLIDE = 5;
+  const B808_FLOOR = 40, B808_GLIDE = 5;
   const lift = (m: number) => { while (m < B808_FLOOR) m += 12; return m; };
   const b808 = (grit: number): Voice => (t, low, dur, v, dest, rawFrom) => {
     const midi = lift(low);

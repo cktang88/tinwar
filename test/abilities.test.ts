@@ -117,7 +117,7 @@ test('a dash stops at a thin built wall instead of passing through it', () => {
   assert.ok(p.x <= 540 - R + 1e-6, `stopped on the near side (x ${p.x})`);
 });
 
-test('an owner keeps at most two mines, the third replacing the oldest, and loses them all on death', () => {
+test('an owner keeps one claymore down, a new one replacing it, and loses it on death', () => {
   const w = emptyWorld();
   const miner = spawnAt(w, 500, 500);
   grantPerks(w, miner, ['extended', 'thickSkin', 'claymore']);
@@ -130,9 +130,9 @@ test('an owner keeps at most two mines, the third replacing the oldest, and lose
   };
   const mineXs = () => w.thrown.filter((t) => t.kind === 'claymore').map((t) => t.x);
   plant(500);
+  assert.deepEqual(mineXs(), [500]);
   plant(700);
-  plant(900);
-  assert.deepEqual(mineXs(), [700, 900]);
+  assert.deepEqual(mineXs(), [700], 'the new one lifts the first');
   miner.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   step(w, TICK_MS);
   assert.deepEqual(mineXs(), [], 'a dead owner leaves no mines behind');

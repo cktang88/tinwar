@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chordOf, counterBars, FORM_BARS, hookBars, INTRO_BARS, isMotif, LOOP_BARS, motifOf, placeOf, popBar, SECTION_BARS, unswing, type Part, type PopSpec } from '../src/client/musicpop.ts';
 import { THEMES } from '../src/client/musicthemes.ts';
+import { SAMPLES } from '../src/client/musicsamples.ts';
 import { hookDistance, isChordTone, type HookNote } from '../src/client/musichook.ts';
 import { MAP_TRACK, TRACKS } from '../src/client/musictracks.ts';
 import type { Bar, LayerId, Mode } from '../src/client/musictheory.ts';
@@ -169,9 +170,14 @@ test('the Zombies night keeps its heartbeat tiers, and no day theme has one', ()
   }
 });
 
-test('no 808 note sits below A1, where a sliding sine croaks rather than hums', () => {
+test('no synth bass note in any theme sits below E2 (about 82 Hz), where it rumbles through walls rather than reads as a note', () => {
+  let checked = 0;
   for (const s of THEMES) {
-    const notes = Array.from({ length: 40 }, (_, k) => bar(s, INTRO_BARS + k).events).flat().filter((e) => e.inst === 'b808' || e.inst === 'b808d');
-    for (const e of notes) assert.ok(e.midi >= 33, `${name(s)}: an 808 at midi ${e.midi}`);
+    const synth = [s.bassInst, s.dropInst].filter((i) => !SAMPLES[i]);
+    const notes = Array.from({ length: 40 }, (_, k) => bar(s, INTRO_BARS + k).events).flat().filter((e) => synth.includes(e.inst));
+    checked += notes.length;
+    // A chromatic approach may lead in from a semitone under the riff's floor; nothing goes further down.
+    for (const e of notes) assert.ok(e.midi >= 39, `${name(s)}: a ${e.inst} bass note at midi ${e.midi}`);
   }
+  assert.ok(checked > 100);
 });

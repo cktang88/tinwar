@@ -25,6 +25,14 @@ export const FORM_BARS = INTRO_BARS + LOOP_BARS;
 /** A drum voice, with the pitch it takes if it takes one (the chip snare, a tom). */
 export type Drum = Inst | readonly [Inst, number];
 
+/**
+ * The lowest a synth bass line goes: E2 (MIDI 40, about 82 Hz), where game soundtracks keep their bass. Below it a synth bass (a sine or
+ * near one) is more felt than heard, a rumble that carries through walls, so a theme's `bassLo` under it is raised to it. A recorded bass
+ * (upright, tuba, slap: `SAMPLES`) keeps its register: its sound is its overtones, and its samples cover it.
+ */
+export const BASS_FLOOR = 40;
+export const bassFloorOf = (spec: Pick<PopSpec, 'bassLo'>, inst: Inst): number => (SAMPLES[inst] ? spec.bassLo : Math.max(spec.bassLo, BASS_FLOOR));
+
 export type PopSpec = {
   id: string;
   /** Shown on the radio. */
@@ -210,11 +218,12 @@ export function popBar(spec: PopSpec, seed: number, mode: Mode, barNo: number): 
 
   // ---- bass: in with the intro's second half, out for the breakdown, a pulse through the build, the big riff on the drop ----
   const riff = (layer: LayerId, inst: Inst, t: Theme, vel: number) => {
-    for (const n of bassBar(t, barIn, chord, next, spec.bassLo)) add(layer, inst, n.step, n.dur, n.midi, vel * (Math.abs(n.step % 4) < 0.01 ? 1 : 0.82), n.from !== undefined ? { from: n.from } : undefined);
+    for (const n of bassBar(t, barIn, chord, next, bassFloorOf(spec, inst))) add(layer, inst, n.step, n.dur, n.midi, vel * (Math.abs(n.step % 4) < 0.01 ? 1 : 0.82), n.from !== undefined ? { from: n.from } : undefined);
   };
   if (part === 'bassin' || part === 'hook' || part === 'groove') riff('calm', spec.bassInst, th, 0.85);
   if (part === 'build') {
-    const root = spec.bassLo + mod(chord.rootPc - spec.bassLo, 12);
+    const lo = bassFloorOf(spec, spec.bassInst);
+    const root = lo + mod(chord.rootPc - lo, 12);
     for (let s = 0; s < (barIn === 7 ? 12 : 16); s += barIn >= 6 ? 2 : 4) add('calm', spec.bassInst, s, barIn >= 6 ? 2 : 4, root, 0.55 + barIn * 0.04);
   }
   if (part === 'drop') riff('calm', spec.dropInst, drop, 0.95);

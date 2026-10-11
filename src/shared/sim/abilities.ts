@@ -25,13 +25,13 @@ const THROW_SPEED = 700;
  * A claymore: set at your feet facing your aim, armed after `armMs`. An enemy (or a zombie) stepping into the cone in front of it
  * (`reach` px, `cone` radians either side of its facing) with a clear line sets it off: `pellets` balls of shrapnel fly out across
  * `spread` radians either side of its facing, each `damage` and reaching `range`, so it only hurts what is in front of it and cover
- * stops the balls. Two at a time; it lasts `lifeMs`.
+ * stops the balls. One down at a time (setting another lifts the first); it lasts `lifeMs`.
  *
  * Hidden: the server sends an enemy's claymore only to a viewer looking at it, within `seeFov` radians either side of their aim and
  * `seePx` of them (`spotsClaymore`), people and bots alike. That is far enough past the trigger cone to stop or step aside even at a
  * sprint, so one is always avoidable, but whoever runs in looking elsewhere stumbles on it.
  */
-export const CLAYMORE = { armMs: 800, reach: 190, cone: 0.7, pellets: 16, spread: 0.75, damage: 44, range: 320, lifeMs: 60_000, max: 2, seePx: 430, seeFov: Math.PI / 4 } as const;
+export const CLAYMORE = { armMs: 800, reach: 190, cone: 0.7, pellets: 16, spread: 0.75, damage: 44, range: 320, lifeMs: 60_000, max: 1, seePx: 430, seeFov: Math.PI / 4 } as const;
 
 /** Whether a viewer at (x, y) aiming along `angle` spots a claymore at `t`: in their 90 degree view cone and within `CLAYMORE.seePx`. */
 export function spotsClaymore(x: number, y: number, angle: number, t: { x: number; y: number }): boolean {

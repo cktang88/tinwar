@@ -403,7 +403,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string; zom?: strin
   brace: { name: 'Brace', desc: 'Take 60% less knockback and deal 15% more', zom: 'Your hits shove zombies 75% harder' },
   fragGrenade: { name: 'Frag grenade', desc: 'Explodes into shrapnel' },
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
-  claymore: { name: 'Claymore', desc: 'A trap facing your aim: anyone stepping in front of it eats a fan of shrapnel. Enemies only spot it looking right at it up close. Two at a time', zom: 'A trap facing your aim: the first zombie in front of it sets off a fan of shrapnel. Two at a time' },
+  claymore: { name: 'Claymore', desc: 'A trap facing your aim: anyone stepping in front of it eats a fan of shrapnel. Enemies only spot it looking right at it up close. One down at a time', zom: 'A trap facing your aim: the first zombie in front of it sets off a fan of shrapnel. One down at a time' },
   knife: { name: 'Knife', desc: 'Lunge and stab for 50, through armor', zom: 'Lunge and stab for triple, grown with the night: kills a walker or runner outright and stuns the rest' },
   engineer: { name: 'Shield wall', desc: 'A one-way energy wall where you aim, 10s: you shoot out through it, nothing shoots in', zom: 'A wall where you aim for 10s: zombies must walk round it while you shoot through' },
   dash: { name: 'Dash', desc: 'Burst of speed' },
