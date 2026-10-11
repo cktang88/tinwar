@@ -155,7 +155,11 @@ const BOARD_TOP = 5;
 
 export function boardRows(rows: readonly LeaderRow[], myId: number, full: number | null, top = BOARD_TOP): { place: number; row: LeaderRow }[] {
   const ranked = rankRows(rows).map((row, i) => ({ place: i + 1, row }));
-  if (full !== null) return ranked.slice(0, full);
+  if (full !== null) {
+    // The whole board when it fits; when it does not, yours is kept in place of the last row shown.
+    const mine = ranked.find((r) => r.row.id === myId);
+    return mine && mine.place > full && full > 0 ? [...ranked.slice(0, full - 1), mine] : ranked.slice(0, full);
+  }
   const mine = ranked.find((r) => r.row.id === myId);
   return mine && mine.place > top ? [...ranked.slice(0, top), mine] : ranked.slice(0, top);
 }

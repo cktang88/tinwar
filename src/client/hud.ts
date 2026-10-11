@@ -874,7 +874,7 @@ const ownColor = (snap: Snapshot, me: PlayerView) => (me.team && !snap.run ? FEE
 const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(s.snaps, now));
 
 /** On a phone the board lists only the top `touchTop` and you, so it ends above the ability button (style.css). */
-const BOARD = { w: 196, compactW: 162, row: 26, pad: 10, touchTop: 3 } as const;
+const BOARD = { w: 196, compactW: 162, row: 26, minRow: 16, pad: 10, touchTop: 3 } as const;
 
 let boardYs = new Map<number, number>();
 const boardMine = { place: null as number | null, climbAt: -1e9 };
@@ -907,17 +907,24 @@ export function boardNameAt(sx: number, sy: number): (BoardName & { right: numbe
 
 function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right: number; top: number; rows: number }): number {
   const { ctx, w, h, snap, s, me } = hud;
-  const rows = boardRows(snap.leaderboard, s.myId, full ? at?.rows ?? (compact || h < 760 ? 6 : 12) : null, touchScreen && compact ? BOARD.touchTop : undefined);
+  // Held open (Tab) the board lists everyone, so anyone can be friended: rows shrink to fit a short screen, down to `BOARD.minRow`.
+  const top0 = at ? at.top : EDGE + inset().t;
+  // On a desktop the minimap sits under the board in the bottom right: the board stops short of it.
+  const room = h - top0 - EDGE - BOARD.pad * 2 - 22 - 5 - (touchScreen ? 0 : (compact ? 96 : 160) + 64);
+  const everyone = snap.leaderboard.length;
+  const rowH = full && !at ? Math.max(BOARD.minRow, Math.min(BOARD.row, Math.floor(room / Math.max(1, everyone)))) : BOARD.row;
+  const fits = Math.max(1, Math.floor(room / rowH));
+  const rows = boardRows(snap.leaderboard, s.myId, full ? at?.rows ?? Math.min(everyone, fits) : null, touchScreen && compact ? BOARD.touchTop : undefined);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
   const ffaTarget = snap.match.mode === 'FFA' ? WORLD.ffaWinKills : 0;
   const pw = compact ? BOARD.compactW : BOARD.w;
-  const x = at ? at.right - pw : w - pw - EDGE - inset().r, top = at ? at.top : EDGE + inset().t;
+  const x = at ? at.right - pw : w - pw - EDGE - inset().r, top = top0;
   const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
   const head = full ? 22 : 0;
-  const ph = BOARD.pad * 2 + rows.length * BOARD.row + head + (split ? 5 : 0);
+  const ph = BOARD.pad * 2 + rows.length * rowH + head + (split ? 5 : 0);
   fadePanel(hud, 'board', x, top, pw, ph);
   panel(ctx, x, top, pw, ph);
-  let y = top + BOARD.pad + BOARD.row / 2;
+  let y = top + BOARD.pad + rowH / 2;
   if (full) {
     const line = snap.run ? 'Squad kills' : snap.royale ? 'Most kills' : teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
     text(ctx, line[0]!.toUpperCase() + line.slice(1), x + BOARD.pad + 2, y - 2, TYPE.micro, PANEL_MUTED, 'left', 600);
@@ -931,7 +938,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
   rows.forEach(({ place, row: r }, i) => {
     if (split && i === rows.length - 1) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
-      ctx.fillRect(x + BOARD.pad, y - BOARD.row / 2, pw - BOARD.pad * 2, 1);
+      ctx.fillRect(x + BOARD.pad, y - rowH / 2, pw - BOARD.pad * 2, 1);
       y += 5;
     }
     const mine = r.id === s.myId;
@@ -946,7 +953,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
     const hex = colorHexOf(snap, r.id, teams ? r.team : null);
     if (mine) {
       const climb = popOf(hud.now - boardMine.climbAt, 900);
-      ribbon(ctx, x - 7, y - BOARD.row / 2 + 1, pw + 10, BOARD.row - 2, mixHex(CEL.body, hex, 0.45 + 0.4 * climb));
+      ribbon(ctx, x - 7, y - rowH / 2 + 1, pw + 10, rowH - 2, mixHex(CEL.body, hex, 0.45 + 0.4 * climb));
     }
     text(ctx, String(place), x + BOARD.pad + 2, y, TYPE.label, mine ? PANEL_INK : PANEL_MUTED, 'left', 750);
     helmet(ctx, x + BOARD.pad + 26, y - 1, 8, hex);
@@ -960,7 +967,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
     if (!mine) {
       // A name is a button: underlined under the cursor, and a click opens the friend menu beside the board.
       const nameW = Math.min(ctx.measureText(r.name).width, Math.max(10, nameMax));
-      names.push({ id: r.id, name: r.name, human: !!r.human, x: nx - 3, y: y - BOARD.row / 2, w: nameW + 6, h: BOARD.row, right: x });
+      names.push({ id: r.id, name: r.name, human: !!r.human, x: nx - 3, y: y - rowH / 2, w: nameW + 6, h: rowH, right: x });
       if (boardHover === r.id) { ctx.fillStyle = color; ctx.fillRect(nx, y + 6, nameW, 1.5); }
     }
     let ix = x + pw - BOARD.pad - scoreW - 4;
@@ -976,7 +983,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
       ctx.fillStyle = hex;
       ctx.fillRect(bx, y + 8, Math.max(2, bw * Math.min(1, r.kills / ffaTarget)), 3);
     }
-    y = slotY + BOARD.row;
+    y = slotY + rowH;
   });
   boardYs = rowYs;
   boardNames = names;

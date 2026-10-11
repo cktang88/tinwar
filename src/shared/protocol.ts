@@ -349,8 +349,13 @@ export const FRIEND_INVITE_SHOWN_MS = 20_000;
 
 /** `human` marks a person (absent for a bot): only people can be friended. */
 export type LeaderRow = { id: number; name: string; score: number; kills: number; deaths: number; team: Team; human?: true };
-/** Most round kills first, then fewest deaths. The FFA timer crowns whoever this puts first, so the leaderboard and the winner agree. */
-export const byRank = (a: { kills: number; deaths: number }, b: { kills: number; deaths: number }): number => b.kills - a.kills || a.deaths - b.deaths;
+/**
+ * Most round kills first, then fewest deaths, then people above bots. The FFA timer crowns whoever this puts first, so the leaderboard and
+ * the winner agree. Takes a board row (`human`) or a player (`kind`).
+ */
+type Ranked = { kills: number; deaths: number; human?: true; kind?: string };
+const isPerson = (r: Ranked): number => (r.human || r.kind === 'human' ? 1 : 0);
+export const byRank = (a: Ranked, b: Ranked): number => b.kills - a.kills || a.deaths - b.deaths || isPerson(b) - isPerson(a);
 export const rankRows = (rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort(byRank);
 /** `id` is the winning player's, null for a team. `note` says why they won when the ranking does not, such as a human reaching the FFA kill target behind a bot. */
 export type RoundWinner = { name: string; id: number | null; note: string | null };
