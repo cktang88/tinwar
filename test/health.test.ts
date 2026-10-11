@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import WebSocket from 'ws';
-import { ARMOR_IDS, BOT_DAMAGE_TO_HUMAN, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+import { ARMOR_IDS, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
@@ -54,9 +54,7 @@ test('humans kill each other as fast as bots kill each other, armored or not, an
   for (const armor of ['none', 'medium'] as const) {
     assert.equal(ttk('human', 'human', armor), ttk('bot', 'bot', armor), `${armor} armor`);
     assert.equal(ttk('human', 'bot', armor), ttk('bot', 'bot', armor), `a human hits a bot for base damage (${armor} armor)`);
-    const k = 1 / BOT_DAMAGE_TO_HUMAN;
-    assert.ok(ttk('bot', 'human', armor) >= 0.9 * k * ttk('bot', 'bot', armor), `a bot's rounds count 0.8 on a human (${armor} armor)`);
-    assert.ok(ttk('bot', 'human', armor) <= 1.2 * k * ttk('bot', 'bot', armor), `but no less than that (${armor} armor)`);
+    assert.equal(ttk('bot', 'human', armor), ttk('bot', 'bot', armor), `a bot hits a human for base damage (${armor} armor)`);
   }
 });
 
@@ -76,11 +74,10 @@ function rawDamageToKill(shooterKind: PlayerKind, victimKind: PlayerKind, armor:
   return raw;
 }
 
-test('armor blocks the same share for humans and bots: a bot spends 1/0.8 of the raw damage on an armored human, and every other pairing the same', () => {
-  const k = 1 / BOT_DAMAGE_TO_HUMAN;
+test('armor blocks the same share for humans and bots, in every pairing', () => {
   for (const armor of ARMOR_IDS) {
     const botOnBot = rawDamageToKill('bot', 'bot', armor);
-    assert.ok(Math.abs(rawDamageToKill('bot', 'human', armor) - k * botOnBot) <= k * RAW_STEP, `${armor}: bot on human ${rawDamageToKill('bot', 'human', armor)} vs ${k} x ${botOnBot}`);
+    assert.ok(Math.abs(rawDamageToKill('bot', 'human', armor) - botOnBot) <= RAW_STEP, `${armor}: bot on human ${rawDamageToKill('bot', 'human', armor)} vs bot on bot ${botOnBot}`);
     assert.ok(Math.abs(rawDamageToKill('human', 'human', armor) - botOnBot) <= RAW_STEP, `${armor}: human on human ${rawDamageToKill('human', 'human', armor)} vs bot on bot ${botOnBot}`);
     assert.ok(Math.abs(rawDamageToKill('human', 'bot', armor) - botOnBot) <= RAW_STEP, `${armor}: human on bot ${rawDamageToKill('human', 'bot', armor)} vs bot on bot ${botOnBot}`);
   }

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BOT_DAMAGE_TO_HUMAN, type GunId, type PlayerKind } from '../src/shared/defs.ts';
+import type { GunId, PlayerKind } from '../src/shared/defs.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { easedSpread, effectiveStats } from '../src/shared/sim/stats.ts';
@@ -60,13 +60,13 @@ test('a bot and a person with the same loadout, perks, spot and inputs get the s
   }
 });
 
-test('the one rule between them: a bot\'s damage to a person counts 0.75, every other pairing full', () => {
+test('bots and people hit each other alike: every pairing deals the gun\'s own damage', () => {
   const on = (shooter: PlayerKind, victim: PlayerKind) => trace(shooter, 'assault', victim).dealt;
   const base = on('bot', 'bot');
   assert.ok(base > 0);
   assert.equal(on('human', 'human'), base, 'person on person');
   assert.equal(on('human', 'bot'), base, 'person on bot');
-  assert.ok(Math.abs(on('bot', 'human') - BOT_DAMAGE_TO_HUMAN * base) < 1e-6, `bot on person ${on('bot', 'human')} vs ${BOT_DAMAGE_TO_HUMAN} x ${base}`);
+  assert.equal(on('bot', 'human'), base, 'bot on person');
 });
 
 test('skill is a bot\'s brain only: rookies, regulars and veterans carry a person\'s gun and body stats, through a fight and their respawns', () => {

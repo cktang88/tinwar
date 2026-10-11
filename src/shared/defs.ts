@@ -420,13 +420,6 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
 export type PlayerKind = (typeof PLAYER_KINDS)[number];
-/**
- * The one rule that tells a bot from a person: a bot's damage to a person counts this share (every path: rounds, blasts, the knife, gas,
- * fire, mines, turrets). Bot on bot, person on person and person on bot are all at full. Health, speed, spread, bloom and every other stat
- * are the same for both; the only other difference is the touch aim assist a person on a phone gets (`src/client/aimassist.ts`).
- */
-export const BOT_DAMAGE_TO_HUMAN = 0.75;
-
 export type Pick = { k: 'perk'; tier: Tier; /** The tier-2 perks offered this life (`TIER2_OFFER` of the pool, drawn at spawn); absent means the whole tier. */ offer?: readonly PerkId[] } | { k: 'evolve' };
 export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;

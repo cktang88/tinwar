@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ABILITY_COOLDOWN_MS, BOT_DAMAGE_TO_HUMAN, GUN_IDS, GUNS, LEVELS, MEDALS, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, MEDALS, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -33,11 +33,11 @@ test('heavy armor takes 76% of what no armor takes from the same shot, on every 
   for (const [i, h] of heavy.entries()) assert.ok(Math.abs(h - 0.76 * bare[i]!) < 1e-9, `hit ${i + 1}: heavy took ${h}, bare took ${bare[i]}`);
 });
 
-test('the bot rule applies through armor: a heavy human takes 76% of a human\'s shot, and 0.8 of that from a bot\'s', () => {
+test('armor treats every shooter alike: a heavy human takes 76% of a shot, from a person or a bot', () => {
   const [byHuman] = hitsTaken('heavy', 1, { shooter: 'human', victim: 'human' });
   const [byBot] = hitsTaken('heavy', 1, { victim: 'human' });
   assert.ok(Math.abs(byHuman! - 0.76 * PISTOL_DMG) < 1e-9, `human on human took ${byHuman}`);
-  assert.ok(Math.abs(byBot! - BOT_DAMAGE_TO_HUMAN * 0.76 * PISTOL_DMG) < 1e-9, `bot on human took ${byBot}`);
+  assert.ok(Math.abs(byBot! - 0.76 * PISTOL_DMG) < 1e-9, `bot on human took ${byBot}`);
 });
 
 test('piercing bullets bypass armor entirely', () => {
