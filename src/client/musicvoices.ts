@@ -283,9 +283,16 @@ export function createVoices(k: Kit): Partial<Record<Inst, Voice>> {
     burst(k, t, 0.3, dur, 'lowpass', 500, 0.5, 0.12 * v, chop);
   };
   // ---- the pop themes' voices ----
-  // The 808: a sine sub with a second harmonic so it reads on small speakers, the pitch drop of the drum on its attack, and a glide in from
-  // `from` (the slide). `grit` adds a lowpassed square for the distorted phonk 808.
-  const b808 = (grit: number): Voice => (t, midi, dur, v, dest, from) => {
+  // The 808: a sine sub with a second harmonic so it reads on small speakers, a short tick of pitch on its attack, and a quick glide in from
+  // `from` (the slide). It never sounds below A1 (`B808_FLOOR`, about 55 Hz): a sine sliding down there croaks rather than hums, so a lower
+  // note is played an octave up, and a glide is only a short step (`B808_GLIDE` semitones or less) and quick; a wider leap lands clean.
+  // `grit` adds a soft third harmonic for the phonk 808's edge (a buzzing square under it croaked too).
+  const B808_FLOOR = 33, B808_GLIDE = 5;
+  const lift = (m: number) => { while (m < B808_FLOOR) m += 12; return m; };
+  const b808 = (grit: number): Voice => (t, low, dur, v, dest, rawFrom) => {
+    const midi = lift(low);
+    const from = rawFrom === undefined ? undefined : lift(rawFrom - low + midi);
+    const glide = from !== undefined && Math.abs(from - midi) <= B808_GLIDE ? from : undefined;
     const hz = midiToHz(midi);
     const len = Math.max(0.22, dur);
     const g = ctx.createGain();
@@ -295,19 +302,18 @@ export function createVoices(k: Kit): Partial<Record<Inst, Voice>> {
     g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.22);
     g.connect(dest);
     const end = t + len + 0.3;
-    const parts: [OscillatorType, number, number][] = [['sine', 1, 1], ['sine', 2, 0.22]];
-    if (grit) parts.push(['square', 1, grit]);
-    for (const [w, r, lvl] of parts) {
+    const parts: [number, number][] = [[1, 1], [2, 0.22]];
+    if (grit) parts.push([3, grit]);
+    for (const [r, lvl] of parts) {
       let sink: AudioNode = g;
       if (lvl !== 1) { const pg = ctx.createGain(); pg.gain.value = lvl; pg.connect(g); sink = pg; }
-      if (w === 'square') { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900; f.Q.value = 0.7; f.connect(sink); sink = f; }
-      const o = k.osc(w, hz * r, t, end, sink);
-      if (from !== undefined) { o.frequency.setValueAtTime(midiToHz(from) * r, t); o.frequency.exponentialRampToValueAtTime(hz * r, t + Math.min(0.11, len * 0.5)); }
-      else { o.frequency.setValueAtTime(hz * r * 2.2, t); o.frequency.exponentialRampToValueAtTime(hz * r, t + 0.035); }
+      const o = k.osc('sine', hz * r, t, end, sink);
+      if (glide !== undefined) { o.frequency.setValueAtTime(midiToHz(glide) * r, t); o.frequency.exponentialRampToValueAtTime(hz * r, t + Math.min(0.06, len * 0.3)); }
+      else { o.frequency.setValueAtTime(hz * r * 1.25, t); o.frequency.exponentialRampToValueAtTime(hz * r, t + 0.02); }
     }
   };
   voices.b808 = b808(0);
-  voices.b808d = b808(0.18);
+  voices.b808d = b808(0.08);
   // The phonk cowbell: the 808's two detuned squares (a ratio of about 1.48) through a band-pass, tuned to the note and short.
   voices.cowbell = (t, midi, dur, v, dest) => {
     const hz = midiToHz(midi);

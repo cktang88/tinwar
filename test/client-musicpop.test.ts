@@ -168,3 +168,10 @@ test('the Zombies night keeps its heartbeat tiers, and no day theme has one', ()
     for (const tier of [0, 1, 2]) assert.ok(heart.some((e) => e.inst === 'heart' && e.tier === tier), `tier ${tier}`);
   }
 });
+
+test('no 808 note sits below A1, where a sliding sine croaks rather than hums', () => {
+  for (const s of THEMES) {
+    const notes = Array.from({ length: 40 }, (_, k) => bar(s, INTRO_BARS + k).events).flat().filter((e) => e.inst === 'b808' || e.inst === 'b808d');
+    for (const e of notes) assert.ok(e.midi >= 33, `${name(s)}: an 808 at midi ${e.midi}`);
+  }
+});

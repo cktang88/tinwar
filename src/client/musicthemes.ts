@@ -10,14 +10,14 @@ const { maj, min, maj7, min7, dom7 } = Q;
 // Pitch classes.
 const C = 0, D = 2, E = 4, F = 5, G = 7, A = 9, B = 11, Eb = 3;
 
-/** Old Town: back-alley phonk at midnight: a stuttering koto hook down the cobbles, an overdriven guitar in a fight, a church bell answering, 808 glides and a half-time drop. */
+/** Old Town: back-alley phonk at midnight: a stuttering koto hook down the cobbles, an overdriven guitar in a fight, a church bell answering, a clean 808 and a half-time drop. */
 export const OLDTOWN: PopSpec = {
   id: 'oldtown', label: 'Back Alley Drift', bpm: 146, tonic: D, minor: true,
   prog: [d(0, min), d(10, maj), d(8, maj), d(7, maj)], progName: 'i-VII-VI-V',
   hook: 'D5:1 D5:1 r:1 D5:1 F5:2 A5:3 G5:1 F5:2 E5:2 r:2 | G5:2 r:1 G5:1 E5:2 C5:3 D5:1 E5:3 G5:3 | D5:1 D5:1 r:1 D5:1 F5:2 Bb5:3 A5:1 G5:2 F5:2 r:2 | C#5:2 E5:2 A5:2 Bb5:1 A5:1 G5:2 E5:2 C#5:4',
   counter: 'A5:4 F5:4 D5:8 | G5:4 E5:4 C5:8 | F5:4 D5:4 Bb4:8 | E5:4 C#5:4 A4:8',
   bass: '1:6 1:2 r:2 1:2 5~:2 8~:2', dropBass: '1:6 8~:4 1~:2 r:2 5~:2',
-  calm: 'koto', lead: 'od', counterInst: 'bell', bassInst: 'b808', bassLo: 26, dropInst: 'b808d', pad: 'choir', padLo: 57,
+  calm: 'koto', lead: 'od', counterInst: 'bell', bassInst: 'b808', bassLo: 33, dropInst: 'b808d', pad: 'choir', padLo: 57,
   kit: { kick: 'k909', snare: 'clap', hat: 'hat', perc: ['cowbell', 81], fill: ['tom', 43], crash: 'crash' },
   beat: { calmKick: '9.....9...9.....', kick: '9.....9...9..6.6', snare: '....9.......9...', calmHat: '5.5.5.5.5.5.5.5.', hat: '5.555.5.5.555.55', perc: '7..5..5.7..5..5.' },
   halfTimeDrop: true,
@@ -32,7 +32,7 @@ export const QUARRY: PopSpec = {
   hook: 'G5:3 G5:3 Bb5:2 D6:3 C6:3 Bb5:2 | Bb5:2 Bb5:2 G5:2 Eb5:2 F5:3 G5:3 r:2 | G5:3 G5:3 C6:2 Eb6:3 D6:3 C6:2 | F#5:3 A5:3 D6:2 C6:2 A5:2 F#5:2 D5:2',
   counter: 'G4:2 D5:2 Bb4:2 D5:2 G4:2 D5:2 Bb4:2 D5:2 | G4:2 Eb5:2 Bb4:2 Eb5:2 G4:2 Eb5:2 Bb4:2 Eb5:2 | G4:2 Eb5:2 C5:2 Eb5:2 G4:2 Eb5:2 C5:2 Eb5:2 | F#4:2 D5:2 A4:2 D5:2 F#4:2 D5:2 A4:2 C5:2',
   bass: '1:3 1:3 1:2 r:4 8~:2 1~:2', dropBass: '1:10 r:2 8~:2 5~:2',
-  calm: 'cowbell', lead: 'saw', leadShift: -12, counterInst: 'pluck', bassInst: 'b808d', bassLo: 31, dropInst: 'b808d', pad: 'dread', padLo: 55,
+  calm: 'cowbell', lead: 'saw', leadShift: -12, counterInst: 'pluck', bassInst: 'b808d', bassLo: 33, dropInst: 'b808d', pad: 'dread', padLo: 55,
   kit: { kick: 'k909', snare: 'clap', hat: 'hat', perc: 'ohat', fill: ['tom', 43], crash: 'crash' },
   beat: { calmKick: '9.........9.....', kick: '9.....9...9..9..', snare: '....9.......9...', calmHat: '5.5.5.5.5.5.5.5.', hat: '5555555555555555', perc: '..5.......5.....' },
   halfTimeDrop: true,
@@ -93,7 +93,7 @@ export const SUBPEN: PopSpec = {
   hook: 'C5:3 F5:3 Ab5:2 G5:4 F5:2 Eb5:2 | F5:3 Ab5:3 Db6:2 C6:4 Ab5:4 | C5:3 Eb5:3 Ab5:2 G5:4 F5:2 Eb5:2 | G5:3 Bb5:3 Eb6:2 D6:2 Bb5:2 G5:4',
   counter: 'F4:2 Ab4:2 C5:2 Ab4:2 F4:2 Ab4:2 C5:2 Ab4:2 | F4:2 Ab4:2 Db5:2 Ab4:2 F4:2 Ab4:2 Db5:2 Ab4:2 | Eb4:2 Ab4:2 C5:2 Ab4:2 Eb4:2 Ab4:2 C5:2 Ab4:2 | Eb4:2 G4:2 Bb4:2 G4:2 Eb4:2 G4:2 Bb4:2 G4:2',
   bass: '1:8 r:4 1:2 8~:2', dropBass: '1:4 1:2 r:2 8~:4 5~:2 1~:2',
-  calm: 'sonar', lead: 'acid', leadShift: -12, counterInst: 'pluck', bassInst: 'b808', bassLo: 29, dropInst: 'b808', pad: 'dread', padLo: 53,
+  calm: 'sonar', lead: 'acid', leadShift: -12, counterInst: 'pluck', bassInst: 'b808', bassLo: 33, dropInst: 'b808', pad: 'dread', padLo: 53,
   kit: { kick: 'k909', snare: 'clap', hat: 'hat', perc: 'rim', fill: ['tom', 41], crash: 'crash' },
   beat: { calmKick: '9.........9.....', kick: '9.....9...9...6.', snare: '........9.......', calmHat: '5.5.5.5.5.5.5.5.', hat: '5555555555555555', perc: '...6......6.....' },
   halfTimeDrop: true,
@@ -182,7 +182,7 @@ export const WASTELAND: PopSpec = {
   hook: 'E5:6 B5:2 A5:2 G5:2 F#5:4 | G5:6 E5:2 C5:4 E5:4 | D5:6 A5:2 G5:2 F#5:2 E5:4 | D#5:6 F#5:2 B5:4 A5:2 F#5:2',
   counter: 'E6:2 B5:2 G5:2 B5:2 E6:2 B5:2 G5:2 B5:2 | E6:2 C6:2 G5:2 C6:2 E6:2 C6:2 G5:2 C6:2 | D6:2 A5:2 F#5:2 A5:2 D6:2 A5:2 F#5:2 A5:2 | D#6:2 B5:2 F#5:2 B5:2 D#6:2 B5:2 F#5:2 A5:2',
   bass: '1:6 1:2 r:4 5~:2 1~:2', dropBass: '1:10 8~:2 1~:4',
-  calm: 'steel', lead: 'whistle', counterInst: 'cowbell', bassInst: 'b808', bassLo: 28, dropInst: 'b808d', pad: 'choir', padLo: 55,
+  calm: 'steel', lead: 'whistle', counterInst: 'cowbell', bassInst: 'b808', bassLo: 33, dropInst: 'b808d', pad: 'choir', padLo: 55,
   kit: { kick: 'k909', snare: 'clap', hat: 'hat', perc: 'rim', fill: ['tom', 41], crash: 'crash' },
   beat: { calmKick: '9.......9.......', kick: '9.....9...9.....', snare: '....9.......9...', calmHat: '5.5.5.5.5.5.5.5.', hat: '5555555555555555', perc: '..6..6....6..6..' },
   halfTimeDrop: true,
@@ -225,7 +225,7 @@ export const OUTPOST_NIGHT: PopSpec = {
   hook: 'G4:2 Bb4:2 D5:2 F#5:2 G5:4 D5:4 | Eb5:2 D5:2 C5:4 G4:4 C5:4 | G4:2 Bb4:2 Eb5:2 F5:2 G5:4 Eb5:4 | F#5:2 D5:2 A4:4 C5:2 A4:2 F#4:4',
   counter: 'D5:8 Bb4:8 | C5:8 Eb5:8 | Bb4:8 G4:8 | A4:8 F#4:8',
   bass: '1:2 1:2 1:2 1:2 1:2 1:2 1:2 1:2', dropBass: '1:8 r:2 1:2 8~:2 1~:2',
-  calm: 'bell', lead: 'organ', counterInst: 'saw', bassInst: 'synbass', bassLo: 31, dropInst: 'b808', pad: 'choir', padLo: 55,
+  calm: 'bell', lead: 'organ', counterInst: 'saw', bassInst: 'synbass', bassLo: 33, dropInst: 'b808', pad: 'choir', padLo: 55,
   kit: { kick: 'stomp', snare: 'sgate', hat: 'hat', perc: ['tom', 43], fill: ['tom', 45], crash: 'crash' },
   beat: { calmKick: '9.......9.......', kick: '9.....9.9.......', snare: '....9.......9...', calmHat: '..4...4...4...4.', hat: '4.4.4.4.4.4.4.4.', perc: '9.....6.........' },
   halfTimeDrop: true,
