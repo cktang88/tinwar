@@ -54,7 +54,9 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   // A lowered gun (a sprint, the round over) drops the rest of a burst, so it never fires on its own once the gun is back up.
   if (!gun.armed) s.burstLeft = 0;
   const bursting = s.burstLeft > 0;
-  const wantsShot = bursting || now <= s.pressUntil || (def.auto && pull.fire);
+  // A held trigger fires every gun at its own top rate: an automatic as ever, a semi-auto as fast as it cycles (as fast as the quickest
+  // clicking could), a burst gun burst after burst. A click still buffers a shot the gun is not ready for yet.
+  const wantsShot = bursting || now <= s.pressUntil || pull.fire;
   if (!gun.armed || !wantsShot || s.reloadUntil !== null || s.ammo <= 0 || now < s.nextFireAt) return false;
   if (!bursting) {
     s.pressUntil = -Infinity;

@@ -170,3 +170,15 @@ test('client prediction stops at a barrel where the server does', async () => {
   }
   assert.ok(Math.abs(pred.afterNewest!.x - p.x) < 0.5, `predicted ${pred.afterNewest!.x}, server ${p.x}`);
 });
+
+test('a held trigger fires a semi-auto at its own top rate', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 1000, 1000, { loadout: { weapon: 'pistol' } });
+  if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
+  press(w, p, { angle: 0, fire: true, shots: 1 });
+  const at: number[] = [];
+  for (let t = 0; t < 1000; t += TICK_MS) { step(w, TICK_MS); for (const e of w.events) if (e.e === 'shot' && e.owner === p.id) at.push(w.now); }
+  assert.ok(at.length >= 4, `held for a second: ${at.length} rounds`);
+  const gaps = at.slice(1).map((t, i) => t - at[i]!);
+  assert.ok(gaps.every((g) => Math.abs(g - 200) < TICK_MS + 1), `about the pistol's 200 ms apart: ${gaps.map(Math.round).join()}`);
+});

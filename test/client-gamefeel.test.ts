@@ -188,11 +188,19 @@ test('the health figure is drawn big: 40 px or more at 1080p', () => {
 
 /** Draws the world into a recording context and returns the stroke color of every stroke. */
 function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[] {
-  const strokes: unknown[] = [];
+  return worldDraw(frame, killerId).strokes;
+}
+/** The fill color of every fill and filled rect the world draws. */
+function worldFills(frame: Snapshot): unknown[] {
+  return worldDraw(frame, null).fills;
+}
+function worldDraw(frame: Snapshot, killerId: number | null): { strokes: unknown[]; fills: unknown[] } {
+  const strokes: unknown[] = [], fills: unknown[] = [];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
     get(target, prop) {
       if (prop in target) return target[prop];
       if (prop === 'stroke') return () => strokes.push(target.strokeStyle);
+      if (prop === 'fill' || prop === 'fillRect') return () => fills.push(target.fillStyle);
       if (prop === 'measureText') return () => ({ width: 0 });
       if (typeof prop === 'string' && prop.startsWith('create')) return () => ({ addColorStop() {} });
       return () => {};
@@ -202,7 +210,7 @@ function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[
   Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
   const s = { myId: 1, worldSize: 3000, walls: [], hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
   drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId });
-  return strokes;
+  return { strokes, fills };
 }
 
 test('the hunted brackets mark hunted enemies but not yourself', () => {
@@ -283,6 +291,8 @@ const lightness = (color: unknown): number => {
 test("every gun's round is a lit slug: a warm tracer, an amber body and a hot core lighter than both, with no ink outline", () => {
   worldStrokes(snap());
   for (const gun of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
+    // An exploding round is a shell or a rocket instead (the next test).
+    if (GUNS[gun].blast) continue;
     // The first frame with a gun paints its cached image; measure from the second.
     worldStrokes(snap({ players: [player(2, { gun })] }));
     const base = worldStrokes(snap({ players: [player(2, { gun })] }));
@@ -296,6 +306,20 @@ test("every gun's round is a lit slug: a warm tracer, an amber body and a hot co
     assert.ok(round.includes('#fff6c8') && lightness('#fff6c8') > lightness('#ffc247'), `${gun} has a hot core`);
     assert.ok(!round.includes(INK), `${gun}'s round is light, so no ink outline`);
   }
+});
+
+test('an exploding round flies as a shell or a rocket, not a lit slug: Artillery a rocket with a red nose, the Grenadier a brass-cased shell', () => {
+  worldStrokes(snap());
+  const look = (gun: 'artillery' | 'grenadier') => {
+    worldStrokes(snap({ players: [player(2, { gun })] }));
+    const frame = snap({ players: [player(2, { gun })] });
+    frame.bullets = [{ id: 9, x: 140, y: 0, vx: 1500, vy: 0, owner: 2, gun }];
+    return { strokes: worldStrokes(frame), fills: worldFills(frame) };
+  };
+  const rocket = look('artillery'), shell = look('grenadier');
+  for (const r of [rocket, shell]) assert.ok(!r.strokes.includes('#ffc247'), 'no amber slug body');
+  assert.ok(rocket.fills.includes('#c4423a') && rocket.fills.includes('#aeb5bd'), 'a steel rocket with a red nose');
+  assert.ok(shell.fills.includes('#e0b84e') && shell.fills.includes('#3f4a2c'), 'a brass case and an olive warhead');
 });
 
 test('a heavier round is fatter: a pistol round is modest, a slug or a sniper round is the biggest on the field', () => {

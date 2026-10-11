@@ -549,37 +549,100 @@ function drawShells(ctx: CanvasRenderingContext2D, now: number, view: View) {
 // ---------------------------------------------------------------- explosive rounds in flight
 
 const TRAIL_PUFFS = 6;
-/** An exploding round (Boom Slug, Grenadier, Artillery) trails a thin smoke tail and a few falling embers; the round itself is render.ts's lit slug. */
-export function drawExplosiveRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], now: number) {
+/**
+ * An exploding round in flight drawn as what it is (render.ts draws no lit slug for one): Artillery's a rocket on an exhaust flame, the
+ * Grenadier's and Boom Slug's a brass-cased 40 mm shell, each trailing a thin wisp of pale smoke.
+ */
+export function drawExplosiveRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], now: number, night = false) {
   let any = false;
   for (const b of bullets) {
     const blast = b.gun ? GUNS[b.gun].blast : undefined;
     if (!blast) continue;
-    const sp = Math.hypot(b.vx, b.vy) || 1, ux = b.vx / sp, uy = b.vy / sp, size = 2.4 + blast.radius / 32;
-    for (let i = 0; i < TRAIL_PUFFS; i++) {
-      const d = 9 + i * (7 + size * 1.1), wob = Math.sin(now / 80 + i * 1.7 + b.id) * 1.6, r = size * (0.5 + 0.13 * i);
-      const x = b.x - ux * d - uy * wob, y = b.y - uy * d + ux * wob - i * 0.8, fade = 1 - i / (TRAIL_PUFFS + 1);
-      // Each puff has its own alpha, so they are drawn one by one (six per round at most): shade, body, lit cap.
-      one[0] = x + LIGHT.x * r * 0.1; one[1] = y + LIGHT.y * r * 0.1; one[2] = r;
-      discs(ctx, '#4a4540', 0.34 * fade, one);
-      one[0] = x; one[1] = y; one[2] = r * 0.84;
-      discs(ctx, '#6c665f', 0.34 * fade, one);
-      one[0] = x - LIGHT.x * r * 0.28; one[1] = y - LIGHT.y * r * 0.28; one[2] = r * 0.48;
-      discs(ctx, '#a39c91', 0.3 * fade, one);
-    }
-    // Embers shaken off the tail and falling behind it.
-    ctx.fillStyle = '#ffb347';
-    ctx.globalAlpha = 0.9;
-    ctx.beginPath();
-    for (let i = 0; i < 3; i++) {
-      const ph = (now / 220 + i / 3 + b.id * 0.37) % 1, d = 6 + ph * 34, off = (i - 1) * 3.2 * ph;
-      ctx.moveTo(b.x - ux * d - uy * off + 1.6 * (1 - ph), b.y - uy * d + ux * off + ph * ph * 6);
-      ctx.arc(b.x - ux * d - uy * off, b.y - uy * d + ux * off + ph * ph * 6, 1.6 * (1 - ph) + 0.4, 0, TAU);
-    }
-    ctx.fill();
     any = true;
+    const sp = Math.hypot(b.vx, b.vy) || 1, ux = b.vx / sp, uy = b.vy / sp;
+    const rocket = blast.radius >= ROCKET_RADIUS;
+    // A thin trail of pale smoke, each puff widening and fading behind it: the projectile, not its smoke, is what reads.
+    const puffs = rocket ? TRAIL_PUFFS : 4, start = rocket ? 22 : 9, gap = rocket ? 9 : 6;
+    for (let i = 0; i < puffs; i++) {
+      const d = start + i * gap, wob = Math.sin(now / 80 + i * 1.7 + b.id) * (0.6 + i * 0.35), r = (rocket ? 2.6 : 1.8) + i * (rocket ? 1.1 : 0.7);
+      one[0] = b.x - ux * d - uy * wob; one[1] = b.y - uy * d + ux * wob - i * 0.6; one[2] = r;
+      discs(ctx, '#d9d4cc', (rocket ? 0.42 : 0.3) * (1 - i / puffs), one);
+    }
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.translate(b.x, b.y);
+    ctx.rotate(Math.atan2(uy, ux));
+    if (rocket) drawRocket(ctx, now, b.id, night); else drawShell(ctx);
+    ctx.restore();
   }
   if (any) ctx.globalAlpha = 1;
+}
+
+/** A blast this wide or wider is a rocket (Artillery); anything smaller is a launched 40 mm shell (Grenadier, Boom Slug). */
+const ROCKET_RADIUS = 110;
+
+/** A rocket pointing along +x: an exhaust flame flickering out of its tail, a steel body with a red nose cone, and two tail fins. */
+function drawRocket(ctx: CanvasRenderingContext2D, now: number, id: number, night: boolean) {
+  const len = 24, w = 6, flick = 0.8 + 0.2 * Math.sin(now / 30 + id * 3.1);
+  const prev = ctx.globalCompositeOperation;
+  if (night) ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.9;
+  for (const [color, l, h] of [['#ff8a2a', 18, 4.6], ['#ffd27a', 11, 2.8], ['#fff6c8', 6, 1.5]] as const) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-len / 2, -h);
+    ctx.quadraticCurveTo(-len / 2 - l * flick * 0.6, -h * 0.6, -len / 2 - l * flick, 0);
+    ctx.quadraticCurveTo(-len / 2 - l * flick * 0.6, h * 0.6, -len / 2, h);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = prev;
+  ctx.globalAlpha = 1;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = INK;
+  // Fins, then the body over them.
+  ctx.fillStyle = '#5b636e';
+  ctx.beginPath();
+  ctx.moveTo(-len / 2 + 6, -w / 2); ctx.lineTo(-len / 2 - 1, -w / 2 - 4.5); ctx.lineTo(-len / 2, -w / 2);
+  ctx.moveTo(-len / 2 + 6, w / 2); ctx.lineTo(-len / 2 - 1, w / 2 + 4.5); ctx.lineTo(-len / 2, w / 2);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#aeb5bd';
+  ctx.beginPath();
+  ctx.rect(-len / 2, -w / 2, len - 7, w);
+  ctx.fill(); ctx.stroke();
+  // A lit stripe down its top, and the red nose.
+  ctx.fillStyle = '#e4e8ec';
+  ctx.fillRect(-len / 2 + 1.5, -w / 2 + 1, len - 10, 1.4);
+  ctx.fillStyle = '#c4423a';
+  ctx.beginPath();
+  ctx.moveTo(len / 2 - 7, -w / 2); ctx.quadraticCurveTo(len / 2 - 1, -w / 2 + 0.5, len / 2 + 1, 0); ctx.quadraticCurveTo(len / 2 - 1, w / 2 - 0.5, len / 2 - 7, w / 2);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+}
+
+/** A 40 mm shell pointing along +x: a short brass case behind an olive, round-nosed warhead with a copper driving band. */
+function drawShell(ctx: CanvasRenderingContext2D) {
+  const len = 13, w = 7;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = INK;
+  ctx.fillStyle = '#e0b84e';
+  ctx.beginPath();
+  ctx.rect(-len / 2, -w / 2, 5, w);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#3f4a2c';
+  ctx.beginPath();
+  ctx.moveTo(-len / 2 + 5, -w / 2);
+  ctx.lineTo(len / 2 - 3.5, -w / 2);
+  ctx.arc(len / 2 - 3.5, 0, w / 2, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(-len / 2 + 5, w / 2);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#b8743a';
+  ctx.fillRect(-len / 2 + 5, -w / 2 + 0.8, 1.6, w - 1.6);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+  ctx.fillRect(-len / 2 + 7, -w / 2 + 1.1, 3.5, 1.1);
 }
 
 // ---------------------------------------------------------------- knife slashes

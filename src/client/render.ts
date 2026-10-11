@@ -243,7 +243,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawZombieCorpses(ctx, field.list.filter((c) => inView(view, c.x - R * 4, c.y - R * 4, R * 8, R * 8)), field.alpha, now, k);
 
   drawRounds(ctx, snap.bullets, dark > 0.5);
-  drawExplosiveRounds(ctx, snap.bullets, now);
+  drawExplosiveRounds(ctx, snap.bullets, now, dark > 0.5);
 
   for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId, now, k);
   drawGunGlints(ctx, s.corpses, now, (x, y) => inView(view, x - R, y - R, R * 2, R * 2));
@@ -365,6 +365,8 @@ function drawRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[
   ctx.lineCap = 'round';
   const groups = new Map<GunId | 'none', { look: RoundLook; bullets: BulletView[] }>();
   for (const b of bullets) {
+    // An exploding round is a shell or a rocket (blastdraw.ts `drawExplosiveRounds`), not a lit slug.
+    if (b.gun && GUNS[b.gun].blast) continue;
     const key = b.gun ?? 'none';
     const group = groups.get(key);
     if (group) group.bullets.push(b);
