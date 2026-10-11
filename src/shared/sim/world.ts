@@ -607,16 +607,32 @@ function defendedPoints(solids: readonly Rect[], core: Center, size: number): Po
 }
 
 /**
- * Where `id` comes back beside a standing friend: a clear spot a couple of body widths from one of them, picked from the world's rng.
- * Null with no friend standing, and in Last Squad, which brings everyone back beside their own squad.
+ * Where `id` comes back beside a standing friend (a respawn, or a Last Standing redeploy): a clear spot a couple of body widths from one of
+ * them, picked from the world's rng. Null with no friend standing.
  */
 export function friendSpawn(w: World, id: number): Pose | null {
-  if (w.royale) return null;
   // In a team mode only a friend on your own side: one who crossed to another friend's team is among your enemies now.
   const team = w.players.get(id)?.team ?? null;
   const standing = friendsOf(w, id).map((f) => w.players.get(f)).filter((f): f is Player => f?.life.k === 'alive' && (team === null || f.team === team));
   if (!standing.length) return null;
-  const friend = standing[Math.floor(rand(w) * standing.length)]!;
+  return besideFriend(w, standing[Math.floor(rand(w) * standing.length)]!);
+}
+
+/**
+ * A new friendship brings `mover` straight to `friend`'s side, both standing: a clear spot beside them, with any dash or shove dropped. The
+ * history the server rewinds shots through is left alone, so a lagged shot still meets them where they were.
+ */
+export function joinFriend(w: World, mover: Player, friend: Player): void {
+  if (mover.life.k !== 'alive' || friend.life.k !== 'alive') return;
+  const at = besideFriend(w, friend);
+  mover.x = at.x;
+  mover.y = at.y;
+  mover.life.dash = null;
+  mover.life.knock = null;
+}
+
+/** A clear spot a couple of body widths from `friend`, picked from the world's rng. */
+export function besideFriend(w: World, friend: Player): Pose {
   const { size } = MAPS[w.map];
   const solids = solidRects(w), r = WORLD.playerRadius + SPAWN_CLEARANCE;
   const turn = rand(w) * Math.PI * 2;

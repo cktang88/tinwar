@@ -374,6 +374,8 @@ The platinum Night Owl, Held the Line, Bricklayer and Titan Toppler unlock the N
 
 ### Last Standing
 
+**Friends.** Click a person's name on the scoreboard and pick Add friend; they get an invite plate to accept or decline (it lapses after 20 s). Only people can be friends, never bots, and a friendship lasts while you are both in the room. Friends cannot hurt each other by any means, always show on each other's minimap, and in TDM and DOM play on one team (whoever sent the invite crosses over). The moment an invite is accepted, whoever sent it is brought straight to their new friend's side, in every mode, and a respawn (or a Last Standing redeploy) lands beside a standing friend.
+
 Last Standing, the BR room, is a battle royale where every player is on their own: eighteen of them, people and bots, everyone an enemy except your friends (see Friends). A match plays one of the versus maps, the next map in the rotation each time, and everyone drops in spread out, as far from each other as the map allows.
 
 **You start light.** Every life starts with your class gun at level 1 and **no armor**, whatever your loadout says. Power is out on the map:

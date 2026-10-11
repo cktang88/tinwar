@@ -11,7 +11,7 @@ import { interestLook, snapshotFor, wallViews } from '../shared/sim/snapshot.ts'
 import { holdLook, NO_LOOK, type LookSides } from '../shared/lookahead.ts';
 import { addScore, choosePick } from '../shared/sim/stats.ts';
 import { MODES, TEAM_NAME } from '../shared/sim/modes.ts';
-import { areFriends, befriend, createWorld, friendsOf, rand, unfriend, type World } from '../shared/sim/world.ts';
+import { areFriends, befriend, createWorld, friendsOf, joinFriend, rand, unfriend, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import { botCosmetics, XP } from '../shared/cosmetics.ts';
 import type { Accounts } from './accounts.ts';
@@ -476,6 +476,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         if (!them) return;
         befriend(world, id, other);
         sameSide(me, them);
+        // Whoever asked comes straight to their new friend's side, in every mode.
+        joinFriend(world, them, me);
         sendFriends(id);
         sendFriends(other);
         friendNote(id, `You and ${them.name} are friends now.`);

@@ -6,7 +6,7 @@ import { DOT_SHARE, dotPulses } from './dot.ts';
 import { circleBlocked, dist2, rectsOverlap } from './movement.ts';
 import { abilityOf, addScore, effectiveStats, freshLife, isHunted, levelForScore, reopenUselessAttachment, resetProgress } from './stats.ts';
 import { crackSupply } from './airdrop.ts';
-import { coverRects, crateRect, freshFeats, newId, rand, solidRects, type Cache, type Player, type Pose, type Ring, type Royale, type RoyaleStats, type Tower, type World } from './world.ts';
+import { coverRects, crateRect, freshFeats, friendSpawn, newId, rand, solidRects, type Cache, type Player, type Pose, type Ring, type Royale, type RoyaleStats, type Tower, type World } from './world.ts';
 
 /**
  * Last Standing: a battle royale where every player is on their own (friends excepted: they never hurt each other). Everyone drops in
@@ -227,7 +227,8 @@ function redeploy(w: World, r: Royale) {
     p.lifeKills = 0;
     p.feats = freshFeats();
     p.taggedUntil = 0;
-    const spot = soloSpawn(w, r, p.id);
+    // Beside a standing friend if they have one, else a spot of their own.
+    const spot = friendSpawn(w, p.id) ?? soloSpawn(w, r, p.id);
     p.x = spot.x;
     p.y = spot.y;
     p.life = freshLife(p, w.now);

@@ -202,3 +202,38 @@ test('in a room: an invite left unanswered lapses, so it can be sent again; one 
     a.close(); b.close(); c.close();
   }
 });
+
+test('accepting an invite brings whoever sent it straight to their new friend, in every mode; a redeploy lands beside a standing friend', async () => {
+  const { createRoom } = await import('../src/server/room.ts');
+  const { fakeSocket, PISTOL } = await import('./helpers.ts');
+  const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as import('../src/server/accounts.ts').Accounts;
+  for (const mode of ['FFA', 'BR'] as const) {
+    const room = createRoom(mode.toLowerCase(), mode, 1, accounts);
+    const a = fakeSocket(), b = fakeSocket();
+    try {
+      for (const s of [a, b]) room.connect(s.socket);
+      a.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5 });
+      b.send({ t: 'join', name: 'Ben', loadout: PISTOL, aspect: 1.5 });
+      const idOf = (s: ReturnType<typeof fakeSocket>) => (s.sent.find((m) => m.t === 'welcome') as { id: number }).id;
+      const pa = room.world.players.get(idOf(a))!, pb = room.world.players.get(idOf(b))!;
+      pa.x = 600; pa.y = 600; pb.x = 4000; pb.y = 4000;
+      a.send({ t: 'friend', a: 'invite', id: pb.id });
+      b.send({ t: 'friend', a: 'accept', id: pa.id });
+      assert.ok(areFriends(room.world, pa.id, pb.id), mode);
+      assert.ok(Math.hypot(pa.x - pb.x, pa.y - pb.y) < WORLD.playerRadius * 4, `${mode}: Ann came to Ben (${Math.round(Math.hypot(pa.x - pb.x, pa.y - pb.y))} px apart)`);
+    } finally {
+      room.close(); a.close(); b.close();
+    }
+  }
+});
+
+test('a Last Standing redeploy lands beside a standing friend', () => {
+  const w = emptyWorld('BR');
+  const a = spawnAt(w, 600, 600, { team: null }), b = spawnAt(w, 3000, 3000, { team: null });
+  befriend(w, a.id, b.id);
+  a.life = { k: 'dead', respawnAt: Infinity };
+  w.royale!.redeployAt.set(a.id, w.now);
+  run(w, 100);
+  assert.equal(a.life.k, 'alive', 'redeployed');
+  assert.ok(Math.hypot(a.x - b.x, a.y - b.y) < WORLD.playerRadius * 4, `beside Ben (${Math.round(Math.hypot(a.x - b.x, a.y - b.y))} px)`);
+});
