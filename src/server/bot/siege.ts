@@ -298,7 +298,9 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
-  const humansBank = mem.siegeBuild !== 'always' && snap.players.some((p) => p.kind === 'human' && p.id !== me.id);
+  // Whether a human is in the squad comes from the roster (the leaderboard, which every squadmate sees), not from who is in view: a human at the edge
+  // of the bot's view would otherwise flip it every step between walking to its build spot and back to its post.
+  const humansBank = mem.siegeBuild !== 'always' && (snap.leaderboard ?? []).some((r) => r.human && r.id !== me.id);
   const spends = mem.siegeBuild !== 'never';
   const spare = spends && (!humansBank || run.scrap > HUMANS_RESERVE);
   const guarded = (b: BuildingView) => Math.hypot((b.cx + 0.5) * ZOM.cell - run.core.x, (b.cy + 0.5) * ZOM.cell - run.core.y) <= GUARD_RADIUS;

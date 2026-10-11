@@ -249,3 +249,29 @@ test('a squad bot standing where a human builds steps off the cell within a seco
   play(w, [bot], 3000, () => false);
   assert.ok(Math.hypot(bot.x - at.x, bot.y - at.y) > ZOM.cell / 2 + WORLD.playerRadius - 1);
 });
+
+test('a squad bot with a human at the edge of its view keeps one mind about the bank, not flipping between its build spot and its post', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  w.run!.phase = { k: 'day', endsAt: Infinity };
+  w.run!.scrap = 500;
+  const bot = spawnAt(w, CORE.x - 250, CORE.y + 40);
+  // Off to the north-west, where the bot's walk round the core takes it in and out of view of the human (who never moves).
+  const human = spawnAt(w, 1100, 1100, { kind: 'human' });
+  const rand = seeded(3);
+  let mem = newBotMemory(rand);
+  const goals: string[] = [];
+  let seen = 0, unseen = 0;
+  for (let t = 0; t < 8000; t += TICK_MS) {
+    const snap = snapshotFor(w, bot.id);
+    if (snap.players.some((p) => p.id === human.id)) seen++; else unseen++;
+    const d = botThink(snap, arenaFor(w), mem, rand);
+    mem = d.mem;
+    setInput(w, bot.id, w.tick, d.input);
+    step(w, TICK_MS);
+    const to = mem.motor.siegeStep?.to;
+    const key = to ? `${Math.round(to.x / 40)},${Math.round(to.y / 40)}` : '';
+    if (t >= 2000 && key !== goals[goals.length - 1]) goals.push(key);
+  }
+  assert.ok(seen > 0 && unseen > 0, `the human was at the edge of the bot's view (in view ${seen} ticks, out of it ${unseen})`);
+  assert.ok(goals.length <= 2, `the bot changed its mind ${goals.length - 1} times in 6 s: ${goals.slice(0, 8).join(' → ')}`);
+});
