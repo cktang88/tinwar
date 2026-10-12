@@ -150,7 +150,8 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   // Sent back to back, so the second lands inside the chat interval however slowly a loaded machine delivers the first's echo.
   send(tdm, { t: 'chat', text: '  hello team  ' });
   send(tdm, { t: 'chat', text: 'spam' });
-  const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat', 5000, 'chat echo');
+  // Bots chat now and then too (bot/social.ts): wait for this player's own line.
+  const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat' && m.from === 'Tester', 5000, 'chat echo');
   assert.equal(chat.from, 'Tester');
   assert.equal(chat.text, 'hello team');
   assert.ok(chat.team === 'red' || chat.team === 'blue', 'team echoed in TDM');

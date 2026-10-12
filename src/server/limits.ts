@@ -1,5 +1,8 @@
 import { WORLD } from '../shared/defs.ts';
 
+/** The least time between one player's chat lines (a bot's too: see bot/social.ts). */
+export const CHAT_INTERVAL_MS = 1000;
+
 export const LIMITS = {
   humansPerRoom: 16,
   minPlayers: WORLD.minPlayers as number,

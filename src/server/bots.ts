@@ -11,6 +11,7 @@ import { supplyFor } from './bot/supplies.ts';
 import { isOpen } from './bot/nav.ts';
 import { readTactics, type Tactics } from './bot/tactics.ts';
 import { DEAD_ZONE, siegeThink, type SiegeMemory } from './bot/siege.ts';
+import { spareTruce, type SocialMem } from './bot/social.ts';
 
 export type BotMemory = {
   persona: PersonalityId;
@@ -43,6 +44,8 @@ export type BotMemory = {
   settleFacing?: number;
   /** The open pick it is mulling over, and the server time it takes it (see `pickDelayMs`). */
   pickWait?: { level: number; at: number };
+  /** What it says and does for no reason, and whom it holds fire on (see bot/social.ts); only rooms run that layer. */
+  social?: SocialMem;
 };
 
 /**
@@ -173,7 +176,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   const perceived = perceive(snap, arena, me, mem.awareness);
   const { awareness } = perceived;
   // What it read off each enemy it saw, whom it shoots first, and where it pre-aims (see tactics.ts); a fresh life starts a fresh read.
-  const { view, tactics } = readTactics(mem.intent ? mem.tactics ?? null : null, perceived.view, awareness);
+  const { view, tactics } = readTactics(mem.intent ? mem.tactics ?? null : null, spareTruce(mem, perceived.view), awareness);
   const skill = skillKnobs(mem.skill);
   // Its fear right now (a rookie's grows under pressure; a veteran has none): see `FEAR`.
   const fear = fearNow(skill, stressOf(snap.self.suppression, (snap.tick - awareness.hitTick) * BOT_TICK_MS, view.hpFrac));

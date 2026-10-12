@@ -22,16 +22,17 @@ import { botName, botSeats, forgetMatch, newBotMemory, randomLoadout, spawnSettl
 import { LOBBY, refillMs, sessionMs, stayers } from './lobby.ts';
 import { botBadge, noteBotSeen } from './botprofile.ts';
 import { thinkBots } from './bot/tick.ts';
+import { makeSocial, noteHumanChat, noteHumanEmote, socialTick } from './bot/social.ts';
+import type { LlmChat } from './bot/llmchat.ts';
 import { newZomWatch, settleLeaver, watchZombies, type ZomDelta } from './zomcareer.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
-import { LIMITS, makeFaultLog, makeTokenBucket, type Limits, type WindowGate } from './limits.ts';
+import { CHAT_INTERVAL_MS, LIMITS, makeFaultLog, makeTokenBucket, type Limits, type WindowGate } from './limits.ts';
 import { uniqueName } from './names.ts';
-import { EMOTE_INTERVAL_MS, EMOTE_RANGE } from '../shared/emotes.ts';
+import { EMOTE_INTERVAL_MS, EMOTE_RANGE, type EmoteId } from '../shared/emotes.ts';
 import { RADIO_INTERVAL_MS, RADIO_MODES, type StationId } from '../shared/radio.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
-const CHAT_INTERVAL_MS = 1000;
 /** The least time between one player's friend invites. */
 const FRIEND_INVITE_MS = 1500;
 const RTT_SAMPLES = 5;
@@ -73,7 +74,7 @@ export type RoomNetStats = { id: string; mode: ModeId; humans: number; players: 
 /** A kill event names the gun by its label; its class credits the weapon mastery tracks. */
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((g) => [GUNS[g].name, g]));
 
-export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES, newProfiles: WindowGate | null = null): Room {
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES, newProfiles: WindowGate | null = null, llmChat: LlmChat | null = null): Room {
   // SKIRMISH_MAP=geo-test starts the versus rooms on the geometry test range (dev only; it is in no rotation).
   const devMap = process.env.SKIRMISH_MAP;
   const world = createWorld(mode, seed, (devMap && devMap in MAPS && (mode === 'FFA' || mode === 'TDM' || mode === 'DOM') ? devMap : rotationMap(mode, seed, 0)) as MapId);
@@ -96,6 +97,50 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   /** A practice room (the range) is one player's own: nothing in it counts toward an account, a profile, XP or a medal, and no bots join. */
   const practice = isPractice(mode);
   const humanCap = practice ? 1 : mode === 'ZOM' ? ZOM.squadSize : limits.humansPerRoom;
+
+  /** An emote from `p`: to the players near them and their team (a person's and a bot's alike). */
+  function sendEmote(p: Player, id: EmoteId) {
+    for (const c of joined()) {
+      const q = world.players.get(c.playerId);
+      const near = q && Math.hypot(q.x - p.x, q.y - p.y) <= EMOTE_RANGE;
+      if (c.playerId === p.id || near || (p.team !== null && q?.team === p.team)) send(c.ws, { t: 'emote', pid: p.id, id });
+    }
+  }
+  const sendChat = (p: Player, text: string) => { for (const c of joined()) send(c.ws, { t: 'chat', from: p.name, text, team: p.team }); };
+
+  /**
+   * Bots' chat and emotes (bot/social.ts) go out the way people's do, under the same limits (timed by the world's clock, as the bots are)
+   * and through the same filter: a line the filter would mask is not sent at all. With an LLM writer (bot/llmchat.ts, only when the
+   * server has a key) a chatty bot's line now and then comes from it; without one, every line is the phrase bank's.
+   */
+  const isBotName = (name: string) => { for (const q of world.players.values()) if (q.name === name) return q.kind === 'bot'; return false; };
+  const social = makeSocial({ moderator, lines: llmChat?.forRoom(id, isBotName) });
+  const botSaid = new Map<number, { chat: number; emote: number }>();
+  const botGate = (id: number) => {
+    let g = botSaid.get(id);
+    if (!g) {
+      // Bots come and go with every lobby: the gates of those gone are let go.
+      if (botSaid.size > 64) for (const k of botSaid.keys()) if (!world.players.has(k)) botSaid.delete(k);
+      botSaid.set(id, (g = { chat: -Infinity, emote: -Infinity }));
+    }
+    return g;
+  };
+  const botOut = {
+    emote(id: number, e: EmoteId) {
+      const p = world.players.get(id), g = botGate(id);
+      if (!p || p.life.k !== 'alive' || world.now - g.emote < EMOTE_INTERVAL_MS) return false;
+      g.emote = world.now;
+      sendEmote(p, e);
+      return true;
+    },
+    chat(id: number, text: string) {
+      const p = world.players.get(id), g = botGate(id);
+      if (!p || world.now - g.chat < CHAT_INTERVAL_MS || !moderator.isClean(text) || cheatFor(text)) return false;
+      g.chat = world.now;
+      sendChat(p, moderator.mask(text));
+      return true;
+    },
+  };
 
   function botTargets(): [Team, number][] {
     if (practice) return [];
@@ -505,11 +550,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         // Too fast, or from a body that is not standing: dropped without a word, so spamming gets nothing back.
         if (!p || p.life.k !== 'alive' || now - client.lastEmoteAt < EMOTE_INTERVAL_MS) return;
         client.lastEmoteAt = now;
-        for (const c of joined()) {
-          const q = world.players.get(c.playerId);
-          const near = q && Math.hypot(q.x - p.x, q.y - p.y) <= EMOTE_RANGE;
-          if (c === client || near || (p.team !== null && q?.team === p.team)) send(c.ws, { t: 'emote', pid: p.id, id: msg.id });
-        }
+        sendEmote(p, msg.id);
+        if (!practice) noteHumanEmote(social, p.id, msg.id);
         return;
       }
       case 'radio': {
@@ -533,7 +575,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         const cheat = cheatFor(msg.text);
         if (cheat) { send(client.ws, { t: 'chat', from: '', text: applyCheat(p, cheat), team: null }); return; }
         const text = moderator.mask(msg.text);
-        for (const c of joined()) send(c.ws, { t: 'chat', from: p.name, text, team: p.team });
+        sendChat(p, text);
+        if (!practice) noteHumanChat(social, p.id, text);
         return;
       }
     }
@@ -660,6 +703,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       applyInputs();
       const t0 = performance.now();
       thinkBots(world, bots, botRand);
+      if (!practice) socialTick(social, world, bots, botOut);
       const t1 = performance.now();
       step(world, TICK_MS);
       net.botMs += t1 - t0; net.stepMs += performance.now() - t1;

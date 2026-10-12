@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import type { Accounts } from '../src/server/accounts.ts';
 import { navStats } from '../src/server/bot/nav.ts';
 import { layoutCount } from '../src/server/bot/arena.ts';
@@ -11,12 +13,21 @@ const TICKS_PER_MAP = 450;
 const MAPS_PLAYED = 7;
 
 /**
+ * A full collection before each count of live nav grids, so the count is what the room still holds, not every grid built since the
+ * test began (a grid only made once, a bot's path memo or a door-leaf copy, stays reachable through its weak ref until the job that
+ * made it ends and a collection runs). Without it the count follows how much happened (how many crates broke, how many doors swung).
+ */
+setFlagsFromString('--expose-gc');
+const collect = runInNewContext('gc') as () => void;
+const settle = async () => { await new Promise((r) => setImmediate(r)); collect(); };
+
+/**
  * A long session in miniature: one human and a full room of bots fight through seven map changes. What a room holds (the world's
  * collections, each player's, the bots' memories, the bot nav grids and their path memos) must come back to the size it had after
  * the first map: a round end or a map change that left something behind would show here as growth that a real server, rotating
  * maps every ten minutes for days, would turn into lag.
  */
-test('a room rotating through maps holds no more after seven maps than after one', () => {
+test('a room rotating through maps holds no more after seven maps than after one', async () => {
   const room = createRoom('ffa', 'FFA', 1000, accounts);
   const ws = fakeSocket();
   room.connect(ws.socket);
@@ -30,6 +41,7 @@ test('a room rotating through maps holds no more after seven maps than after one
       room.tick();
       if (t % 60 === 0) ws.sent.length = 0;
     }
+    await settle();
     const stats = room.netStats() as ReturnType<typeof room.netStats> & { sizes: Record<string, number>; botMemKb: number };
     const nav = navStats();
     maps.add(room.world.map);
