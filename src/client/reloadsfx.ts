@@ -43,6 +43,7 @@ export function heftOf(gun: GunId): { pitch: number; gain: number } {
 
 const THEME_FLOOR: Record<ThemeId, Surface> = {
   market: 'concrete', museum: 'wood', subpen: 'metal', park: 'grass', summit: 'snow', railyard: 'dirt', harbor: 'concrete', embassy: 'wood', airbase: 'concrete', wasteland: 'dirt',
+  quarry: 'dirt',
 };
 let probe: ((x: number, y: number) => Surface | null) | null = null;
 /** A map or theme that knows its floor to the tile (a wooden dock in a concrete harbor) registers it here; null falls back to the map's own floor. */

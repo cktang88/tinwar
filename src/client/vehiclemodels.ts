@@ -6,6 +6,7 @@ import type { Model } from './vehiclemesh.ts';
 import { c130, fighter, heli } from './vehicleair.ts';
 import { boxcar, carriage, dieselLoco, loco } from './vehiclerail.ts';
 import { containerShip, patrolBoat, submarine, trawler, tugboat } from './vehiclesea.ts';
+import { dumpTruck, excavator } from './vehiclequarry.ts';
 import { airlinerFront, airlinerTail, bagCart, bowser, boxTruck, gondola, reefer, van, crashTender, limo, pickup, schoolBus, sedan, snowcat, snowmobile, suv, tug } from './vehicleland.ts';
 
 const BUILDERS = {
@@ -38,6 +39,8 @@ const BUILDERS = {
   boxTruck,
   van,
   reefer,
+  dumpTruck,
+  excavator,
 } satisfies Record<string, (livery?: string, variant?: string, number?: string) => Model>;
 
 export type VehicleKind = keyof typeof BUILDERS;
