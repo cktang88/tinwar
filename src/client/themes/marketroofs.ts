@@ -202,7 +202,7 @@ function arcade(g: G, b: B, d: District, rand: () => number) {
 /** The produce market's canopy: broad stripes of canvas in the district's awning colours, sagging between the poles. */
 function canopy(g: G, b: B, d: District) {
   const sw = 50;
-  for (let x = b.x, i = 0; x < b.x + b.w; x += sw, i++) { g.fillStyle = d.awn[i % 2]!; g.fillRect(x, b.y, Math.min(sw, b.x + b.w - x), b.h); }
+  for (let x = b.x, i = 0; x < b.x + b.w; x += sw, i++) { g.fillStyle = shade(d.awn[i % 2]!, -0.32); g.fillRect(x, b.y, Math.min(sw, b.x + b.w - x), b.h); }
   // sag: lighter where the canvas rises over the poles, darker between
   for (let y = b.y, j = 0; y < b.y + b.h; y += 150, j++) {
     const gr = g.createLinearGradient(0, y, 0, y + 150);
