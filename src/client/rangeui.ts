@@ -62,8 +62,11 @@ const ARMOR_BLURB = (id: ArmorId) => (ARMORS[id].blockFrac ? `+${Math.round(ARMO
 const fmt = (n: number, digits = 0) => n.toFixed(digits);
 
 export function createRangeUi(hud: HTMLElement, send: Send, click: () => void) {
-  const open = plate('range-open', el('b', '', 'Loadout'), el('kbd', '', 'L'));
+  // Says what it does: L switches the gun (and armor and perks). It pulses until the panel has been opened once, so nobody misses it.
+  const open = plate('range-open', el('b', '', 'Switch weapon'), el('kbd', '', 'L'));
   open.id = 'range-open';
+  open.title = 'Press L to switch weapons, armor and perks';
+  open.classList.add('nudge');
   const readout = el('aside', 'range-hud');
   readout.id = 'range-hud';
   const panel = el('section', 'range-panel');
@@ -161,6 +164,7 @@ export function createRangeUi(hud: HTMLElement, send: Send, click: () => void) {
     isOpen = on;
     panel.hidden = !on;
     open.ariaPressed = String(on);
+    if (on) open.classList.remove('nudge');
     if (on) paint();
   }
   open.addEventListener('click', () => { click(); toggle(); });

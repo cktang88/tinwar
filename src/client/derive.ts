@@ -82,7 +82,7 @@ export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): {
     case 'BR':
       return { banner: 'Last Standing: everyone for themselves, loot caches and be the last one standing', line: 'BR · solo · last one standing' };
     case 'RNG':
-      return { banner: 'Shooting range: practice on the targets, press L to change your loadout', line: 'RNG · practice · nothing here counts toward your record' };
+      return { banner: 'Shooting range: press L to switch weapons, armor and perks', line: 'RNG · practice · nothing here counts toward your record' };
   }
 }
 
