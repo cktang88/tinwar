@@ -14,3 +14,4 @@ import './harborlife.ts';
 import './quarry.ts';
 import './plaza.ts';
 import './range.ts';
+import './outpost.ts';

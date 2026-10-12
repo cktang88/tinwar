@@ -68,17 +68,17 @@ test('without a 2D OffscreenCanvas, or when the worker fails, the ground bakes o
 test('the worker\'s floor plan comes back with its bitmap, so the page never plans a big map\'s decor in a frame', async () => {
   const { MAPS } = await import('../src/shared/maps.ts');
   const { floorPlan, floorPlanOf, portablePlan } = await import('../src/client/floor.ts');
-  const made = floorPlan(MAPS.outpost);
-  assert.ok(made.decor, 'the Outpost has decor to plan (the dear part; themed maps such as Old Town paint their own)');
+  const made = floorPlan(MAPS['geo-test']);
+  assert.ok(made.decor, 'the Range has decor to plan (the dear part; themed maps such as Old Town and the Outpost paint their own)');
   const wk = fakeWorker();
   const ahead = createGroundAhead({ spawn: () => wk, sliced, offer: () => () => {} });
-  ahead.prepare(peekWorld({ seed: 1, map: 'outpost', bots: 8 }));
+  ahead.prepare(peekWorld({ seed: 1, map: 'geo-test', bots: 8 }));
   wk.reply({ t: 'baked', id: wk.sent[0]!.id, image: image(), ms: 1, plan: structuredClone(portablePlan(made)) });
   const t0 = performance.now();
-  const byName = floorPlanOf(MAPS.outpost.name)!;
+  const byName = floorPlanOf(MAPS['geo-test'].name)!;
   assert.ok(performance.now() - t0 < 20, 'taken, not planned again');
-  assert.equal(byName.walls, MAPS.outpost.walls, 'with the map\'s own walls, which the ground cache knows a layer by');
+  assert.equal(byName.walls, MAPS['geo-test'].walls, 'with the map\'s own walls, which the ground cache knows a layer by');
   assert.deepEqual(byName.decor!.fixtures, made.decor!.fixtures);
   assert.deepEqual(byName.decor!.marks, made.decor!.marks);
-  assert.equal(floorPlanOf('outpost'), byName, 'one plan per map, by id or by name');
+  assert.equal(floorPlanOf('geo-test'), byName, 'one plan per map, by id or by name');
 });

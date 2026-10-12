@@ -1,4 +1,4 @@
-import { SIDES, type ModeId, type PropKind, type Side } from './defs.ts';
+import type { ModeId, PropKind, Side } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
 import type { MapDoor, MapPoly, MapRoof } from './geom.ts';
 import { CAUSEWAY } from './maps/causeway.ts';
@@ -17,11 +17,12 @@ import { SUMMIT } from './maps/summit.ts';
 import { GEO_TEST } from './maps/geotest.ts';
 import { EMBASSY } from './maps/embassy.ts';
 import { AIRBASE } from './maps/airbase.ts';
+import { OUTPOST } from './maps/outpost.ts';
 
 export type Center = { x: number; y: number };
-export type WallMaterial = 'concrete' | 'sandstone' | 'planter' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap' | 'qledge' | 'qblock' | 'qplant' | 'qcabin' | 'qshed' | 'otwall' | 'otstone' | 'otfurn' | 'otstall' | 'rgwall' | 'rgbags' | 'rgblast' | 'rgbench' | 'rgtable' | 'rgtower' | 'rghut' | 'rgply' | 'rgberm';
+export type WallMaterial = 'concrete' | 'sandstone' | 'planter' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap' | 'qledge' | 'qblock' | 'qplant' | 'qcabin' | 'qshed' | 'otwall' | 'otstone' | 'otfurn' | 'otstall' | 'rgwall' | 'rgbags' | 'rgblast' | 'rgbench' | 'rgtable' | 'rgtower' | 'rghut' | 'rgply' | 'rgberm' | 'ophesco' | 'opbags' | 'optower' | 'optent' | 'opcont' | 'optruck' | 'opcrate' | 'opfuel' | 'opwreck';
 /** A map's own look (src/client/themes): its floor, wall art, decor and lights. */
-export type ThemeId = 'market' | 'museum' | 'subpen' | 'park' | 'summit' | 'railyard' | 'harbor' | 'embassy' | 'airbase' | 'wasteland' | 'quarry' | 'oldtown' | 'plaza' | 'range';
+export type ThemeId = 'market' | 'museum' | 'subpen' | 'park' | 'summit' | 'railyard' | 'harbor' | 'embassy' | 'airbase' | 'wasteland' | 'quarry' | 'oldtown' | 'plaza' | 'range' | 'outpost';
 export type MapWall = Rect & { material: WallMaterial };
 
 export const ZONE_RADIUS = 180;
@@ -54,32 +55,6 @@ export type MapDef = {
   range?: RangeLayout;
 };
 
-const BLOCKY = 1.6;
-const outpostMaterialByShape = (r: Rect): MapWall => ({ ...r, material: Math.max(r.w, r.h) <= BLOCKY * Math.min(r.w, r.h) ? 'sandstone' : 'concrete' });
-
-const quarterTurn = <T extends Rect>(r: T, size: number): T => ({ ...r, x: size - r.y - r.h, y: r.x, w: r.h, h: r.w });
-const fourWays = <T extends Rect>(quarter: readonly T[], size: number): T[] => {
-  const out: T[] = [];
-  let turn = [...quarter];
-  for (let i = 0; i < 4; i++) { out.push(...turn); turn = turn.map((r) => quarterTurn(r, size)); }
-  return out;
-};
-
-function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: Rect; horde: Rect }): MapDef {
-  const squad = fourWays([quarter.squad], size);
-  return {
-    name,
-    size,
-    walls: fourWays(quarter.walls.map(outpostMaterialByShape), size),
-    zones: [],
-    spawns: { red: squad, blue: squad, ffa: squad },
-    crates: [],
-    barrels: [],
-    props: [],
-    siege: { core: { x: size / 2, y: size / 2 }, horde: Object.fromEntries(fourWays([quarter.horde], size).map((r, i) => [SIDES[i], r])) as Record<Side, Rect> },
-  };
-}
-
 export const MAP_IDS = ['causeway', 'plaza', 'oldtown', 'quarry', 'market', 'museum', 'subpen', 'park', 'railyard', 'summit', 'outpost', 'range', 'embassy', 'airbase', 'wasteland'] as const;
 /** `geo-test` is the geometry test range: a real map for the sim, but in no rotation (see src/shared/maps/geotest.ts). */
 export type MapId = (typeof MAP_IDS)[number] | 'geo-test';
@@ -100,14 +75,7 @@ export const MAPS: Record<MapId, MapDef> = {
   airbase: AIRBASE,
   'geo-test': GEO_TEST,
   range: RANGE_MAP,
-  outpost: siegeMap('Outpost', 3000, {
-    walls: [
-      { x: 600, y: 600, w: 150, h: 50 }, { x: 600, y: 650, w: 50, h: 100 }, { x: 1000, y: 300, w: 50, h: 200 },
-      { x: 300, y: 1050, w: 100, h: 100 }, { x: 1350, y: 650, w: 100, h: 50 }, { x: 850, y: 900, w: 100, h: 100 },
-    ],
-    squad: { x: 1330, y: 1400, w: 60, h: 200 },
-    horde: { x: 40, y: 40, w: 2920, h: 30 },
-  }),
+  outpost: OUTPOST,
 };
 
 /** Where players on a map keep heading, whoever they are: its zones, each team's spawn and the middle of the map. */
