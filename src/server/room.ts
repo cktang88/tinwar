@@ -104,8 +104,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     return [['red', seats.red], ['blue', seats.blue]];
   }
 
+  /** The bots of the last match, so a new match draws different faces rather than the same lobby again. */
+  let lastBots = new Set<string>();
+  let seenMatch: World['match'] | null = null;
   function addBot(team: Team) {
-    const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
+    const name = uniqueName(botName(new Set([...names(), ...lastBots]), botRand), names(), registered);
     const p = addPlayer(world, name, randomLoadout(botRand), { team });
     if (mode === 'BR') enterRoyale(world, p);
     bots.set(p.id, newBotMemory(botRand, { name, seed }));
@@ -115,6 +118,17 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   /** Whether a Last Standing match can still take a new player: until its redeploys close. */
   const seatOpen = (_team: Team) => !world.royale || (redeploysOpen(world.royale) && world.match.k === 'playing');
+
+  /** A new match brings a new lobby: every bot of the last one leaves, and fresh ones (new names, loadouts and skill) take the seats. */
+  function freshBots() {
+    lastBots = new Set([...bots.keys()].map((id) => world.players.get(id)?.name).filter((n): n is string => !!n));
+    for (const id of [...bots.keys()]) {
+      bots.delete(id);
+      removePlayer(world, id);
+      if (world.royale) world.royale.entrants = world.royale.entrants.filter((e) => e !== id);
+    }
+    balanceBots();
+  }
 
   function balanceBots() {
     for (const [team, want] of botTargets()) {
@@ -548,6 +562,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       creditLives();
     }
     if (practice) { /* nothing is paid */ } else if (mode === 'ZOM') payRun(); else payRound();
+    // A round that starts (after a banner, or at once when the clock ran out with nobody to crown) brings a fresh lobby of bots.
+    if (world.match !== seenMatch) {
+      if (seenMatch && world.match.k === 'playing' && !practice && mode !== 'ZOM') freshBots();
+      seenMatch = world.match;
+    }
     for (const c of joined()) notify(c);
     return events;
   }
