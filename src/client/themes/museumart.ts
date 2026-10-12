@@ -408,6 +408,17 @@ const COLS: Partial<Record<DistrictId, ColSpec>> = {
   oceans: { top: '#2f7078', front: '#255a62', art: (c, cx, cy, r) => { for (let k = 0; k < 7; k++) { const a = (k / 7) * TAU; ring(c, cx + Math.cos(a) * r * 0.55, cy + Math.sin(a) * r * 0.55, r * 0.3, k % 2 ? '#e8806a' : '#e8a0b0'); } ring(c, cx, cy, r * 0.28, '#1c4046'); } },
   // A pillar of old ice, pale blue with a snow cap.
   iceage: { top: '#a8c4d8', front: '#7a95ab', art: (c, cx, cy, r) => { c.fillStyle = '#d8ecf8'; c.beginPath(); for (let k = 0; k < 7; k++) { const a = (k / 7) * TAU + 0.3, rr2 = r * (0.78 + 0.18 * ((k * 5) % 3) / 2); c.lineTo(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2); } c.closePath(); c.fill(); c.strokeStyle = INK; c.lineWidth = 1.8; c.stroke(); c.fillStyle = 'rgba(255, 255, 255, 0.7)'; c.beginPath(); c.arc(cx - r * 0.2, cy - r * 0.25, r * 0.28, 0, TAU); c.fill(); } },
+  // An easel from above: a landscape canvas in a gilt frame on a walnut stand, a palette resting at its foot.
+  impress: { top: '#7a5434', front: '#55371f', art: (c, cx, cy, r, s) => {
+    const k = hash(s.x, s.y) % 3, sky = ['#8fb8d8', '#e8b48a', '#b8c8e0'][k]!, land = ['#6b9a5a', '#c9a24a', '#5a7a9a'][k]!;
+    c.fillStyle = '#b79a4a'; c.fillRect(cx - r * 0.78, cy - r * 0.58, r * 1.56, r * 1.1); c.strokeStyle = INK; c.lineWidth = 1.8; c.strokeRect(cx - r * 0.78, cy - r * 0.58, r * 1.56, r * 1.1);
+    c.fillStyle = sky; c.fillRect(cx - r * 0.64, cy - r * 0.46, r * 1.28, r * 0.48);
+    c.fillStyle = land; c.fillRect(cx - r * 0.64, cy + r * 0.02, r * 1.28, r * 0.38);
+    c.fillStyle = '#f4e3a0'; c.beginPath(); c.arc(cx + r * 0.32, cy - r * 0.24, r * 0.12, 0, TAU); c.fill();
+    c.fillStyle = 'rgba(255, 255, 255, 0.55)'; for (const [dx, dy] of [[-0.4, 0.12], [-0.1, 0.2], [0.2, 0.1]] as const) c.fillRect(cx + dx * r, cy + dy * r, 3, 2);
+    c.fillStyle = '#d9b98a'; c.beginPath(); c.ellipse(cx - r * 0.45, cy + r * 0.78, r * 0.3, r * 0.17, -0.3, 0, TAU); c.fill(); c.strokeStyle = INK; c.lineWidth = 1.3; c.stroke();
+    for (const [col, dx] of [['#b4524a', -0.6], ['#3e8fa8', -0.45], ['#e8c13a', -0.3]] as const) { c.fillStyle = col; c.beginPath(); c.arc(cx + dx * r, cy + r * 0.76, 2.4, 0, TAU); c.fill(); }
+  } },
   // A tower of toy blocks.
   kids: { top: '#c0983c', front: '#a8842e', art: (c, cx, cy, r) => { const bl = [['#b4524a', -0.3, -0.3], ['#3e8fa8', 0.25, -0.1], ['#6b9a5a', -0.1, 0.3]] as const; for (const [col, dx, dy] of bl) { c.fillStyle = col; c.fillRect(cx + dx * r - r * 0.35, cy + dy * r - r * 0.35, r * 0.7, r * 0.7); c.strokeStyle = INK; c.lineWidth = 1.8; c.strokeRect(cx + dx * r - r * 0.35, cy + dy * r - r * 0.35, r * 0.7, r * 0.7); c.fillStyle = '#f4f2ec'; c.fillRect(cx + dx * r - 3, cy + dy * r - 3, 6, 6); } } },
   // A crated sculpture under a dust sheet, strapped for the restorers.
