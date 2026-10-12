@@ -9,7 +9,7 @@ import { step } from '../src/shared/sim.ts';
 
 const sprayOf = (p: { life: { k: string; spray?: number } }) => (p.life.k === 'alive' ? p.life.spray! : -1);
 
-test("a bot's bloom comes back down exactly as a person's does on the same gun", () => {
+test("a person's bloom comes back down twice as fast as a bot's on the same gun, from the same kick", () => {
   assert.equal(bloomRecoverMul({}), 1, 'the gun\'s own rate');
   const w = emptyWorld();
   const human = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' }, kind: 'human' });
@@ -21,7 +21,8 @@ test("a bot's bloom comes back down exactly as a person's does on the same gun",
   assert.equal(sprayOf(bot), 1, 'the same kick');
   for (let t = 0; t < 2000; t += TICK_MS) {
     step(w, TICK_MS);
-    assert.equal(sprayOf(bot), sprayOf(human), `the same bloom at ${Math.round(t)} ms`);
+    // The heat cools at a steady rate once the gun's settle has passed, a person's at twice a bot's (`HUMAN_BLOOM.recoverMul`).
+    assert.ok(Math.abs(sprayOf(human) - Math.max(0, 2 * sprayOf(bot) - 1)) < 1e-9, `twice as fast at ${Math.round(t)} ms: a person's ${sprayOf(human)}, a bot's ${sprayOf(bot)}`);
   }
 });
 

@@ -1,12 +1,12 @@
-import { PRESS_BUFFER_MS, PRESS_GRACE_MS, rulesOf, type GunDef, type GunRules } from '../defs.ts';
+import { bloomFor, PRESS_BUFFER_MS, PRESS_GRACE_MS, rulesOf, type GunDef, type GunRules, type PlayerKind } from '../defs.ts';
 import { bloomCurve } from '../handling.ts';
 import type { InputState } from '../protocol.ts';
 import { clamp } from './movement.ts';
 import type { Life } from './world.ts';
 
 export type TriggerState = Pick<Extract<Life, { k: 'alive' }>, 'ammo' | 'reloadUntil' | 'nextFireAt' | 'burstLeft' | 'pressUntil' | 'spray' | 'firedAt' | 'spin'>;
-/** `bloomRecover` scales how fast spray bloom settles (Steady Hands). */
-export type HeldGun = { def: GunDef; mag: number; reloadMs: number; armed: boolean; bloomRecover?: number };
+/** `bloomRecover` scales how fast spray bloom settles (Steady Hands); `kind` is the shooter's, whose bloom it is (`bloomFor`; a bot's if left out). */
+export type HeldGun = { def: GunDef; mag: number; reloadMs: number; armed: boolean; bloomRecover?: number; kind?: PlayerKind };
 export type Pull = Pick<InputState, 'fire' | 'reload'> & { pressed: boolean };
 
 type Bloom = NonNullable<GunRules['bloom']>;
@@ -38,7 +38,9 @@ const TIME_EPS = 1e-6;
  * How long after a round a spray's heat starts to cool: the gun's `settleMs`, but never before the gun could fire again (its cadence, a
  * burst gun's gap between bursts, in whole ticks, and a tick of grace) whenever a full spray would cool within one fire interval. Otherwise a semi-auto or burst gun
  * fired as fast as it goes (a held trigger, or the quickest clicking) would start every round cold and never bloom; slower taps still cool.
- * A gun whose heat outlasts its cadence anyway (a bolt-action's, which settles over seconds) keeps its own settle.
+ * A gun whose heat outlasts its cadence anyway (a bolt-action's, which settles over seconds) keeps its own settle. Which of the two a gun is
+ * is the gun's own (pass `rulesOf(def).bloom`, never a person's quicker `bloomFor`): a person's bolt-action, its heat clearing within the bolt
+ * cycle, would otherwise hold every round's heat to the next and bloom more than a bot's, not less.
  */
 export const coolsAfter = (b: Bloom, fireMs: number, tickMs: number): number =>
   b.recoverMs < fireMs ? Math.max(b.settleMs, (Math.ceil(fireMs / tickMs - 1e-6) + 1) * tickMs + TIME_EPS) : b.settleMs;
@@ -52,10 +54,10 @@ export function consumePresses(seen: { shotsSeen: number }, shots: number): bool
 
 export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: number, tickMs: number): boolean {
   const { def } = gun;
-  const { bloom, spinUp } = rulesOf(def);
+  const { spinUp } = rulesOf(def), bloom = bloomFor(def, gun.kind ?? 'bot');
   s.spin = spinUp ? clamp(s.spin + (pull.fire ? tickMs / spinUp.upMs : -tickMs / spinUp.downMs), 0, 1) : 0;
   const fireMs = spinUp ? def.fireMs * (1 + (spinUp.startMul - 1) * (1 - s.spin)) : def.fireMs;
-  if (bloom && now - s.firedAt > coolsAfter(bloom, fireMs, tickMs)) s.spray = coolSpray(s.spray, bloom, tickMs, gun.bloomRecover);
+  if (bloom && now - s.firedAt > coolsAfter(rulesOf(def).bloom!, fireMs, tickMs)) s.spray = coolSpray(s.spray, bloom, tickMs, gun.bloomRecover);
   if (s.reloadUntil !== null && now >= s.reloadUntil - TIME_EPS) { s.ammo = gun.mag; s.reloadUntil = null; }
   if (s.reloadUntil === null && (s.ammo <= 0 || (pull.reload && s.ammo < gun.mag))) {
     s.reloadUntil = now + gun.reloadMs;

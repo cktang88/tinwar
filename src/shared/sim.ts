@@ -114,15 +114,15 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   const armed = w.match.k === 'playing';
   const wasReloading = life.reloadUntil !== null;
-  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, bloomRecover: bloomRecoverMul(p.perks) }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
+  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, bloomRecover: bloomRecoverMul(p.perks), kind: p.kind }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
   // A fresh magazine starts the count of kills from one mag again.
   if (!wasReloading && life.reloadUntil !== null) p.feats.magKills = 0;
   // The spread eases toward its target every tick (see `easeSpread`), a shot's own bloom kick landing at once and falling bloom easing out at the gun's own pace; the shot fired this tick takes it as it stands.
   const sinceMove = moving ? 0 : w.now - life.lastMoveAt;
   const shot = fired ? life.spray : life.spray + 1;
-  const spreadAt = (sprayShot: number) => spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), sprayShot, life.suppression, settleShare(life.settleLeft, stats.settleMs), isDeployed(p.gun, sinceMove));
+  const spreadAt = (sprayShot: number) => spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), sprayShot, life.suppression, settleShare(life.settleLeft, stats.settleMs), isDeployed(p.gun, sinceMove), p.kind);
   const target = spreadAt(shot);
-  life.spreadHist = easeSpread(life.spreadHist, target, shot > life.spreadShot && life.spreadHist.length > 0 ? target - spreadAt(life.spreadShot) : 0, spreadAt(0), easeDownTicks(p.gun), !sprinting && life.settleLeft > 0);
+  life.spreadHist = easeSpread(life.spreadHist, target, shot > life.spreadShot && life.spreadHist.length > 0 ? target - spreadAt(life.spreadShot) : 0, spreadAt(0), easeDownTicks(p.gun, p.kind), !sprinting && life.settleLeft > 0);
   life.spreadShot = shot;
   if (fired) {
     life.shieldUntil = -Infinity;

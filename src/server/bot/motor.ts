@@ -1,4 +1,4 @@
-import { GUNS, rulesOf, WORLD, type AbilityId, type GunId, type PerkId, type Tier } from '../../shared/defs.ts';
+import { bloomFor, GUNS, rulesOf, WORLD, type AbilityId, type GunId, type PerkId, type PlayerKind, type Tier } from '../../shared/defs.ts';
 import type { CrateView, InputState, Snapshot } from '../../shared/protocol.ts';
 import type { LookSides } from '../../shared/lookahead.ts';
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
@@ -274,15 +274,16 @@ export function tapRhythm(gun: GunId, rushes: boolean): { windowMs: number; paus
 /**
  * A tapping gun's rhythm with what its bot weighs before each shot (see `holdsFire`): `patienceMs`, the longest it waits on its bloom after a
  * round has left (the gun's pause, scaled by temper: a hothead's `commitMul` is short, a marksman's long, never over `PATIENCE_CAP_MS`), and its
- * perks and suppression for reading its own cone, and `recover` for reading its bloom come back down (Steady Hands, as for anyone).
+ * perks and suppression for reading its own cone, and `recover` for reading its bloom come back down (Steady Hands, as for anyone), and `kind`,
+ * the seat's: a bot brain driving a person's seat reads the person's bloom (`bloomFor`).
  */
-export type Rhythm = { windowMs: number; pauseMs: number; patienceMs: number; recover: number; perks: Partial<Record<Tier, PerkId>>; suppression: number };
+export type Rhythm = { windowMs: number; pauseMs: number; patienceMs: number; recover: number; perks: Partial<Record<Tier, PerkId>>; suppression: number; kind: PlayerKind };
 export const PATIENCE_CAP_MS = 1600;
-export function fireRhythm(gun: GunId, rushes: boolean, commitMul: number, perks: Partial<Record<Tier, PerkId>> = {}, suppression = 0, sprayMul = 1): Rhythm | null {
+export function fireRhythm(gun: GunId, rushes: boolean, commitMul: number, perks: Partial<Record<Tier, PerkId>> = {}, suppression = 0, sprayMul = 1, kind: PlayerKind = 'bot'): Rhythm | null {
   const tap = tapRhythm(gun, rushes);
   if (!tap) return null;
   // A rookie holds each tap longer (`sprayMul`, see `BOT_SKILL`): more of its rounds go out on a blooming cone.
-  return { ...tap, windowMs: tap.windowMs * sprayMul, patienceMs: Math.min(PATIENCE_CAP_MS, tap.pauseMs * commitMul), recover: bloomRecoverMul(perks), perks, suppression };
+  return { ...tap, windowMs: tap.windowMs * sprayMul, patienceMs: Math.min(PATIENCE_CAP_MS, tap.pauseMs * commitMul), recover: bloomRecoverMul(perks), perks, suppression, kind };
 }
 
 /**
@@ -300,7 +301,7 @@ const LEAD_SLOP = 0.3;
 /** The odds a round lands, roughly: the body's half-width against the cone's half-width at that range plus the lead it may get wrong. */
 function hitChance(gun: GunId, r: Rhythm, sprayShot: number, s: ShotRead, settle = 0): number {
   const def = GUNS[gun];
-  const cone = spreadFor(gun, r.perks, s.still, sprayShot, r.suppression, settle);
+  const cone = spreadFor(gun, r.perks, s.still, sprayShot, r.suppression, settle, false, r.kind);
   const slop = (s.lateral * s.d / def.bulletSpeed) * LEAD_SLOP;
   const body = WORLD.playerRadius;
   return body / Math.max(body, s.d * Math.tan(cone) + slop);
@@ -322,12 +323,12 @@ export function holdsFire(gun: GunId, r: Rhythm, s: ShotRead): boolean {
  * settles it, and with nothing fired for as long as the sim holds the heat (`coolsAfter`) it comes back down at the sim's rate (`Rhythm.recover`).
  */
 export function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: number, tick: number, mag: number): { spray: number; firedTick: number } {
-  const { bloom } = rulesOf(GUNS[gun]);
+  const bloom = r && bloomFor(GUNS[gun], r.kind);
   let spray = tap?.spray ?? 0, firedTick = tap?.firedTick ?? -Infinity;
   if (!r || !bloom) return { spray: 0, firedTick };
   const was = tap?.ammo ?? ammo;
   // As the sim steps it: the heat cools first (on the last round's clock), then this step's rounds add to it.
-  if ((tick - firedTick) * TICK_MS > coolsAfter(bloom, GUNS[gun].fireMs, TICK_MS)) spray = coolSpray(spray, bloom, TICK_MS, r.recover);
+  if ((tick - firedTick) * TICK_MS > coolsAfter(rulesOf(GUNS[gun]).bloom!, GUNS[gun].fireMs, TICK_MS)) spray = coolSpray(spray, bloom, TICK_MS, r.recover);
   if (ammo < was) { spray = Math.min(sprayCap(bloom), spray + (was - ammo)); firedTick = tick; }
   // A reload empties the heat; a round fired on the very tick it finished shows as a fuller magazine short of full.
   else if (ammo > was) { spray = Math.min(sprayCap(bloom), mag - ammo); if (mag > ammo) firedTick = tick; }
@@ -909,7 +910,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const stillToFire = style.k === 'plant' && !!dodge && !dodge.stop;
   if (stillToFire && anyKey(keys)) wantsFire = false;
   // A rookie waits less on its bloom (`patienceMul`) and holds each tap longer (`sprayMul`): it sprays more and taps less.
-  const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul * (c.skill?.patienceMul ?? 1), snap.self.perks, snap.self.suppression, c.skill?.sprayMul);
+  const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul * (c.skill?.patienceMul ?? 1), snap.self.perks, snap.self.suppression, c.skill?.sprayMul, me.kind);
   // Being shot, or the enemy about to walk out of its sight: the round goes now, bloom or not.
   const urgent = v.underFire || (t !== undefined && breaksSight(me, engaged, v.solids));
   const own = ownBloom(rhythm, me.gun, m.tap, snap.self.ammo, v.tick, snap.self.mag);

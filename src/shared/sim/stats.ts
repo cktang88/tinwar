@@ -1,5 +1,5 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, bloomFor, GUN_IDS, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier,
 } from '../defs.ts';
 import { loadOf, sprintShareOf, walkMulOf } from '../handling.ts';
 import { bloomShare } from './trigger.ts';
@@ -81,17 +81,18 @@ type Stats = {
  * top of that: all of its growth on the move, `bloom.still` of it standing, `deploy.bloom` with a bipod down; a pinpoint gun's grows from
  * its own still spread (not from zero), so a sniper's follow-up opens the cone wide even planted. `settle` (0..1, see `settleShare`) is the
  * post-sprint bloom still to ease out (see `postSprintSpread`). This is the spread's target; what a shot gets is it eased (see `easeSpread`).
+ * `kind` is the shooter's: a person blooms `HUMAN_BLOOM` of a bot (`bloomFor`); left out, the gun's own (a bot's) bloom.
  */
-export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0, deployed = false): number {
-  const def = GUNS[gun], rules = rulesOf(def);
+export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0, deployed = false, kind: PlayerKind = 'bot'): number {
+  const def = GUNS[gun], rules = rulesOf(def), bloom = bloomFor(def, kind);
   const pin = still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05;
   const bloomBuild = Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomBuildMul ?? 1), 1);
   const bipod = still && deployed && rules.deploy ? rules.deploy : null;
   const moving = def.spread + rules.movingSpreadAdd;
   const base = pin ? 0 : still ? def.spread * (bipod?.spreadMul ?? 1) : moving;
-  const share = !still ? 1 : bipod ? bipod.bloom : rules.bloom?.still ?? 1;
+  const share = !still ? 1 : bipod ? bipod.bloom : bloom?.still ?? 1;
   // A pinpoint gun's bloom is a kick of its own still spread whatever its stance, so a sniper on the move is not thrown a mile wide on top of its walking cone.
-  const grown = (rules.pinpoint ? def.spread : base) * (bloomMul(rules, sprayShot, bloomBuild) - 1) * share;
+  const grown = (rules.pinpoint ? def.spread : base) * (bloomMul(bloom, sprayShot, bloomBuild) - 1) * share;
   let mul = 1;
   for (const perk of Object.values(perks)) mul *= (PERK_MODS[perk].spreadMul ?? 1) * (def.pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
   const stance = Math.max(minSpreadOf(def, bipod !== null), base * mul) + grown * mul;
@@ -116,12 +117,13 @@ export const SPREAD_EASE_TICKS = Math.ceil(SPREAD_EASE.ms / (1000 / WORLD.tickHz
 /**
  * How long (ms) a gun's bloom takes to ease back out of its spread (`SPREAD_EASE`): its own recovery time (`bloom.recoverMs`, how long a
  * full spray's heat takes to cool), kept between `SPREAD_EASE.downMinMs` and `SPREAD_EASE.ms`. An SMG's cone falls back in 100 ms, an
- * assault rifle's in about 125, an LMG's, a Minigun's or a sniper's over the full 250.
+ * assault rifle's in about 125, an LMG's, a Minigun's or a sniper's over the full 250. A person's bloom recovers twice as fast as a bot's
+ * (`HUMAN_BLOOM`), so `kind` reads the shooter's own recovery; it still never falls in under `downMinMs`.
  */
-export const spreadEaseDownMs = (gun: GunId): number =>
-  Math.min(SPREAD_EASE.ms, Math.max(SPREAD_EASE.downMinMs, rulesOf(GUNS[gun]).bloom?.recoverMs ?? SPREAD_EASE.ms));
+export const spreadEaseDownMs = (gun: GunId, kind: PlayerKind = 'bot'): number =>
+  Math.min(SPREAD_EASE.ms, Math.max(SPREAD_EASE.downMinMs, bloomFor(GUNS[gun], kind)?.recoverMs ?? SPREAD_EASE.ms));
 /** How many of the newest bloom targets set how far falling bloom has eased (see `easeSpread`): `spreadEaseDownMs` in ticks, plus one. */
-export const easeDownTicks = (gun: GunId): number => Math.min(SPREAD_EASE_TICKS, Math.ceil(spreadEaseDownMs(gun) / (1000 / WORLD.tickHz) - 1e-9) + 1);
+export const easeDownTicks = (gun: GunId, kind: PlayerKind = 'bot'): number => Math.min(SPREAD_EASE_TICKS, Math.ceil(spreadEaseDownMs(gun, kind) / (1000 / WORLD.tickHz) - 1e-9) + 1);
 
 /**
  * One tick of the eased spread (`SPREAD_EASE`). The spread's `target` is split in two: its `base` (the spread with no bloom: the stance,
@@ -157,7 +159,7 @@ export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>): number =>
 /** How much `suppression` (0..1) widens spread. */
 export const suppressionMul = (suppression: number): number => 1 + suppression * SUPPRESSION.spread;
 
-function bloomMul({ bloom }: GunRules, sprayShot: number, build = 1): number {
+function bloomMul(bloom: GunRules['bloom'], sprayShot: number, build = 1): number {
   return bloom ? 1 + (bloom.maxMul - 1) * bloomShare(bloom, sprayShot, build) : 1;
 }
 

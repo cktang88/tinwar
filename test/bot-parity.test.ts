@@ -51,22 +51,33 @@ function trace(kind: PlayerKind, gun: GunId, victim: PlayerKind = 'bot') {
   return { stats, rows, dealt };
 }
 
-test('a bot and a person with the same loadout, perks, spot and inputs get the same stats, movement, spread, bloom and damage through the sim', () => {
+/** A trace's rows with what bloom decides left out: the spray's heat, the eased spread, and the rounds (where they head, so which land). */
+const unbloomed = (rows: unknown[]) => rows.map((row) => {
+  const { x, y, ammo, reload } = row as { x: number; y: number; ammo: number; reload: number | null };
+  return { x, y, ammo, reload };
+});
+
+test('a bot and a person with the same loadout, perks, spot and inputs get the same stats, movement, magazine and reload through the sim; only the person\'s bloom is half', () => {
   for (const gun of ['assault', 'smg', 'sniper', 'lmg', 'shotgun', 'pistol'] as const satisfies readonly GunId[]) {
     const person = trace('human', gun), bot = trace('bot', gun);
     assert.deepEqual(bot.stats, person.stats, `${gun}: every stat the same (speed, health, magazine, reload, view, regen)`);
     assert.ok(person.dealt > 0, `${gun}: the run lands rounds`);
-    assert.deepEqual(bot.rows, person.rows, `${gun}: tick for tick the same`);
+    assert.deepEqual(unbloomed(bot.rows), unbloomed(person.rows), `${gun}: tick for tick the same, bloom aside`);
+    // The one deliberate difference (`HUMAN_BLOOM`): a person's cone is never wider than a bot's, and a spray leaves it clearly tighter.
+    const spreads = (t: typeof bot) => t.rows.map((row) => (row as { spread: number | null }).spread ?? 0);
+    const mine = spreads(person), theirs = spreads(bot);
+    mine.forEach((s, i) => assert.ok(s <= theirs[i]! + 1e-12, `${gun}: tick ${i + 1}, a person's ${s} against a bot's ${theirs[i]}`));
+    assert.ok(mine.some((s, i) => s < theirs[i]! - 1e-6), `${gun}: a spray blooms a person less`);
   }
 });
 
-test('bots and people hit each other alike: every pairing deals the gun\'s own damage', () => {
+test('bots and people hit each other alike: who is hit never changes the damage', () => {
   const on = (shooter: PlayerKind, victim: PlayerKind) => trace(shooter, 'assault', victim).dealt;
-  const base = on('bot', 'bot');
-  assert.ok(base > 0);
-  assert.equal(on('human', 'human'), base, 'person on person');
-  assert.equal(on('human', 'bot'), base, 'person on bot');
-  assert.equal(on('bot', 'human'), base, 'bot on person');
+  // A shooter's own kind sets his bloom (`HUMAN_BLOOM`), so his rounds can land differently; the victim's kind changes nothing.
+  const bot = on('bot', 'bot'), person = on('human', 'bot');
+  assert.ok(bot > 0 && person > 0);
+  assert.equal(on('bot', 'human'), bot, 'bot on person, as bot on bot');
+  assert.equal(on('human', 'human'), person, 'person on person, as person on bot');
 });
 
 test('skill is a bot\'s brain only: rookies, regulars and veterans carry a person\'s gun and body stats, through a fight and their respawns', () => {

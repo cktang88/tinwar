@@ -225,8 +225,13 @@ for (const rttMs of [0, 160, 300]) {
   });
 }
 
-/** Each kind's drawn board (targetart.ts), as a box about its base: half its width, and its top and bottom above the base. */
-const BOARD = { paper: { w: 19, top: 64, bottom: 14 }, rail: { w: 19, top: 68, bottom: 18 }, plank: { w: 24, top: 66, bottom: 10 }, dummy: { w: 17, top: 64, bottom: 14 } } as const;
+/**
+ * Each kind's drawn board (targetart.ts), as a box about its base: half its width, and its top and bottom above the base. The dummy also
+ * draws a helmeted head over its sandbag torso, up to 87 px (`head`, half its width and its top): a round drawn there is not clear of it.
+ */
+const BOARD: Record<'paper' | 'rail' | 'plank' | 'dummy', { w: number; top: number; bottom: number; head?: { w: number; top: number } }> = {
+  paper: { w: 19, top: 64, bottom: 14 }, rail: { w: 19, top: 68, bottom: 18 }, plank: { w: 24, top: 66, bottom: 10 }, dummy: { w: 17, top: 64, bottom: 14, head: { w: 12, top: 87 } },
+};
 
 test('range boards: a round the page draws through the board hits, a sliding one too, whatever the ping, and one drawn clear of it misses', () => {
   const w = createWorld('RNG', 7, 'range');
@@ -264,6 +269,7 @@ test('range boards: a round the page draws through the board hits, a sliding one
       const b = targetPos(t.def, viewAt + ms), x = v.x - b.x, y = b.y - v.y;
       if (Math.abs(x) <= box.w - 3 && y >= box.bottom + 3 && y <= box.top - 3) inside = true;
       if (Math.abs(x) <= box.w + 8 && y >= box.bottom - 8 - 30 && y <= box.top + 8) near = true;
+      if (box.head && Math.abs(x) <= box.head.w + 8 && y >= box.top && y <= box.head.top + 8) near = true;
     }
     const hit = hitOn(events, t.id);
     const what = `${t.def.kind}${t.def.rail ? ' slider' : ''} at ${t.def.x - 380}px, aimed ${up}px up, ${rttMs}ms round trip`;
@@ -282,7 +288,7 @@ test('range boards: a round the page draws through the board hits, a sliding one
   // What a round meets of each kind covers its drawn board, from the base plate to the top.
   for (const kind of ['paper', 'plank', 'rail', 'dummy'] as const) {
     const b = targetBody(kind, { x: 0, y: 0 });
-    assert.ok(b.y + b.r >= 5 && b.y - b.up - b.r <= -BOARD[kind].top + 0.01, `${kind}: ${JSON.stringify(b)}`);
+    assert.ok(b.y + b.r >= 5 && b.y - b.up - b.r <= -(BOARD[kind].head?.top ?? BOARD[kind].top) + 0.01, `${kind}: ${JSON.stringify(b)}`);
   }
 });
 

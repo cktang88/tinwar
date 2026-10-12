@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMOR_IDS, ARMORS, ATTACHMENTS, GUN_IDS, GUNS, minSpreadOf, PICK_OPTIONS, pickOptions, rulesOf, SPREAD_EASE, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
+import { ARMOR_IDS, ARMORS, ATTACHMENTS, GUN_IDS, GUNS, minSpreadOf, PICK_OPTIONS, pickOptions, rulesOf, SPREAD_EASE, WEAPON_IDS, WORLD, type GunId, type PickOption, type PlayerKind } from '../src/shared/defs.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -275,17 +275,22 @@ test('every gun blooms; standing it blooms less than on the move, and a set-down
 
 test('a sniper\'s follow-up is wild and a re-settled shot precise: each round blooms the cone even planted, and it takes seconds to close again', () => {
   for (const gun of ['sniper', 'semiAuto', 'repeater'] as const) {
-    // A person's gun (a bot's settles the same, see bot-bloom.test.ts).
-    const { w, p } = shooter(gun, 'FFA', 'human');
-    run(w, 600);
-    const sprayNow = () => (p.life.k === 'alive' ? p.life.spray : 0);
-    const at = (ms: number) => { for (let i = 0; i < Math.round(ms / TICK_MS); i++) tick(w, p, {}); return spreadFor(gun, {}, true, sprayNow() + 1); };
-    // As many rounds as fly clean, each as soon as the gun allows; the next is the one the bloom catches.
-    let quick = 0;
-    for (let i = 0; i < rulesOf(GUNS[gun]).bloom!.free; i++) { tick(w, p, { fire: true, shots: p.input.shots + 1 }); quick = at(GUNS[gun].fireMs - TICK_MS); }
-    assert.ok(quick > 1.5 * minSpreadOf(GUNS[gun]), `${gun}: the fastest follow-up (${quick.toFixed(4)}) is well past the floor`);
-    const patient = at(2600);
-    assert.equal(patient, minSpreadOf(GUNS[gun]), `${gun}: a patient shot is back on the floor`);
+    const follow = (kind: PlayerKind) => {
+      const { w, p } = shooter(gun, 'FFA', kind);
+      run(w, 600);
+      const sprayNow = () => (p.life.k === 'alive' ? p.life.spray : 0);
+      const at = (ms: number) => { for (let i = 0; i < Math.round(ms / TICK_MS); i++) tick(w, p, {}); return spreadFor(gun, {}, true, sprayNow() + 1, 0, 0, false, kind); };
+      // As many rounds as fly clean, each as soon as the gun allows; the next is the one the bloom catches.
+      let quick = 0;
+      for (let i = 0; i < rulesOf(GUNS[gun]).bloom!.free; i++) { tick(w, p, { fire: true, shots: p.input.shots + 1 }); quick = at(GUNS[gun].fireMs - TICK_MS); }
+      return { quick, patient: at(2600) };
+    };
+    // The gun's own bloom, a bot's: its fastest follow-up is wild.
+    const bot = follow('bot'), person = follow('human');
+    assert.ok(bot.quick > 1.5 * minSpreadOf(GUNS[gun]), `${gun}: the fastest follow-up (${bot.quick.toFixed(4)}) is well past the floor`);
+    // A person's is half the bloom and clears twice as fast (`HUMAN_BLOOM`): tighter than a bot's, never under the floor.
+    assert.ok(person.quick < bot.quick && person.quick >= minSpreadOf(GUNS[gun]), `${gun}: a person's fastest follow-up (${person.quick.toFixed(4)}) is tighter than a bot's`);
+    for (const { patient } of [bot, person]) assert.equal(patient, minSpreadOf(GUNS[gun]), `${gun}: a patient shot is back on the floor`);
   }
   // A bolt-action's bloom outlasts its bolt cycle; a semi-auto's kick is smaller and settles sooner.
   const b = rulesOf(GUNS.sniper).bloom!, s = rulesOf(GUNS.semiAuto).bloom!;

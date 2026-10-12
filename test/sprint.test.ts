@@ -293,7 +293,8 @@ const SERVER: ServerGun = { gun: 'assault', mag: GUNS.assault.mag, reloadMs: GUN
 
 test('the client trigger mirrors the sprint and the eased spread tick for tick: no shot while sprinting, a click fires at once, the reticle reads what the sim fires', () => {
   const w = emptyWorld();
-  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
+  // The page is a person's, and so is the seat it predicts (a person's bloom, `HUMAN_BLOOM`).
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' }, kind: 'human' });
   let t = settle(NO_FIRING, { ...SERVER }, 0, 0, []).firing.trigger;
   const script: Array<[number, { right?: boolean; sprint?: boolean; fire?: boolean; click?: boolean }]> = [
     [10, { right: true }], [8, {}], [20, { right: true, sprint: true }], [1, { right: true, sprint: true, fire: true, click: true }],

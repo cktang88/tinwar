@@ -1,4 +1,4 @@
-import { GUNS, rulesOf, settleRulesOf, WORLD, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
+import { bloomFor, GUNS, settleRulesOf, WORLD, type GunId, type PerkId, type PlayerKind, type Tier } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
 import { walks } from '../shared/sim/movement.ts';
 import { bloomRecoverMul, easeDownTicks, easedSpread, easeSpread, isDeployed, isSteady, reloadMsFor, settleShare, spreadFor, sprintWanted } from '../shared/sim/stats.ts';
@@ -15,6 +15,8 @@ type Trigger = {
   sprint: boolean; settleLeft: number; settleMs: number; bloomRecover: number;
   /** What the spread is read from, as the sim reads it: your perks and suppression (the server's word), and when you last moved. */
   perks: Partial<Record<Tier, PerkId>>; suppression: number; lastMoveAt: number;
+  /** Whose bloom the gun has (`bloomFor`): a person's, the page's own, unless the server says the seat is a bot's. */
+  kind: PlayerKind;
   /** The eased spread, stepped tick by tick exactly as the sim steps it (see `easeSpread`). */
   spreadHist: readonly number[]; spreadShot: number;
   /** Shots fired, ever, as the sim counts them (`Player.fired`): the next shot's number, which picks its spread. */
@@ -27,7 +29,7 @@ type Trigger = {
 export type TriggerInput = Pick<InputState, 'fire' | 'shots' | 'reload'> & Partial<Pick<InputState, 'up' | 'down' | 'left' | 'right' | 'sprint'>> & { dashing?: boolean };
 
 const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0, sprint: false, settleLeft: 0, lastMoveAt: -Infinity, spreadHist: [], spreadShot: 0 } as const;
-const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, fired: 0, settleMs: settleRulesOf(GUNS.pistol).ms, bloomRecover: 1, perks: {}, suppression: 0, ...FRESH_LIFE };
+const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, fired: 0, settleMs: settleRulesOf(GUNS.pistol).ms, bloomRecover: 1, perks: {}, suppression: 0, kind: 'human', ...FRESH_LIFE };
 
 /** One tick of `tickPlayer`'s trigger at time `now`: whether the server fires a shot on the input that carries `input`. */
 export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: Trigger; fired: boolean } {
@@ -40,13 +42,13 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   if (moving) g.lastMoveAt = now;
   g.sprint = sprinting;
   g.settleLeft = sprinting ? g.settleMs : Math.max(0, g.settleLeft - TICK_MS);
-  const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, reloadMs: g.reloadMs, armed: g.armed && !sprinting, bloomRecover: g.bloomRecover }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
+  const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, reloadMs: g.reloadMs, armed: g.armed && !sprinting, bloomRecover: g.bloomRecover, kind: g.kind }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
   // The eased spread, stepped as `tickPlayer` steps it.
   const sinceMove = moving ? 0 : now - g.lastMoveAt;
   const shot = fired ? g.spray : g.spray + 1;
-  const spreadAt = (sprayShot: number) => spreadFor(g.gun, g.perks, isSteady(g.gun, sinceMove), sprayShot, g.suppression, settleShare(g.settleLeft, g.settleMs), isDeployed(g.gun, sinceMove));
+  const spreadAt = (sprayShot: number) => spreadFor(g.gun, g.perks, isSteady(g.gun, sinceMove), sprayShot, g.suppression, settleShare(g.settleLeft, g.settleMs), isDeployed(g.gun, sinceMove), g.kind);
   const target = spreadAt(shot);
-  g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0, spreadAt(0), easeDownTicks(g.gun), !sprinting && g.settleLeft > 0);
+  g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0, spreadAt(0), easeDownTicks(g.gun, g.kind), !sprinting && g.settleLeft > 0);
   g.spreadShot = shot;
   if (fired) g.fired++;
   return { t: g, fired };
@@ -124,7 +126,7 @@ export function sendInput(f: Firing, seq: number, input: TriggerInput, at: numbe
 /** What the server says of your gun in a snapshot, as of the input it acknowledged. */
 export type ServerGun = {
   gun: GunId; mag: number; reloadMs: number; ammo: number; reloading: boolean; reloadFrac: number; alive: boolean; armed: boolean;
-  sprint?: boolean; settle?: number; settleMs?: number; bloomRecover?: number; perks?: Partial<Record<Tier, PerkId>>; suppression?: number; fired?: number;
+  sprint?: boolean; settle?: number; settleMs?: number; bloomRecover?: number; perks?: Partial<Record<Tier, PerkId>>; suppression?: number; fired?: number; kind?: PlayerKind;
 };
 
 export function serverGun(snap: Snapshot): ServerGun {
@@ -134,7 +136,7 @@ export function serverGun(snap: Snapshot): ServerGun {
   return {
     gun, mag, reloadMs: reloadMsFor(gun, perks), ammo, reloading, reloadFrac, alive: alive && !!me, armed: snap.match.winner === null,
     sprint: snap.self.sprint ?? false, settle: snap.self.settle ?? 0, settleMs: snap.self.settleMs ?? settleRulesOf(GUNS[gun]).ms, bloomRecover: bloomRecoverMul(perks),
-    perks, suppression: snap.self.suppression ?? 0, ...(snap.self.fired !== undefined && { fired: snap.self.fired }),
+    perks, suppression: snap.self.suppression ?? 0, kind: me?.kind ?? 'human', ...(snap.self.fired !== undefined && { fired: snap.self.fired }),
   };
 }
 
@@ -148,6 +150,7 @@ function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigge
   t.settleLeft = left * settleMs;
   t.bloomRecover = sv.bloomRecover ?? 1;
   t.perks = sv.perks ?? {};
+  t.kind = sv.kind ?? 'human';
   t.suppression = sv.suppression ?? 0;
   // The shots the server has fired, and those it is late on, which it fires next.
   if (sv.fired !== undefined) t.fired = sv.fired + late;
@@ -163,7 +166,7 @@ function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigge
  */
 function consumeUnmatched(t: Trigger, n: number, now: number): Trigger {
   if (n <= 0 || !t.alive) return t;
-  const def = GUNS[t.gun], bloom = rulesOf(def).bloom, out = { ...t };
+  const def = GUNS[t.gun], bloom = bloomFor(def, t.kind), out = { ...t };
   for (let i = 0; i < n; i++) {
     if (out.burstLeft <= 0) out.burstLeft = def.burst?.count ?? 1;
     out.burstLeft--;

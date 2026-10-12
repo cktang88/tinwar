@@ -6,6 +6,12 @@ export type ChangelogDay = { date: string; items: string[] };
 
 export const CHANGELOG: ChangelogDay[] = [
   {
+    date: '2026-10-12',
+    items: [
+      'Your spray blooms half as wide and settles twice as fast; bots keep the old, wilder bloom',
+    ],
+  },
+  {
     date: '2026-10-10',
     items: [
       'Old Town has a new back-alley phonk theme, Back Alley Drift, and five radio-only songs are off the dial',
@@ -41,8 +47,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-07',
     items: [
-      'Polygon walls, doors and roofs, with six new or reworked maps',
-      'Levels, 98 cosmetics, challenges, medals and profiles, plus killcam, slow-mo, emotes, celebrations, barrels and airdrops',
+      'Polygon walls, doors and roofs on six new or reworked maps; levels, 98 cosmetics, challenges, medals and profiles, plus killcam, slow-mo, emotes, celebrations, barrels and airdrops',
     ],
   },
 ];

@@ -287,6 +287,21 @@ const RULES = new Map(GUN_IDS.map((id) => [GUNS[id], resolveRules(GUN_SPECS[id])
 export const rulesOf = (def: GunDef): GunRules => RULES.get(def)!;
 
 /**
+ * A person's bloom against a bot's, on the same gun: half the cap (the most a spray can widen past the gun's own cone), half the kick a
+ * round adds and twice as fast back down (half the `recoverMs`). The rounds a held trigger takes to its cap stay the same, so every round of
+ * a person's spray blooms exactly half what a bot's does, and a full spray clears in half the time. A deliberate edge for people over bots
+ * (bots keep the gun's own numbers); every mode alike, and Steady Hands, a bipod and a scope's bloom all compose with it as they do for a bot.
+ */
+export const HUMAN_BLOOM = { capMul: 0.5, kickMul: 0.5, recoverMul: 2 } as const;
+type Bloom = NonNullable<GunRules['bloom']>;
+const HUMAN_BLOOMS = new Map(GUN_IDS.map((id) => {
+  const b = rulesOf(GUNS[id]).bloom;
+  return [GUNS[id], b && { ...b, perShot: b.perShot * HUMAN_BLOOM.kickMul, maxMul: 1 + (b.maxMul - 1) * HUMAN_BLOOM.capMul, recoverMs: b.recoverMs / HUMAN_BLOOM.recoverMul }];
+}));
+/** The bloom `kind` gets from `def`: a bot the gun's own (`rulesOf(def).bloom`), a person `HUMAN_BLOOM` of it. The one place bloom is read for a shooter. */
+export const bloomFor = (def: GunDef, kind: PlayerKind): Bloom | null => (kind === 'human' ? HUMAN_BLOOMS.get(def)! : rulesOf(def).bloom);
+
+/**
  * The least spread (radians) this gun ever fires with: its own floor (handling.ts), or a set-down bipod's small floor while `deployed`.
  * A planted sniper is pinpoint down to this, so a centred shot still lands at 1000 px but one on a strafing body's edge can miss.
  */
