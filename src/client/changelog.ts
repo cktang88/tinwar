@@ -8,7 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-12',
     items: [
-      'Your spray blooms half as wide and settles twice as fast; bots keep the old, wilder bloom',
+      'Your spray blooms half as wide and settles twice as fast (bots keep the old bloom), and no zombie bite takes more than a third of your health',
     ],
   },
   {

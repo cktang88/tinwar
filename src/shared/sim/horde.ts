@@ -238,7 +238,7 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
     const near = prey;
     const decoy = !prey && ai.decoy ? decoys.find((d) => d.id === ai.decoy) : undefined;
     if (near && Math.hypot(near.x - z.x, near.y - z.y) <= reach + WORLD.playerRadius) {
-      bite = () => damagePlayer(w, near, damage, { attacker: null, team: null, label: def.name, piercing: false, via: 'bite', fromX: z.x, fromY: z.y });
+      bite = () => damagePlayer(w, near, Math.min(damage * ZOM.playerBite.mul, WORLD.baseHp * ZOM.playerBite.maxShare), { attacker: null, team: null, label: def.name, piercing: false, via: 'bite', fromX: z.x, fromY: z.y });
     } else if (prey) goal = prey;
     else if (decoy) {
       // A decoy draws it over the walls and the Bastion: it walks to the beacon and bites it like a wall in its way.

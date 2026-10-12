@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDINGS, WORLD, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/defs.ts';
+import { aiOf } from '../src/shared/sim/boids.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { step } from '../src/shared/sim.ts';
 import { clamp } from '../src/shared/sim/movement.ts';
@@ -98,6 +99,21 @@ test('no zombie stays pinned on cover: one starting behind each wall of the map 
   assert.deepEqual(stuck, []);
 });
 
+test('no zombie bite takes more than a third of a player, however late the night: three bites at least from full health', () => {
+  const w = nightWorld();
+  w.run!.core.hp = 1e9;
+  w.run!.night = 12;
+  const p = spawnAt(w, 800, 800);
+  const before = hpOf(p);
+  // A brute's bite at night 12 is over 80 raw; on a player it stops at a third.
+  const z = addZombie(w, 'brute', 800 + ZOMBIES.brute.radius + 20, 800);
+  Object.assign(aiOf(z, w.now), { tgt: 'player', pid: p.id, evalAt: Infinity });
+  let worst = 0, last = before;
+  stepFor(w, 3000, () => { const hp = hpOf(p); worst = Math.max(worst, last - hp); last = hp; });
+  assert.ok(before - hpOf(p) > 0, 'the brute bit');
+  assert.ok(worst * 3 <= WORLD.baseHp + 2, `one bite took ${worst}: it must take three bites at least to kill from full health`);
+});
+
 test('a zombie turns on a squad player it can see close by and bites at its own pace', () => {
   const w = nightWorld();
   w.run!.core.hp = 1e9;
@@ -106,9 +122,9 @@ test('a zombie turns on a squad player it can see close by and bites at its own 
   addZombie(w, 'walker', 800 + ZOMBIES.walker.aggroPx - 10, 800);
   // It walks the last hundred px at a pace and heading of its own, so the first bite lands a little after the first second.
   stepFor(w, 1500);
-  assert.equal(before - hpOf(p), ZOMBIES.walker.damage, 'one bite on its arrival');
+  assert.ok(Math.abs(before - hpOf(p) - ZOMBIES.walker.damage * ZOM.playerBite.mul) < 1e-9, 'one bite on its arrival, at the share a bite takes off a player');
   stepFor(w, ZOMBIES.walker.attackMs);
-  assert.equal(before - hpOf(p), 2 * ZOMBIES.walker.damage, 'a second bite after the attack interval');
+  assert.ok(Math.abs(before - hpOf(p) - 2 * ZOMBIES.walker.damage * ZOM.playerBite.mul) < 1e-9, 'a second bite after the attack interval');
 });
 
 test('a brute walks past a squad player beside it, on to the core', () => {

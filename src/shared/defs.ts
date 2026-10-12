@@ -1121,6 +1121,11 @@ export const ZOM = {
   maxAlive: 200,
   /** How far past touching a zombie's bite reaches. */
   biteReach: 10,
+  /**
+   * A bite on a player: `mul` of the zombie's bite (walls and the core still take the whole of it), and never more than `maxShare` of a
+   * player's health in one bite, however late the night or big the zombie, so nothing kills from full health in fewer than three bites.
+   */
+  playerBite: { mul: 0.6, maxShare: 0.34 },
   /** What walking through a wall cell costs the flow field, in orthogonal steps; high enough that the horde takes any open way round. */
   wallCostCells: 40,
   hordeShare: (squad: { humans: number; bots: number }) => (squad.bots + 1.5 * squad.humans) / 4,
