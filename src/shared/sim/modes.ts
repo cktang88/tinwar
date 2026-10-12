@@ -1,5 +1,5 @@
 import { WORLD, type ModeId } from '../defs.ts';
-import { byRank, type RoundWinner, type Team } from '../protocol.ts';
+import { byRankPeopleFirst, type RoundWinner, type Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
 import { royaleKill, royaleWinner, startRoyale, tickRoyale } from './royale.ts';
 import { tickRun } from './run.ts';
@@ -31,7 +31,7 @@ function smallerTeam(w: World): Team {
 
 /** The first in leaderboard order among players with at least one kill. */
 function topKiller(w: World, eligible: (p: Player) => boolean = () => true): Player | null {
-  return [...w.players.values()].filter((p) => p.kills > 0 && eligible(p)).sort(byRank)[0] ?? null;
+  return [...w.players.values()].filter((p) => p.kills > 0 && eligible(p)).sort(byRankPeopleFirst)[0] ?? null;
 }
 
 const teamWin = (team: 'red' | 'blue'): RoundWinner => ({ name: TEAM_NAME[team], id: null, note: null });

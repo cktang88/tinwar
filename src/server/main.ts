@@ -13,7 +13,7 @@ import { openAccounts, RESET_MS, type Accounts } from './accounts.ts';
 import { mailerFromEnv, resetMessage, type Mailer } from './mail.ts';
 import { normalizeEmail } from '../shared/email.ts';
 import { openProfiles, profileView, type GuestClaim, type Profiles } from './profiles.ts';
-import { botProfile, isBotName } from './botprofile.ts';
+import { seenBotProfile } from './botprofile.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeFaultLog, makeKeyedLimiter, makeWindowGate, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
@@ -213,8 +213,9 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
   if (req.method === 'GET' && path.startsWith('/api/profile/')) {
     let name: string;
     try { name = decodeURIComponent(path.slice('/api/profile/'.length)); } catch { return json(res, 400, { error: 'Bad player name' }); }
-    // A bot keeps no profile, but its name has a record like anyone's (botprofile.ts): nothing on a page tells a bot from a person.
-    const p = profiles.get(name) ?? (isBotName(name) ? botProfile(name) : null);
+    // A bot keeps no profile, but a name rooms seated a bot under lately has a record like anyone's (botprofile.ts): nothing on a page
+    // tells a bot from a person, and a name never seated 404s like any unknown one.
+    const p = profiles.get(name) ?? seenBotProfile(name);
     return p ? json(res, 200, profileView(p)) : json(res, 404, { error: 'No such player' });
   }
   if (req.method === 'POST' && path === '/api/equip') {

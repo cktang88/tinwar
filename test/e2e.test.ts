@@ -122,7 +122,8 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   assert.deepEqual(servers.map((s) => [s.id, s.mode]), [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 'DOM'], ['br', 'BR']]);
   // A room reads as a lobby of players: the list never says how many of them are people.
   for (const s of servers) assert.deepEqual(Object.keys(s).sort(), ['id', 'mode', 'players']);
-  for (const s of servers) assert.equal(s.players, WORLD.minPlayers, 'bots fill the room to minPlayers');
+  // A person's arrival moves bots only seconds later, and the room keeps two spare seats past its target (see `seatsChanged`).
+  for (const s of servers) assert.ok(s.players >= WORLD.minPlayers && s.players <= WORLD.minPlayers + 2, `bots fill the room to minPlayers: ${s.players}`);
 
   const ffa = conns.ffa;
   // At 8x speed the bots, which hunt humans first, can kill the tester before it moves; it respawns the way the death screen would.

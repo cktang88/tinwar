@@ -340,17 +340,19 @@ export function seeded(seed: number): () => number {
 }
 
 /**
- * A bot's account level, hashed from its name: a casual player's, 3 to about 55, most in the teens and twenties. Its name plate's level chip
- * and its service record (server/botprofile.ts) both show it, as a person's do.
+ * A bot's account level, hashed from its name: a casual player's, most in the teens and twenties, up to about 55, and one in twelve brand
+ * new (level 1 or 2). Its name plate's level chip and its service record (server/botprofile.ts) both show it, as a person's do.
  */
 export function botLevel(name: string): number {
-  const u = seeded(hash32(`level:${name.toLowerCase()}`))();
-  return 3 + Math.floor(52 * u ** 1.5);
+  const r = seeded(hash32(`level:${name.toLowerCase()}`));
+  const u = r(), v = r();
+  if (u < 1 / 12) return v < 0.5 ? 1 : 2;
+  return 3 + Math.floor(52 * v ** 1.5);
 }
 
 /** What a bot named `name` wears: a deterministic mix of common and rare items its level has unlocked, and now and then a title. */
 export function botPicks(name: string): Picks {
-  const rand = seeded(hash32(`bot:${name}`));
+  const rand = seeded(hash32(`bot:${name.toLowerCase()}`));
   const level = botLevel(name);
   const picks: Picks = {};
   for (const slot of SLOTS) {

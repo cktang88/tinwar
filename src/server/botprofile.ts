@@ -1,7 +1,5 @@
 import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, WEAPON_IDS, type Badge, type MedalId, type WeaponId, type ZomStat } from '../shared/defs.ts';
-import { NAME_MAX } from '../shared/protocol.ts';
 import { botLevel, botPicks, hash32, seeded, xpForLevel, xpToLevel } from '../shared/cosmetics.ts';
-import { BOT_NAMES } from './bots.ts';
 import { featuredBadge, freshProfile, trackCount, type Profile } from './profiles.ts';
 import { grantUnlocks } from './progression.ts';
 
@@ -12,20 +10,27 @@ import { grantUnlocks } from './progression.ts';
  * lifetime medals from those matches at a casual player's rates, each with a lean of its own.
  */
 
-/** Every name a room can seat a bot under, lower case: the roster, its `name NN` overflow, and the numbered copies `uniqueName` makes. */
-let botNames: Set<string> | null = null;
-export function isBotName(name: string): boolean {
-  if (!botNames) {
-    botNames = new Set();
-    for (const base of BOT_NAMES) {
-      const add = (n: string) => botNames!.add(n.toLowerCase());
-      add(base);
-      for (let i = 10; i < 100; i++) add(`${base} ${i}`);
-      for (let i = 2; i < 100; i++) add(base.slice(0, NAME_MAX - String(i).length) + i);
-    }
-  }
-  return botNames.has(name.toLowerCase());
+/**
+ * The bot names rooms have seated lately, by lower-case name: its spelling as seated and when it was last in a room. Only these have a
+ * record, so the profile API cannot be walked to list the roster: a name never seated as a bot 404s like a name nobody played under.
+ * Bounded: the `SEEN_MAX` most recently seen.
+ */
+const SEEN_MAX = 500;
+const seen = new Map<string, { name: string; at: number }>();
+/** Marks bot `name` as in a room at `at` (ms since the epoch). */
+export function noteBotSeen(name: string, at = Date.now()): void {
+  const key = name.toLowerCase();
+  seen.delete(key);
+  seen.set(key, { name, at });
+  while (seen.size > SEEN_MAX) seen.delete(seen.keys().next().value!);
 }
+/** A seated-lately bot's record under its name (any casing), spelled as it was seated; null for any other name. */
+export function seenBotProfile(name: string): Profile | null {
+  const hit = seen.get(name.toLowerCase());
+  return hit ? botProfile(hit.name, hit.at) : null;
+}
+/** Test seam: forgets every bot seen. */
+export const forgetSeenBots = () => seen.clear();
 
 /** Rates per match, at the middle of a bot's lean: a casual player's medal haul. */
 const MEDAL_RATE: Partial<Record<MedalId, number>> = {
@@ -35,8 +40,15 @@ const MEDAL_RATE: Partial<Record<MedalId, number>> = {
 const OTHER_MEDAL_RATE = 0.04;
 const DAY_MS = 86_400_000;
 
-/** The stub record for bot `name`, as of `now` (only its first and last seen, and when it earned each lifetime medal, move with `now`). */
-export function botProfile(name: string, now = Date.now()): Profile {
+/** Its career began somewhere in the year and a half before this, hashed from its name. */
+const CAREER_EPOCH = Date.UTC(2025, 0, 1);
+
+/**
+ * The stub record for bot `name`, last seen at `lastSeen`. Everything but `lastSeen` hangs off the name alone: when it started, when each
+ * lifetime medal came, so the same record reads the same on every visit.
+ */
+export function botProfile(name: string, lastSeen: number): Profile {
+  const now = lastSeen;
   const r = seeded(hash32(`profile:${name.toLowerCase()}`));
   const between = (a: number, b: number) => a + r() * (b - a);
   const level = botLevel(name);
@@ -65,16 +77,18 @@ export function botProfile(name: string, now = Date.now()): Profile {
     };
     p.zombies = Object.fromEntries(Object.entries(zom).filter(([, n]) => n > 0));
   }
-  // Played on and off over some months, last on lately.
-  p.lastSeen = now - Math.round(between(0.02, 3) * DAY_MS);
-  p.firstSeen = p.lastSeen - Math.round(Math.min(400, games * between(0.4, 1.5)) * DAY_MS);
+  // Played on and off over some months from a start hashed from its name; last on when a room last seated it.
+  const start = CAREER_EPOCH + Math.round(between(0, 540) * DAY_MS);
+  p.lastSeen = lastSeen;
+  p.firstSeen = Math.min(start, lastSeen - DAY_MS);
+  const careerEnd = Math.min(lastSeen, p.firstSeen + Math.round(Math.min(400, games * between(0.4, 1.5)) * DAY_MS));
   for (const track of CAREER_IDS) {
     const have = trackCount(p, track);
     CAREER[track].at.forEach((need, tier) => {
       if (have < need) return;
-      // A rung was reached the share of the way through its career that its count is of today's.
+      // A rung was reached the share of the way through its career that its count is of its total.
       const share = Math.min(1, need / Math.max(1, have));
-      p.badges[badgeKey({ track, tier: tier as Badge['tier'] })] = Math.round(p.firstSeen + share * (p.lastSeen - p.firstSeen));
+      p.badges[badgeKey({ track, tier: tier as Badge['tier'] })] = Math.round(p.firstSeen + share * (careerEnd - p.firstSeen));
     });
   }
   grantUnlocks(p);

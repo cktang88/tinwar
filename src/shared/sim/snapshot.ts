@@ -1,3 +1,4 @@
+import { hash32 } from '../cosmetics.ts';
 import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, SIDES, STREAK, TOWER, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
   AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, FloorPlateView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
@@ -136,11 +137,13 @@ function zombieMarks(w: World, me: Player, heatPx: number): MinimapMark[] {
   return marks.sort((a, b) => a.d - b.d).slice(0, MINIMAP_ZOMBIES).map(({ m }) => m);
 }
 
+/** A tie on the board is broken by a draw hashed from the player's id and the map's place in the rotation: fresh each match, and blind to who is a person. */
+const boardTie = (w: World, id: number) => hash32(`tie:${w.rotationSeed}:${w.rotationAt}:${id}`);
 /**
- * The board, ranked here (people above bots on a tie, `byRank`) so no client needs to know who is which: the rows carry `human` only for
- * a bot's own snapshot, which never leaves the server.
+ * The board, ranked here (`byRank`, ties by `boardTie`) so no client needs to know who is which: the rows carry `human` only for a bot's
+ * own snapshot, which never leaves the server.
  */
-const leaderboard = (w: World, me: Player): LeaderRow[] => [...w.players.values()].sort(byRank)
+const leaderboard = (w: World, me: Player): LeaderRow[] => [...w.players.values()].sort((a, b) => byRank(a, b) || boardTie(w, a.id) - boardTie(w, b.id))
   .map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team, ...(me.kind === 'bot' && p.kind === 'human' && { human: true as const }) }));
 
 function matchView(w: World): MatchView {

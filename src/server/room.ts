@@ -18,9 +18,9 @@ import { botCosmetics, XP } from '../shared/cosmetics.ts';
 import type { Accounts } from './accounts.ts';
 import { NO_PROFILES, type Profiles } from './profiles.ts';
 import { applyRangeMsg, isPractice } from './range.ts';
-import { botName, botSeats, forgetMatch, newBotMemory, randomLoadout, spawnSettleMs, type BotMemory } from './bots.ts';
+import { botName, botSeats, forgetMatch, newBotMemory, randomLoadout, spawnSettleMs, whim, type BotMemory } from './bots.ts';
 import { LOBBY, refillMs, sessionMs, stayers } from './lobby.ts';
-import { botBadge } from './botprofile.ts';
+import { botBadge, noteBotSeen } from './botprofile.ts';
 import { thinkBots } from './bot/tick.ts';
 import { newZomWatch, settleLeaver, watchZombies, type ZomDelta } from './zomcareer.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
@@ -42,6 +42,8 @@ const RTT_SAMPLES = 5;
  * third and two thirds of wins).
  */
 const BOTS_PER_HUMAN = 1;
+/** Seats a versus room keeps past its bot targets, so a person joining seldom has to push a bot out the same tick (see `seatsChanged`). */
+const SPARE_SEATS = 2;
 /** Told once, at join, to a guest whose new name got no profile because their address hit the new-profile limit. */
 export const UNRECORDED_NOTICE = "Your stats aren't being saved for new names right now — register to keep them.";
 
@@ -109,23 +111,33 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   /** The bots that left this match (and those that left at its start), so no newcomer takes a name that just walked out. */
   let gone = new Set<string>();
   let seenMatch: World['match'] | null = null;
-  /** When each bot means to leave (see lobby.ts), the room's last leave, and when a seat a leaver emptied fills. */
+  /** When each bot means to leave (see lobby.ts) and the room's last leave (or arrival out of the blue). */
   const leaveAt = new Map<number, number>();
-  let lastLeaveAt = 0, refillAt: number | null = null;
+  let lastLeaveAt = 0;
+  /** A name with any stored profile, a guest's or an account's, is a person's: no bot takes it. */
+  const reserved = (n: string) => registered(n) || profiles.get(n) !== null;
   function addBot(team: Team) {
-    const name = uniqueName(botName(new Set([...names(), ...gone]), botRand), names(), registered);
+    const name = uniqueName(botName(new Set([...names(), ...gone]), botRand), names(), reserved);
     const loadout = randomLoadout(botRand);
     const p = addPlayer(world, name, loadout, { team });
     if (mode === 'BR') enterRoyale(world, p);
     bots.set(p.id, { ...newBotMemory(botRand, { name, seed }, loadout), settleUntil: world.now + spawnSettleMs(name, world.now), settleFacing: p.angle });
     leaveAt.set(p.id, world.now + sessionMs(name, seed, world.now));
-    p.cos = botCosmetics(name);
-    p.badge = botBadge(name);
+    dressBot(p);
     return p;
   }
+  /** A bot's name plate (level chip, cosmetics, medal) as its record has them, and the record's last seen. */
+  function dressBot(p: Player) {
+    p.cos = botCosmetics(p.name);
+    p.badge = botBadge(p.name);
+    noteBotSeen(p.name);
+  }
   function dropBot(id: number) {
+    const p = world.players.get(id);
+    if (p) noteBotSeen(p.name);
     bots.delete(id);
     leaveAt.delete(id);
+    invites.delete(id);
     removePlayer(world, id);
     if (world.royale) world.royale.entrants = world.royale.entrants.filter((e) => e !== id);
   }
@@ -148,24 +160,76 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       dropBot(id);
     }
     lastLeaveAt = world.now;
-    refillAt = null;
     balanceBots();
   }
 
   /** Mid-match, a bot whose session is over leaves now and then (at its next death, or a while later), and a newcomer takes its seat soon after. */
   function churn() {
-    if (practice || (mode !== 'FFA' && mode !== 'TDM' && mode !== 'DOM') || world.match.k !== 'playing') return;
-    if (refillAt !== null && world.now >= refillAt) { refillAt = null; balanceBots(); return; }
+    if (!paced || world.match.k !== 'playing') return;
     const ends = world.mapChangeAt;
-    if (refillAt !== null || world.now - lastLeaveAt < LOBBY.gapMs || ends - world.now < LOBBY.tailMs) return;
+    // Nobody leaves while a seat is still waiting for its newcomer.
+    const filling = [...seatClock.values()].some((c) => c.fillAt !== null);
+    if (filling || world.now - lastLeaveAt < LOBBY.gapMs || ends - world.now < LOBBY.tailMs) return;
     for (const id of bots.keys()) {
       const p = world.players.get(id), at = leaveAt.get(id) ?? Infinity;
       if (!p || world.now < at || (p.life.k === 'alive' && world.now < at + LOBBY.graceMs)) continue;
+      // Its seat fills 3 to 8 s later (`seatTick`).
       gone.add(p.name);
       dropBot(id);
       lastLeaveAt = world.now;
-      refillAt = world.now + refillMs(seed, world.now);
       return;
+    }
+    // Now and then the room gains a player out of the blue, or loses one it does not replace: its head count drifts by one.
+    if (whim(`slack:${seed}:${world.now}`)() < LOBBY.slackPerTick) { slack = 1 - slack; lastLeaveAt = world.now; }
+  }
+
+  /**
+   * In the versus rooms bots never come or go the tick a person does: a join, a leave or a friend crossing sides only moves the seat
+   * targets, and `seatTick` meets them later, a surplus bot leaving 2 to 10 s on (one at a time) and a missing one arriving 3 to 8 s on.
+   * Only the room's real limit, its seats plus `SPARE_SEATS`, drops a bot at once, and the spare means a join seldom meets it.
+   */
+  const paced = !practice && (mode === 'FFA' || mode === 'TDM' || mode === 'DOM');
+  let slack = 0;
+  const seatClock = new Map<Team, { dropAt: number | null; fillAt: number | null }>();
+  function seatTargets(): [Team, number][] {
+    const targets = botTargets();
+    if (!slack || !targets.length) return targets;
+    // The extra seat goes to the side with fewer bodies in it.
+    const size = (team: Team) => [...world.players.values()].filter((p) => p.team === team).length;
+    const at = targets.reduce((best, t, i) => (size(t[0]) < size(targets[best]![0]) ? i : best), 0);
+    return targets.map(([team, n], i) => [team, i === at ? n + 1 : n]);
+  }
+  function seatTick() {
+    if (!paced) return;
+    for (const [team, want] of seatTargets()) {
+      const c = seatClock.get(team) ?? { dropAt: null, fillAt: null };
+      seatClock.set(team, c);
+      const mine = [...bots.keys()].filter((id) => world.players.get(id)?.team === team);
+      if (mine.length > want) {
+        c.fillAt = null;
+        c.dropAt ??= world.now + LOBBY.dropMs[0] + whim(`drop:${seed}:${world.now}`)() * (LOBBY.dropMs[1] - LOBBY.dropMs[0]);
+        if (world.now < c.dropAt) continue;
+        // One between lives goes first, as a person quits at the death screen.
+        const id = mine.find((i) => world.players.get(i)?.life.k !== 'alive') ?? mine.at(-1)!;
+        gone.add(world.players.get(id)!.name);
+        dropBot(id);
+        c.dropAt = null;
+      } else if (mine.length < want) {
+        c.dropAt = null;
+        c.fillAt ??= world.now + refillMs(seed, world.now);
+        if (world.now >= c.fillAt && seatOpen(team)) { addBot(team); c.fillAt = null; }
+      } else c.dropAt = c.fillAt = null;
+    }
+  }
+  /** A person came, went or changed sides: outside the versus rooms bots answer at once; in them, only past the room's real limit. */
+  function seatsChanged() {
+    if (!paced) { balanceBots(); return; }
+    const humans = [...world.players.values()].filter((p) => p.kind === 'human').length;
+    const cap = Math.max(limits.minPlayers, humans) + SPARE_SEATS;
+    while (world.players.size > cap && bots.size) {
+      const id = [...bots.keys()].find((i) => world.players.get(i)?.life.k !== 'alive') ?? [...bots.keys()].at(-1)!;
+      gone.add(world.players.get(id)!.name);
+      dropBot(id);
     }
   }
 
@@ -187,7 +251,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     if (!holder) return;
     const signedIn = joined().find((c) => c.playerId === holder.id)?.account;
     if (signedIn?.toLowerCase() === account.toLowerCase()) return;
-    holder.name = uniqueName(holder.name, names(), registered);
+    holder.name = uniqueName(holder.name, names(), reserved);
+    // A renamed bot is dressed for its new name, so its plate and its record agree.
+    if (holder.kind === 'bot') dressBot(holder);
   }
 
   function seatHuman(name: string, loadout: Loadout) {
@@ -379,7 +445,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const guestClaim = key && !account && !practice ? profiles.adoptGuest(key) : null;
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
-      balanceBots();
+      seatsChanged();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, map: world.map, walls: wallViews(world), account, ...(guestClaim && { guest: guestClaim }) });
       if (radioStation) send(client.ws, { t: 'radio', station: radioStation, by: null });
       if (unrecorded) send(client.ws, { t: 'chat', from: '', text: UNRECORDED_NOTICE, team: null });
@@ -500,7 +566,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (move.life.k === 'alive') move.life.hits = move.life.hits.filter((h) => h.by !== q.id);
     }
     friendNote(move.id, `You joined ${stay.name}'s team.`);
-    balanceBots();
+    seatsChanged();
   }
 
   /**
@@ -578,7 +644,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     for (const f of friends) sendFriends(f);
     creditLives(c);
     if (key && !practice) profiles.notice(key);
-    balanceBots();
+    seatsChanged();
   }
 
   function applyInputs() {
@@ -608,6 +674,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       seenMatch = world.match;
     }
     churn();
+    seatTick();
+    // Bots in a room are seen there: their records' last seen follows (botprofile.ts).
+    if (world.tick % 1800 === 0) for (const id of bots.keys()) { const p = world.players.get(id); if (p) noteBotSeen(p.name); }
     for (const c of joined()) notify(c);
     return events;
   }

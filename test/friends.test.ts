@@ -51,12 +51,19 @@ test('a friend always shows on your minimap, marked as a friend, wherever they a
   assert.equal(Math.round(mark.x), Math.round(b.x));
 });
 
-test('the leaderboard a person sees never tells people from bots, but comes ranked with people above bots on a tie', () => {
+test('the leaderboard a person sees never tells people from bots, not even by the order of a tie', () => {
   const w = emptyWorld();
-  const bot = spawnAt(w, 900, 300), person = spawnAt(w, 300, 300, { kind: 'human' });
-  const rows = snapshotFor(w, person.id).leaderboard;
-  assert.ok(rows.every((r) => !('human' in r)), 'no row says who is a person');
-  assert.deepEqual(rows.map((r) => r.id), [person.id, bot.id], 'the server ranks the person first on a tie');
+  const bots = [spawnAt(w, 900, 300), spawnAt(w, 1200, 300), spawnAt(w, 1500, 300)], person = spawnAt(w, 300, 300, { kind: 'human' });
+  const places: number[] = [];
+  for (let match = 0; match < 40; match++) {
+    w.rotationAt = match;
+    const rows = snapshotFor(w, person.id).leaderboard;
+    assert.ok(rows.every((r) => !('human' in r)), 'no row says who is a person');
+    places.push(rows.findIndex((r) => r.id === person.id));
+  }
+  // At 0/0 the person lands anywhere among the four, a fresh draw each match, not always on top.
+  assert.ok(new Set(places).size >= 3 && places.filter((i) => i === 0).length < 25, `places ${places.join(',')}`);
+  const bot = bots[0]!;
   // A bot's own snapshot never leaves the server: its brain still reads who is a person.
   assert.equal(snapshotFor(w, bot.id).leaderboard.find((r) => r.id === person.id)?.human, true);
 });

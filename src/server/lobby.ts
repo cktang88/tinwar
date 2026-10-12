@@ -15,6 +15,10 @@ export const LOBBY = {
   gapMs: 150_000,
   tailMs: 30_000,
   refillMs: [3000, 8000] as const,
+  /** A surplus bot (a person took its seat) leaves this long after, one at a time. */
+  dropMs: [2000, 10000] as const,
+  /** The chance each tick past `gapMs` that the room's head count drifts by one (a player out of the blue, or one not replaced): about every 17 s past the gap. */
+  slackPerTick: 0.002,
 };
 
 /** How long a bot named `name`, joining at server time `at`, means to play: the same each time for the same room and moment. */

@@ -7,6 +7,14 @@ import { fakeSocket, PISTOL } from './helpers.ts';
 
 const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as Accounts;
 
+/**
+ * Bots never come or go the tick a person does (see `seatTick` in room.ts): a surplus one leaves within 10 s, a missing one arrives
+ * within 8 s, one at a time. This plays the room long enough for its seats to settle.
+ */
+function settle(room: Room) {
+  for (let t = 0; t < 30 * 40; t++) room.tick();
+}
+
 function sidesWith(room: Room, humans: number) {
   const sockets = Array.from({ length: humans }, (_, i) => {
     const ws = fakeSocket();
@@ -14,6 +22,7 @@ function sidesWith(room: Room, humans: number) {
     ws.send({ t: 'join', name: `Human${i}`, loadout: PISTOL, aspect: 1.5 });
     return ws;
   });
+  settle(room);
   const ps = [...room.world.players.values()];
   for (const ws of sockets) ws.close();
   const tally = (team: 'red' | 'blue', kind?: 'human') => ps.filter((p) => p.team === team && (!kind || p.kind === kind)).length;
@@ -42,10 +51,13 @@ for (const mode of MODE_IDS.filter((m) => m === 'TDM' || m === 'DOM')) {
     // The room's heartbeat timers keep the test process alive until every socket closes, so close them even when an assertion fails.
     try {
       for (const name of ['Ann', 'Bo', 'Cy', 'Di']) join(name);
+      settle(room);
       assert.deepEqual(sides(room), { redHumans: 2, blueHumans: 2, redBots: 7, blueBots: 7 });
       for (const p of [...room.world.players.values()]) if (p.kind === 'human' && p.team === 'red') sockets.get(p.name)!.close();
+      settle(room);
       assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 9, blueBots: 7 }, 'red plays nine bots against two humans and seven bots');
       join('Eve');
+      settle(room);
       assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 8, blueBots: 7 }, 'the next human joins red and one of its bots leaves');
     } finally {
       for (const ws of sockets.values()) ws.close();

@@ -51,13 +51,15 @@ test('between matches some bots stay for another round and the rest are new face
 test('mid-match a bot leaves now and then and a newcomer takes its seat a few seconds later, never under a name that left', () => {
   const saved = structuredClone(LOBBY);
   // Sessions of seconds, not minutes, so a minute of play shows the churn.
-  Object.assign(LOBBY, { session: { medianMs: 9000, logSd: 0.3, minMs: 5000, maxMs: 15000 }, graceMs: 4000, gapMs: 6000, tailMs: 0 });
+  Object.assign(LOBBY, { session: { medianMs: 9000, logSd: 0.3, minMs: 5000, maxMs: 15000 }, graceMs: 4000, gapMs: 6000, tailMs: 0, slackPerTick: 0 });
   try {
     const room = createRoom('ffa', 'FFA', 5, accounts, 1, { ...LIMITS, minPlayers: 7 });
     const ws = fakeSocket();
     room.connect(ws.socket);
     ws.send({ t: 'join', name: 'Regular', loadout: PISTOL, aspect: 1.6 });
     room.world.mapChangeAt = Infinity;
+    // The bot Ann's seat made surplus leaves within 10 s; the churn is measured after.
+    for (let t = 0; t < 30 * 11; t++) { room.tick(); ws.sent.length = 0; }
     const target = 6;
     const left: { at: number; name: string }[] = [];
     const seen = new Map<number, string>(botsOf(room).map((p) => [p.id, p.name]));
@@ -81,7 +83,8 @@ test('mid-match a bot leaves now and then and a newcomer takes its seat a few se
     room.close();
     ws.close();
     assert.ok(left.length >= 3, `${left.length} left in 75 s`);
-    assert.ok(joinedNames.length >= left.length - 1, `${joinedNames.length} joined`);
+    // The last leave may still be waiting for its newcomer.
+    assert.ok(joinedNames.length >= left.length - 1, `${joinedNames.length} joined, ${left.length} left`);
     for (let i = 1; i < left.length; i++) assert.ok(left[i]!.at - left[i - 1]!.at >= LOBBY.gapMs - 1, 'leaves are spaced out');
     assert.ok(longestShort <= LOBBY.refillMs[1] + 100, `a seat stood empty ${longestShort} ms`);
   } finally {
@@ -93,4 +96,34 @@ test('at the real pace, a room loses about one bot every few minutes, not a stre
   // Sessions run 6 to 60 minutes, and leaves are held 2.5 minutes apart: a 17-bot room over an hour sees at most 24 leaves mid-match.
   assert.ok(LOBBY.gapMs >= 120_000);
   assert.ok(LOBBY.session.minMs >= 5 * 60_000 && LOBBY.session.medianMs >= 15 * 60_000);
+});
+
+test('a person joining or leaving never moves a bot the same tick: a surplus bot leaves seconds later, a missing one arrives seconds later', () => {
+  for (const mode of ['FFA', 'TDM'] as const) {
+    const room = createRoom(mode.toLowerCase(), mode, 11, accounts);
+    const a = fakeSocket(), b = fakeSocket();
+    room.connect(a.socket);
+    a.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.6 });
+    for (let t = 0; t < 30 * 12; t++) { room.tick(); a.sent.length = 0; }
+    const ids = () => botsOf(room).map((p) => p.id).sort();
+    const before = ids();
+    room.connect(b.socket);
+    b.send({ t: 'join', name: 'Ben', loadout: PISTOL, aspect: 1.6 });
+    assert.deepEqual(ids(), before, `${mode}: no bot left the tick Ben joined`);
+    room.tick();
+    const firstChange: number[] = [];
+    let last = ids(), at = room.world.now;
+    for (let t = 0; t < 30 * 15; t++) {
+      room.tick(); a.sent.length = 0; b.sent.length = 0;
+      if (ids().join() !== last.join()) { firstChange.push(room.world.now - at); last = ids(); }
+    }
+    assert.ok(firstChange.length > 0 && firstChange[0]! >= 1500, `${mode}: the first bot change came ${firstChange[0]} ms after the join`);
+    assert.ok(room.world.players.size <= LIMITS.minPlayers + 2, 'never past the room\'s seats');
+    // Ben leaves: no bot arrives the same tick.
+    const now = ids();
+    b.close();
+    assert.deepEqual(ids(), now, `${mode}: no bot arrived the tick Ben left`);
+    room.close();
+    a.close();
+  }
 });
