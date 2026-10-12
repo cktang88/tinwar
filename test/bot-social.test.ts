@@ -13,7 +13,7 @@ import type { Perception } from '../src/server/bot/awareness.ts';
 import { makeModerator } from '../src/server/moderation.ts';
 import {
   bankLine, CAPS, cleanLine, freshSpin, LINES, makeSocial, noteHumanChat, noteHumanEmote, socialHoldsFire, socialTick, spareTruce, styled, traitsFor, typo,
-  watchSpin, type GoofKind, type LineSource, type Social,
+  watchSpin, threatened, clearAlong, type GoofKind, type LineSource, type Social,
 } from '../src/server/bot/social.ts';
 import { emptyWorld, spawnAt } from './helpers.ts';
 
@@ -66,8 +66,16 @@ test('the safety filter: bot talk, links, personal details, length, emoji and ca
   for (const bad of ['i am a bot', 'as an AI i cannot', 'im an ai lol', 'language model here', 'its just a robot', 'join my discord', 'www.site.com', 'im 14', 'kys', 'SKIP', 'a'.repeat(41), 'fuck off', 'f u c k']) {
     assert.equal(cleanLine(bad), null, `"${bad}" is refused`);
   }
-  assert.equal(cleanLine('no lol'), 'no lol');
-  assert.equal(cleanLine('ur the bot'), 'ur the bot', 'the stock brush-off is let through');
+  for (const bad of ['ur the bot', 'b o t', 'b.o.t lol', 'a.i.', 'a i', 'chatbot lol', 'r0bot', 'im human', 'real person here', 'npc', 'llm', 'my prompt',
+    'k y s', 'kys', 'kill your self', 'kill yourself', 'unalive', 'b\u043et', 'h\u0430cker b\u043et', '\u043f\u0440\u0438\u0432\u0435\u0442', 'caf\u00e9', 'meet irl']) {
+    assert.equal(cleanLine(bad), null, `"${bad}" is refused`);
+  }
+  for (const ok of ['again', 'both of u', 'bottom lol', 'said', 'no lol']) assert.equal(cleanLine(ok), ok, `"${ok}" passes`);
+  assert.equal(cleanLine('nice \u0455hot'), 'nice shot', 'look-alike letters fold to ASCII');
+  assert.equal(cleanLine('\uff47\uff47'), 'gg', 'full-width letters fold');
+  assert.equal(cleanLine('gg \u2014 wp'), 'gg wp', 'a dash is dropped');
+  assert.equal(makeModerator().isClean('n1gger'), false, 'the people\'s filter knows the slur too');
+  assert.equal(makeModerator().isClean('nigga'), false);
   assert.equal(cleanLine('GG WP.'), 'gg wp', 'lowercased, no period');
   assert.equal(cleanLine('nice shot 😂…'), 'nice shot', 'no emoji, no ellipsis');
   assert.equal(cleanLine('1v1 me'), '1v1 me');
@@ -211,7 +219,8 @@ test('asked if it is a bot, it brushes it off in a word or two, or says nothing'
   }
   assert.ok(said.length > 0 && said.length < 30, `some answer, most ignore it: ${said}`);
   // A brush-off (or a follow-up "lol"): a word or two, never a denial.
-  for (const t of said) assert.ok(t.split(' ').length <= 3 && (!/bot/.test(t) || t === 'ur the bot') && !/real|human|not a/.test(t), `"${t}"`);
+  // Never a denial or a claim to be human: no "no ...", no "ur the bot", nothing about being real.
+  for (const t of said) assert.ok(t.split(' ').length <= 3 && !/^no\b/.test(t) && !/bot|real|human|person|not a|\bme\b/.test(t), `"${t}"`);
 });
 
 test('the phrase bank never repeats a line said lately in the lobby', () => {
@@ -286,4 +295,103 @@ test('a seeded room: a few lines and emotes, most bots silent, the caps kept, no
   const texts = rec.lines.map((l) => l.text.toLowerCase()).filter((t) => t !== 'gg');
   assert.equal(new Set(texts).size, texts.length, `no line twice: ${texts}`);
   assert.deepEqual(unsafe, [], 'no goof under threat');
+});
+
+test('questions and lines at a bot get nothing it could be held to', () => {
+  for (const k of ['question', 'addressed', 'botq'] as const) {
+    for (const t of [...LINES[k].rude, ...LINES[k].plain, ...LINES[k].nice]) assert.ok(['?', 'idk', 'what', 'lol', 'huh', 'bro what', 'lmao'].includes(t), `${k}: "${t}"`);
+  }
+  const said: string[] = [];
+  for (const name of namesWhere((t) => t.soc >= 1, 30)) {
+    const { w, mems } = pair(name, 'cautious');
+    const human = [...w.players.values()].find((p) => p.kind === 'human')!;
+    const s = makeSocial(), rec = recorder(w);
+    noteHumanChat(s, human.id, `anyone wanna meet irl ${name}?`);
+    for (let i = 0; i < 30 * 10; i++) { socialTick(s, w, mems, rec.out); tickOnly(w); }
+    said.push(...rec.lines.map((l) => l.text.toLowerCase()));
+  }
+  assert.ok(said.length > 0, 'some answer');
+  for (const t of said) assert.ok(!/\b(yes|ye|yea|yeah|ok|sure|same|no)\b/.test(t), `"${t}" commits to nothing`);
+});
+
+test('truces are FFA only, one sign makes peace with two bots at most, and a man waits minutes for the next', () => {
+  const names = namesWhere((t) => t.soc >= 1, 8);
+  // A team mode: no truce.
+  for (const name of names) {
+    const w = emptyWorld('TDM');
+    const bot = spawnAt(w, 1000, 1000, { name, team: 'red' });
+    const human = spawnAt(w, 1300, 1000, { name: 'person', kind: 'human', team: 'blue' });
+    const mems = new Map<number, BotMemory>([[bot.id, { ...newBotMemory(() => 0.5, { skill: VETERAN }), persona: 'cautious' }]]);
+    const s = makeSocial(), rec = recorder(w);
+    spinAt(s, w, mems, human, rec.out);
+    assert.ok(!socialHoldsFire(mems.get(bot.id)!, human.id), `${name}: no truce in TDM`);
+  }
+  // Eight sociable bots round one man: one wave, two truces at most.
+  const w = emptyWorld('FFA');
+  const human = spawnAt(w, 1000, 1000, { name: 'person', kind: 'human' });
+  const mems = new Map<number, BotMemory>();
+  names.forEach((name, i) => { const a = (i / names.length) * Math.PI * 2; mems.set(spawnAt(w, 1000 + Math.cos(a) * 300, 1000 + Math.sin(a) * 300, { name }).id, { ...newBotMemory(() => 0.5, { skill: VETERAN }), persona: 'cautious' }); });
+  const s = makeSocial(), rec = recorder(w);
+  noteHumanEmote(s, human.id, 'wave');
+  socialTick(s, w, mems, rec.out);
+  const holding = () => [...mems.values()].filter((m) => socialHoldsFire(m, human.id)).length;
+  assert.ok(holding() >= 1 && holding() <= 2, `one wave, ${holding()} truces`);
+  // The truces run out; another wave a minute later finds none of those bots willing.
+  for (let i = 0; i < 30 * 61; i++) { socialTick(s, w, mems, rec.out); tickOnly(w); }
+  const before = [...mems.entries()].filter(([, m]) => m.social?.askedAt[human.id] !== undefined).map(([id]) => id);
+  for (let i = 0; i < 30 * 30; i++) { socialTick(s, w, mems, rec.out); tickOnly(w); }
+  noteHumanEmote(s, human.id, 'wave');
+  socialTick(s, w, mems, rec.out);
+  for (const id of before) assert.ok(!socialHoldsFire(mems.get(id)!, human.id), 'a bot just out of a truce (or that refused) takes none for minutes');
+});
+
+test('the inbox of people\'s lines is capped', () => {
+  const s = makeSocial();
+  for (let i = 0; i < 500; i++) { noteHumanChat(s, 1, 'gg'); noteHumanEmote(s, 1, 'wave'); }
+  assert.ok(s.inbox.length <= 32);
+});
+
+test('a follow-up line comes 1.5 to 4 s after the first, past the 20 s gap', () => {
+  const pool = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel', 'india', 'juliet', 'kilo', 'lima', 'mike', 'nova', 'oscar', 'papa'];
+  let n = 0;
+  const gaps: number[] = [];
+  for (const name of namesWhere((t) => t.soc >= 2, 6)) {
+    const { w, bot, human, mems } = pair(name, 'cautious', 2000);
+    const s = makeSocial({ lines: () => pool[n++ % pool.length]! }), rec = recorder(w);
+    for (let i = 0; i < 30 * 120; i++) {
+      if (i % (30 * 25) === 0) w.events = [{ e: 'kill', killer: name, victim: 'person', killerId: bot.id, victimId: human.id, weapon: 'Pistol', bounty: false, assisters: [], ended: 0, revenge: false }];
+      socialTick(s, w, mems, rec.out);
+      tickOnly(w);
+    }
+    for (let i = 1; i < rec.lines.length; i++) gaps.push(rec.lines[i]!.t - rec.lines[i - 1]!.t);
+  }
+  assert.ok(gaps.some((g) => g >= 1500 && g <= 4100), `a follow-up went out: gaps ${gaps.map((g) => Math.round(g))}`);
+  assert.ok(gaps.every((g) => g >= 1500), 'never closer than 1.5 s');
+});
+
+test('goofs: keys let go when one ends, a truce partner near blocks firing into the air, and the line must stay clear', () => {
+  const [name] = namesWhere((t) => t.goof >= 1.5, 1);
+  const { w, bot, human, mems } = pair(name!, 'marksman', 300);
+  const s = makeSocial(), rec = recorder(w);
+  socialTick(s, w, mems, rec.out);
+  const sm = mems.get(bot.id)!.social!;
+  sm.truce = [{ id: human.id, until: Infinity, betrayAt: null, offer: false }];
+  const arena = arenaFor(w);
+  assert.equal(threatened(w, arena, bot, sm, true), false, 'trusting, the partner is no threat (a spin or a wiggle may go on)');
+  assert.equal(threatened(w, arena, bot, sm, false), true, 'not trusting (an air goof), he is');
+  assert.equal(clearAlong(w, bot, 0), false, 'he stands on the line to the right');
+  assert.equal(clearAlong(w, bot, Math.PI), true, 'nobody to the left');
+  human.life = { k: 'dead', respawnAt: Infinity } as Player['life'];
+  sm.truce = [];
+  sm.goof = 400;
+  let ended = 0, active = false;
+  for (let i = 0; i < 30 * 20; i++) {
+    const before = rec.goofs.length;
+    socialTick(s, w, mems, rec.out);
+    const now = rec.goofs.length > before;
+    if (active && !now && !sm.act) { ended++; const k = bot.input; assert.ok(!k.up && !k.down && !k.left && !k.right && !k.fire, 'keys and trigger let go'); }
+    active = now;
+    tickOnly(w);
+  }
+  assert.ok(ended > 0, 'goofs ended');
 });

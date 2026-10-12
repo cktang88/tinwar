@@ -446,7 +446,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         if (!p || p.life.k !== 'alive' || now - client.lastEmoteAt < EMOTE_INTERVAL_MS) return;
         client.lastEmoteAt = now;
         sendEmote(p, msg.id);
-        noteHumanEmote(social, p.id, msg.id);
+        if (!practice) noteHumanEmote(social, p.id, msg.id);
         return;
       }
       case 'radio': {
@@ -471,7 +471,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         if (cheat) { send(client.ws, { t: 'chat', from: '', text: applyCheat(p, cheat), team: null }); return; }
         const text = moderator.mask(msg.text);
         sendChat(p, text);
-        noteHumanChat(social, p.id, text);
+        if (!practice) noteHumanChat(social, p.id, text);
         return;
       }
     }

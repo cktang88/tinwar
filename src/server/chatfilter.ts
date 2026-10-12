@@ -1,5 +1,5 @@
 /** The chat filter itself, with no file access, so the browser bundle can carry it too (bots' lines in the attract scene, bot/social.ts). */
-const BUILT_IN = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'dick', 'pussy', 'whore', 'slut', 'bastard', 'retard', 'faggot', 'nazi', 'rape'];
+const BUILT_IN = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'dick', 'pussy', 'whore', 'slut', 'bastard', 'retard', 'faggot', 'nazi', 'rape', 'nigger', 'nigga', 'niggah', 'nigguh', 'niglet'];
 const LOOKALIKES: Readonly<Record<string, string>> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i' };
 
 const letters = (s: string) => [...s.toLowerCase()].map((ch) => LOOKALIKES[ch] ?? ch).filter((ch) => /\p{L}/u.test(ch)).join('');

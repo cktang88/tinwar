@@ -157,20 +157,25 @@ export const LINES: Record<ChatEventKind, Bank> = {
   streak: { rude: ['cant stop me', 'whos next', 'too ez'], plain: ['on a roll', 'lets go', 'im on fire'], nice: ['lucky streak lol', 'dont jinx it'] },
   revenge: { rude: ['got u', 'payback', 'thats what u get'], plain: ['got u back', 'revenge lol', 'finally'], nice: ['got u back lol', 'even now'] },
   death: {
-    rude: ['lag', 'so much lag', 'laggg', 'hacker', 'aimbot lol', 'teamers', 'this gun is trash', 'how', 'camper', 'who keeps camping', '1v1 me'],
+    rude: ['lag', 'so much lag', 'laggg', 'hacker', 'hacks lol', 'teamers', 'this gun is trash', 'how', 'camper', 'who keeps camping', '1v1 me'],
     plain: ['rip', 'noooo', 'bruh', '?', 'lol', 'oof', 'how', 'how did that hit', 'i was afk', 'bruh my ping', 'wow'],
     nice: ['nice shot', 'ns', 'gg', 'wp', 'nice one', 'oof'],
   },
-  deathTop: { rude: ['hacker', 'aimbot lol', 'how u so fast', 'ok hes cracked'], plain: ['how u so fast', 'bruh', 'again'], nice: ['nice shot', 'ur good', 'wp'] },
+  deathTop: { rude: ['hacker', 'hacks lol', 'how u so fast', 'ok hes cracked'], plain: ['how u so fast', 'bruh', 'again'], nice: ['nice shot', 'ur good', 'wp'] },
   nemesis: { rude: ['again??', '1v1 me', 'stop following me', 'this guy', 'ok ur next'], plain: ['again lol', 'bruh again', 'not again', '??'], nice: ['ok ur good', 'ur cracked', 'nice shot again'] },
   win: { rude: ['ez', 'gg ez', 'gg'], plain: ['gg', 'ggs', 'ggwp', 'gg all'], nice: ['gg wp', 'ggs', 'gg all', 'good game'] },
   loss: { rude: ['gg', 'lag', 'rematch'], plain: ['gg', 'ggs', 'close'], nice: ['gg wp', 'ggs', 'wp'] },
   echo: { rude: ['gg', 'gg ez'], plain: ['gg', 'ggs', 'ggwp'], nice: ['gg', 'gg wp', 'ggs'] },
   join: { rude: ['yo'], plain: ['hi', 'yo', 'hey guys'], nice: ['hello', 'hi', 'hey guys'] },
   idle: { rude: ['where is everyone', 'im bored'], plain: ['im bored', 'where is everyone', 'anyone from br'], nice: ['im bored', 'where is everyone'] },
-  addressed: { rude: ['what', '?', 'no'], plain: ['?', 'what', 'yes', 'no', 'ok', 'lol'], nice: ['hi', 'yes', 'ok', 'lol'] },
-  question: { rude: ['idk', 'no'], plain: ['idk', 'no', 'yes', 'same'], nice: ['idk', 'no idea', 'yes'] },
-  botq: { rude: ['ur the bot', 'bro what', 'lmao'], plain: ['no lol', '?', 'bro what'], nice: ['no lol', '?', 'lmao'] },
+  // A question or a line at it gets nothing it could be held to: no yes, no no, no promise (it cannot know what it is agreeing to).
+  addressed: { rude: ['what', '?', 'huh'], plain: ['?', 'what', 'lol', 'huh'], nice: ['?', 'what', 'lol'] },
+  question: { rude: ['idk', '?'], plain: ['idk', '?', 'lol', 'huh'], nice: ['idk', '?', 'huh'] },
+  /*
+   * Asked if it is a bot. Policy: a bot may say nothing or deflect, but it never lies about what it is. No denial ("no", "im human",
+   * "im real") and no dodge that implies one ("ur the bot"): only a non-committal word, or (most of the time) silence.
+   */
+  botq: { rude: ['bro what', 'lmao'], plain: ['?', 'bro what', 'huh'], nice: ['?', 'lmao', 'huh'] },
   huh: { rude: ['lol', '?'], plain: ['lol', '?', 'lol sry'], nice: ['sry', 'my bad', 'lol sry'] },
   ns: { rude: ['ty', 'ik'], plain: ['ty', 'thx', 'ty lol'], nice: ['ty', 'thanks', 'u too'] },
   hi: { rude: ['yo', 'sup'], plain: ['hi', 'hey', 'yo'], nice: ['hi', 'hey', 'hello'] },
@@ -254,30 +259,59 @@ export function typingMs(text: string, r: () => number): number {
 const DEFAULT_MOD = makeModerator();
 const BLOCKED: readonly RegExp[] = [
   // Self-harm, threats, sexual content, politics, identity insults.
-  /\b(kys|kill (ur|your)self|suicide|die irl|rape|sex|nude|porn|horny|boobs|trump|biden|election|politic|gay|jew|muslim|nigg|tranny|autis)/i,
+  /\b(kill (ur|your|yo) ?self|suicide|die irl|rape|sex|nude|porn|horny|boobs|trump|biden|election|politic|gay|jew|muslim|nigg|tranny|autis)/i,
   // Links, handles, channels and personal details.
-  /(https?:|www\.|\.com\b|\.gg\b|\.io\b|discord|youtube|twitch|insta|tiktok|@\w|#\w|\bmy (age|name|address)\b|\bi(m| am) \d|\byears old\b|\blive in\b|\bfrom (the )?(usa|uk|us)\b)/i,
+  /(https?:|www\.|\.com\b|\.gg\b|\.io\b|discord|youtube|twitch|insta|tiktok|@\w|#\w|\bmy (age|name|address)\b|\bi(m| am) \d|\byears old\b|\blive in\b|\bfrom (the )?(usa|uk|us)\b|\birl\b|\bmeet\b)/i,
   // Prompt leaks.
-  /\b(ignore (all|previous)|instructions|system prompt)\b/i,
+  /\b(ignore (all|previous)|system prompt)\b/i,
 ];
-/** Talk of what the speaker is. Only the two stock brush-offs may name it. */
-const WHAT_IT_IS = /\b(ai|a\.i\.|bot|bots|robot|language model|assistant|claude|anthropic|openai|gpt|model|as an)\b/i;
-const WHITELIST = new Set(['no lol', 'ur the bot']);
+/** Words, once spaced or dotted letters are joined ("b o t", "a.i."), that talk of what the speaker is or of self-harm. */
+const BANNED_WORDS = new Set([
+  'ai', 'ais', 'npc', 'npcs', 'llm', 'llms', 'gpt', 'chatgpt', 'model', 'models', 'assistant', 'prompt', 'prompts', 'instruction', 'instructions',
+  'program', 'programmed', 'claude', 'anthropic', 'openai', 'human', 'humans', 'kys', 'unalive', 'unalived',
+]);
+/** The same, run together anywhere in the letters ("chatbot", "languagemodel", "killyourself"). */
+const BANNED_RUNS = ['chatbot', 'robot', 'languagemodel', 'assistant', 'prompt', 'instruction', 'openai', 'anthropic', 'claude', 'chatgpt', 'unalive', 'killyourself', 'killurself', 'killyoself', 'realperson', 'imreal', 'notreal'];
+/** Letters that look like ASCII ones, after NFKC (which already folds full-width and styled letters). */
+const CONFUSABLE: Readonly<Record<string, string>> = {
+  'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's', 'к': 'k', 'м': 'm', 'н': 'h', 'т': 't', 'в': 'b',
+  'α': 'a', 'β': 'b', 'ε': 'e', 'ι': 'i', 'κ': 'k', 'ν': 'v', 'ο': 'o', 'ρ': 'p', 'τ': 't', 'υ': 'u', 'χ': 'x',
+  'ı': 'i', 'ł': 'l', 'ø': 'o', 'ß': 'ss',
+};
 export const LINE_MAX = 40;
+
+/** A line's words with runs of single letters joined ("b o t" and "a.i." each one word), so spacing cannot hide one. */
+function words(line: string): string[] {
+  const out: string[] = [];
+  let run = '';
+  for (const t of line.split(/[^a-z0-9]+/).filter(Boolean)) {
+    if (t.length === 1) { run += t; continue; }
+    if (run) { out.push(run); run = ''; }
+    out.push(t);
+  }
+  if (run) out.push(run);
+  return out;
+}
 
 /**
  * The safety post-filter: every bot line, from the bank or a writer, comes through here before it is queued. Null means send nothing
- * (and a writer's line falls back to the bank). It lowercases, drops a trailing period and anything outside plain ASCII (emoji, the
- * ellipsis, dashes), and refuses a line the room's chat filter would mask, anything on the blocklist, digits beyond "1v1", any word about
- * bots or models (but for "no lol" and "ur the bot"), "skip", and anything over 40 characters.
+ * (and a writer's line falls back to the bank). It folds the text (NFKC, then look-alike letters to ASCII) and refuses one with any other
+ * letter left; drops emoji and other symbols, a trailing period, and case; and refuses a line the room's chat filter would mask, anything
+ * on the blocklist, digits beyond "1v1", any word about bots, models, prompts or being human (spaced, dotted or run together), self-harm
+ * however it is spelt, "skip", and anything over 40 characters.
  */
 export function cleanLine(text: string | null | undefined, moderator: Moderator = DEFAULT_MOD): string | null {
   if (!text) return null;
-  const line = text.replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/\.+$/, '').trim();
+  const folded = [...text.normalize('NFKC').toLowerCase()].map((ch) => CONFUSABLE[ch] ?? ch).join('');
+  if (/[^\x00-\x7f]/.test(folded.replace(/[^\p{L}]/gu, ''))) return null;
+  const line = folded.replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim().replace(/\.+$/, '').trim();
   if (!line || line === 'skip' || line.length > LINE_MAX) return null;
   if (!moderator.isClean(line) || BLOCKED.some((b) => b.test(line))) return null;
   if (/\d/.test(line.replace(/\b1v1\b/g, ''))) return null;
-  if (WHAT_IT_IS.test(line) && !WHITELIST.has(line)) return null;
+  const ws = words(line);
+  if (ws.some((w) => BANNED_WORDS.has(w) || /bots?$/.test(w))) return null;
+  const run = line.replace(/[^a-z]/g, '');
+  if (BANNED_RUNS.some((b) => run.includes(b))) return null;
   return line;
 }
 
@@ -358,14 +392,18 @@ export const makeSocial = (opts: { lines?: LineSource; moderator?: Moderator } =
 });
 
 /** The room heard a person chat (after the filter): bots may answer on the next tick. */
-export function noteHumanChat(s: Social, from: number, text: string): void { s.inbox.push({ k: 'chat', from, text }); }
+const INBOX_MAX = 32;
+export function noteHumanChat(s: Social, from: number, text: string): void { s.inbox.push({ k: 'chat', from, text }); if (s.inbox.length > INBOX_MAX) s.inbox.shift(); }
 /** A person emoted: a wave or salute at a bot nearby is a peace offer. */
-export function noteHumanEmote(s: Social, from: number, id: EmoteId): void { s.inbox.push({ k: 'emote', from, id }); }
+export function noteHumanEmote(s: Social, from: number, id: EmoteId): void { s.inbox.push({ k: 'emote', from, id }); if (s.inbox.length > INBOX_MAX) s.inbox.shift(); }
 
 /** How the room sends what a bot says and does: through its own paths and limits. Each returns whether it went out. */
 export type SocialOut = { emote(id: number, e: EmoteId): boolean; chat(id: number, text: string): boolean; onGoof?(id: number, k: GoofKind): void };
 
 const RECENT_MS = 5 * 60_000;
+/** A follow-up line comes this long after the line before it, at the least (and at most `FOLLOWUP_MAX_MS`). */
+const FOLLOWUP_GAP_MS = 1500;
+const FOLLOWUP_MAX_MS = 4000;
 const MULTI_MS = 3500;
 const VICTIM_MS = 20_000;
 const STREAKS = [5, 10, 15, 20];
@@ -380,6 +418,10 @@ const VIEW_X_PX = 1100;
 const VIEW_Y_PX = 760;
 const HURT_MS = 3000;
 const TRUCE_MS: [number, number] = [25_000, 60_000];
+/** After a truce with a man ends (run out, refused, broken or betrayed), a bot takes no other from him for this long. */
+const TRUCE_COOLDOWN_MS = 150_000;
+/** One spin or wave makes peace with at most this many bots. */
+const TRUCE_PER_SIGNAL = 2;
 const BETRAY: Record<PersonalityId, number> = { aggressive: 0.4, marksman: 0.18, cautious: 0.07 };
 const ACCEPT: Record<PersonalityId, number> = { aggressive: 0.6, marksman: 1, cautious: 1.3 };
 const OFFER: Record<PersonalityId, number> = { aggressive: 0.5, marksman: 1, cautious: 1.5 };
@@ -418,13 +460,18 @@ export function threatened(w: World, arena: BotArena, p: Player, s: SocialMem, t
 }
 
 /** Whether bot `sm` may send a line now under the caps. */
-function underCaps(s: Social, sm: SocialMem, now: number): boolean {
+function underCaps(s: Social, sm: SocialMem, now: number, followup = false): boolean {
   const last = sm.said.at(-1) ?? -Infinity;
-  return now - last >= Math.max(CAPS.gapMs, CHAT_INTERVAL_MS) && now - s.lineAt >= CAPS.lobbyGapMs
-    && sm.said.filter((t) => now - t < 60_000).length < CAPS.perMin && sm.said.filter((t) => now - t < 600_000).length < CAPS.per10Min;
+  // A follow-up is the second line of a burst: it keeps only a short gap of its own, and still counts toward the minute and ten minutes.
+  const gaps = followup ? now - last >= FOLLOWUP_GAP_MS : now - last >= Math.max(CAPS.gapMs, CHAT_INTERVAL_MS) && now - s.lineAt >= CAPS.lobbyGapMs;
+  return gaps && sm.said.filter((t) => now - t < 60_000).length < CAPS.perMin && sm.said.filter((t) => now - t < 600_000).length < CAPS.per10Min;
 }
 
-const versus = (w: World) => w.run === null && w.royale === null;
+/**
+ * Truces are for free-for-all only: in a team mode a man at peace with one bot could shoot its teammates, and a Last Standing bot's
+ * brain (royale.ts) does not ask `socialHoldsFire`.
+ */
+const truces = (w: World) => w.mode === 'FFA' && w.run === null && w.royale === null;
 
 /** Runs once a tick after `thinkBots`: reads the last step's events and people's signals, sends what is due, and plays any goof. */
 export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, out: SocialOut): void {
@@ -449,7 +496,8 @@ export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, ou
     const ev: ChatEvent = { k, text: opts.text };
     const by = now + CAPS.staleMs;
     const got = s.lines(speaker(id, sm), ev, s.recent);
-    const when = (line: string | null) => opts.text !== undefined ? now + Math.min(8000, Math.max(2000, typingMs(line ?? '', () => roll(sm)))) : now + typingMs(line ?? '', () => roll(sm));
+    const when = (line: string | null) => k === 'followup' ? now + Math.min(FOLLOWUP_MAX_MS, Math.max(FOLLOWUP_GAP_MS, typingMs(line ?? '', () => roll(sm))))
+      : opts.text !== undefined ? now + Math.min(8000, Math.max(2000, typingMs(line ?? '', () => roll(sm)))) : now + typingMs(line ?? '', () => roll(sm));
     if (got instanceof Promise) {
       got.then((line) => s.written.push({ id, line, ev, at: when(line), by }), () => {});
     } else queueLine(id, sm, got, ev, when(got), by);
@@ -601,22 +649,24 @@ export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, ou
   }
 
   // Peace signs: a person spun or waved near a bot without shooting it.
-  if (versus(w)) for (const hid of new Set(signals)) {
+  if (truces(w)) for (const hid of new Set(signals)) {
     const h = w.players.get(hid);
     if (!h || h.life.k !== 'alive' || now - (s.people.get(hid)?.firedAt ?? -Infinity) < PEACEFUL_MS) continue;
+    let made = 0;
     for (const [id, mem] of mems) {
+      if (made >= TRUCE_PER_SIGNAL) break;
       const p = w.players.get(id), sm = memOf(id);
       if (!p || !sm || p.life.k !== 'alive' || !isEnemy(p, h) || Math.hypot(p.x - h.x, p.y - h.y) > SIGNAL_PX || !losClear(arena, p, h, 'sight')) continue;
       const mine = sm.truce.find((t) => t.id === hid);
       if (mine && !mine.offer) continue;
-      if (now - (sm.hurtBy[hid] ?? -Infinity) < 6000 || now - sm.hurtAt < 2000 || (!mine && now - (sm.askedAt[hid] ?? -Infinity) < 30_000)) continue;
-      const team = w.mode === 'FFA' ? 1 : 0.5;
+      if (now - (sm.hurtBy[hid] ?? -Infinity) < 6000 || now - sm.hurtAt < 2000 || (!mine && now - (sm.askedAt[hid] ?? -Infinity) < TRUCE_COOLDOWN_MS)) continue;
       // A chatty bot is a sociable one: it takes a truce more readily (its chat odds scale only its lines).
       const sociable = sm.soc >= 1 ? 1 : 0.35;
-      const odds = mine ? 1 : (0.15 + 0.5 * sociable) * ACCEPT[mem.persona] * team;
+      const odds = mine ? 1 : (0.15 + 0.5 * sociable) * ACCEPT[mem.persona];
       sm.askedAt[hid] = now;
       if (roll(sm) >= odds) continue;
       sm.truce = [...sm.truce.filter((t) => t.id !== hid), makeTruce(sm, hid, now, mem.persona)];
+      made++;
       // An answered offer needs nothing more; a fresh one gets a spin or a wave back.
       if (!mine) roll(sm) < 0.45 ? goof(sm, 'spin', 300 + roll(sm) * 600, hid) : emote(sm, pickOf(() => roll(sm), PEACE), 300 + roll(sm) * 700);
     }
@@ -631,7 +681,7 @@ export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, ou
     if (sm.truce.length) {
       const kept: Truce[] = [];
       for (const t of sm.truce) {
-        if (t.until <= now || !w.players.has(t.id)) continue;
+        if (t.until <= now || !w.players.has(t.id)) { sm.askedAt[t.id] = now; continue; }
         if (t.betrayAt !== null && now >= t.betrayAt) { sm.askedAt[t.id] = now; say(id, sm, 'betray'); continue; }
         kept.push(t);
       }
@@ -646,7 +696,7 @@ export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, ou
         if (now > q.by) continue;
         if (q.k === 'chat') {
           // A line waits for a calm moment (most of them), and for the caps.
-          if (!underCaps(s, sm, now) || (alive && !q.fightOk && threatened(w, arena, p, sm, true))) { left.push(q); continue; }
+          if (!underCaps(s, sm, now, q.ev === 'followup') || (alive && !q.fightOk && threatened(w, arena, p, sm, true))) { left.push(q); continue; }
           // Another bot said it first while this one typed: it is not said twice.
           if (q.text.toLowerCase() !== 'gg' && s.recent.some((l) => l.text.toLowerCase() === q.text.toLowerCase())) continue;
           if (out.chat(id, q.text)) {
@@ -664,7 +714,7 @@ export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, ou
           if (out.emote(id, q.id)) sm.emoteAt = now;
         } else if (alive && sm.act === null) {
           const trusting = q.reply !== undefined;
-          if (!threatened(w, arena, p, sm, trusting)) sm.act = startGoof(sm, q.goof, now, p, w);
+          if (!threatened(w, arena, p, sm, trusting && q.goof !== 'air')) sm.act = startGoof(sm, q.goof, now, p, w);
           else if (trusting) left.push({ at: now, by: now + 5000, k: 'emote', id: pickOf(() => roll(sm), PEACE) });
         }
       }
@@ -687,7 +737,9 @@ export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, ou
       continue;
     }
     if (sm.act) {
-      if (now >= sm.act.until || threatened(w, arena, p, sm, true)) sm.act = null;
+      // An air goof trusts nobody (a truce partner near is no one to fire beside) and stops the moment anyone steps into its line.
+      const air = sm.act.k === 'air';
+      if (now >= sm.act.until || threatened(w, arena, p, sm, !air) || (air && !clearAlong(w, p, sm.act.a0))) { sm.act = null; calmInput(w, id, p); }
       else { playGoof(w, id, p, sm.act, now); out.onGoof?.(id, sm.act.k); }
     }
     if ((w.tick + id) % IDLE_ROLL_TICKS !== 0 || sm.act || sm.queue.length) continue;
@@ -696,14 +748,13 @@ export function socialTick(s: Social, w: World, mems: Map<number, BotMemory>, ou
     // A word to nobody now and then, alive and calm: about 2 % a minute for a chatty bot.
     if (say(id, sm, 'idle', { odds: CHAT_ODDS.idle / 60 })) continue;
     // A truce offered to a person about who is not fighting.
-    if (versus(w)) {
-      const team = w.mode === 'FFA' ? 1 : 0.5;
+    if (truces(w)) {
       const sociable = sm.soc >= 1 ? 1 : 0.2;
       for (const h of w.players.values()) {
         if (h.kind !== 'human' || h.life.k !== 'alive' || !isEnemy(p, h) || sm.truce.some((t) => t.id === h.id)) continue;
-        if (Math.hypot(h.x - p.x, h.y - p.y) > OFFER_PX || now - (s.people.get(h.id)?.firedAt ?? -Infinity) < 3000 || now - (sm.askedAt[h.id] ?? -Infinity) < 90_000) continue;
+        if (Math.hypot(h.x - p.x, h.y - p.y) > OFFER_PX || now - (s.people.get(h.id)?.firedAt ?? -Infinity) < 3000 || now - (sm.askedAt[h.id] ?? -Infinity) < TRUCE_COOLDOWN_MS) continue;
         if (!losClear(arena, p, h, 'sight')) continue;
-        if (roll(sm) >= 0.01 * sociable * OFFER[mem.persona] * team) continue;
+        if (roll(sm) >= 0.01 * sociable * OFFER[mem.persona]) continue;
         sm.askedAt[h.id] = now;
         sm.truce = [...sm.truce, { id: h.id, until: now + 7000, betrayAt: null, offer: true }];
         roll(sm) < 0.6 ? emote(sm, 'wave', 200 + roll(sm) * 400) : goof(sm, 'spin', 200 + roll(sm) * 400, h.id);
@@ -731,30 +782,33 @@ function makeTruce(sm: SocialMem, id: number, now: number, persona: PersonalityI
   return { id, until, betrayAt, offer: false };
 }
 
-/**
- * A heading to fire a couple of rounds along with nothing a round could hurt or break on it inside the gun's reach: no player, no barrel,
- * no prop, no crate (a broken crate or prop would also change the bots' nav grid). Null with none.
- */
-function skyward(w: World, p: Player, start: number): number | null {
+/** Whether a round fired from `p` along `a` meets nothing it could hurt or break inside the gun's reach: no player, barrel, prop or crate. */
+export function clearAlong(w: World, p: Player, a: number): boolean {
   const reach = GUNS[p.gun].range + 150;
-  const things: { x: number; y: number; r: number }[] = [];
-  for (const q of w.players.values()) if (q.id !== p.id && q.life.k !== 'dead') things.push({ x: q.x, y: q.y, r: WORLD.playerRadius });
-  for (const b of w.barrels) if (b.respawnAt === null) things.push({ x: b.x, y: b.y, r: 30 });
-  for (const q of w.props) if (q.respawnAt === null) things.push({ x: q.x, y: q.y, r: 30 });
-  for (const c of w.crates) if (c.respawnAt === null) things.push({ x: c.x + c.size / 2, y: c.y + c.size / 2, r: c.size * 0.75 });
-  const near = things.filter((t) => Math.hypot(t.x - p.x, t.y - p.y) < reach + t.r);
-  for (let k = 0; k < 8; k++) {
-    const a = start + (k * TAU) / 8;
-    const hits = near.some((t) => {
-      const d = Math.hypot(t.x - p.x, t.y - p.y);
-      if (d < t.r + 10) return true;
-      const off = Math.atan2(t.y - p.y, t.x - p.x) - a;
-      // Its body's width as seen from here, and the gun's spread and then some.
-      return Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.asin(Math.min(1, t.r / d)) + 0.2;
-    });
-    if (!hits) return a;
-  }
+  const hits = (x: number, y: number, r: number) => {
+    const d = Math.hypot(x - p.x, y - p.y);
+    if (d > reach + r) return false;
+    if (d < r + 10) return true;
+    const off = Math.atan2(y - p.y, x - p.x) - a;
+    // Its body's width as seen from here, and the gun's spread and then some.
+    return Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.asin(Math.min(1, r / d)) + 0.2;
+  };
+  for (const q of w.players.values()) if (q.id !== p.id && q.life.k !== 'dead' && hits(q.x, q.y, WORLD.playerRadius)) return false;
+  for (const b of w.barrels) if (b.respawnAt === null && hits(b.x, b.y, 30)) return false;
+  for (const q of w.props) if (q.respawnAt === null && hits(q.x, q.y, 30)) return false;
+  for (const c of w.crates) if (c.respawnAt === null && hits(c.x + c.size / 2, c.y + c.size / 2, c.size * 0.75)) return false;
+  return true;
+}
+
+/** A heading to fire a couple of rounds along with nothing on it (`clearAlong`) a broken crate or prop would also change the nav grid. Null with none. */
+function skyward(w: World, p: Player, start: number): number | null {
+  for (let k = 0; k < 8; k++) { const a = start + (k * TAU) / 8; if (clearAlong(w, p, a)) return a; }
   return null;
+}
+
+/** A goof over (run out, or cut short): keys and trigger let go for the tick, before the motor takes the bot back. */
+function calmInput(w: World, id: number, p: Player): void {
+  setInput(w, id, w.tick, { ...p.input, up: false, down: false, left: false, right: false, fire: false, sprint: false, ability: false });
 }
 
 function startGoof(sm: SocialMem, k: GoofKind, now: number, p: Player, w: World): Goof | null {
