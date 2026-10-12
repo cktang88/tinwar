@@ -9,6 +9,7 @@ import { INK } from '../palette.ts';
 import { drawVehicle } from '../vehicleart.ts';
 import type { MapDef } from '../../shared/maps.ts';
 import type { Solid, SolidKind } from '../tilt.ts';
+import { drawKitPoly } from './subpenprops.ts';
 import { boundsOf, clipExtruded, hingePins, outline, paintDoor, rectOf, type DoorStyle, type G } from './geokit.ts';
 import type { Theme, ThemeView } from './registry.ts';
 
@@ -74,6 +75,7 @@ function drum(g: G, p: MapPoly, face: number) {
 export const subpenGeo = (painters: Partial<Record<SolidKind, (g: G, s: Solid) => void>>): Pick<Theme, 'drawPoly' | 'door'> => ({
   drawPoly(g: G, p: MapPoly): boolean {
     if (p.shape === 'submarine') return true;
+    if (drawKitPoly(g, p)) return true;
     if (p.shape === 'roundTank') { drum(g, p, p.height ?? 52); return true; }
     const r = rectOf(p);
     const paint = r && painters[p.material as SolidKind];

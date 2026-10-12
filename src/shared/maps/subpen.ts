@@ -1,6 +1,6 @@
 import { gridMap } from '../mapgrid.ts';
 import { withGeometry } from '../mapgeo.ts';
-import { SUBPEN_GEO } from './subpengeo.ts';
+import { SUBPEN_GEO, SUBPEN_KIT } from './subpengeo.ts';
 
 /**
  * Sub Pen: two submarines moored in flooded slips, a torpedo room and the dock yards between. Q hull cradle block, Y conning tower,
@@ -130,4 +130,4 @@ const SUBPEN_GRID = gridMap('Sub Pen', `
   ............................................................
 `, 'subpen');
 
-export const SUBPEN = withGeometry(SUBPEN_GRID, SUBPEN_GEO);
+export const SUBPEN = withGeometry(withGeometry(SUBPEN_GRID, SUBPEN_GEO), SUBPEN_KIT);
