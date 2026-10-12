@@ -11,6 +11,8 @@ import { botThink, randomLoadout, type BotDecision, type BotMemory } from '../bo
 import { arenaFor, type BotArena } from './arena.ts';
 import { botSight, freshAwareness, inBotSight } from './awareness.ts';
 import { freshMotor, motorTick, motorWake } from './motor.ts';
+import { diedTo } from './habits.ts';
+import type { Point } from './nav.ts';
 import { SLOW_GUN_MS } from './evade.ts';
 
 export type BotTickOptions = {
@@ -98,8 +100,15 @@ function enemiesInView(w: World, me: Player, sight: LookSides): number {
   return n;
 }
 
+/** Its killer as the kill feed names him, kept on its habits for its next life's grudge (see `diedTo` in habits.ts). */
+function rememberKiller(w: World, id: number, mem: BotMemory): BotMemory {
+  if (!mem.habits) return mem;
+  for (const e of w.events) if (e.e === 'kill' && e.victimId === id && e.killerId !== null) return { ...mem, habits: diedTo(mem.habits, e.killerId, w.players.get(e.killerId) ?? null) };
+  return mem;
+}
+
 /** Whether nothing that stops the eye (a wall, a standing crate) lies between a bot and an enemy, as `perceive` judges it from a snapshot. */
-function inSightLine(w: World, arena: BotArena, me: Player, p: Player): boolean {
+function inSightLine(w: World, arena: BotArena, me: Point, p: Point): boolean {
   const dx = p.x - me.x, dy = p.y - me.y;
   if (segmentBlocked(arena.sightWalls, me.x, me.y, dx, dy)) return false;
   const x0 = Math.min(me.x, p.x), x1 = Math.max(me.x, p.x), y0 = Math.min(me.y, p.y), y1 = Math.max(me.y, p.y);
@@ -191,7 +200,7 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
     if (p.life.k !== 'alive') {
       // Dead: nothing to see or plan. It forgets the life it had, once, and waits to respawn.
       const forgotten = mem.intent ? { ...mem, intent: null, awareness: freshAwareness(), motor: { ...freshMotor(), shots: mem.motor.shots } } : mem;
-      finish({ input: { ...IDLE_INPUT, shots: mem.motor.shots }, pick: null, mem: forgotten }, null);
+      finish({ input: { ...IDLE_INPUT, shots: mem.motor.shots }, pick: null, mem: rememberKiller(w, id, forgotten) }, null);
       continue;
     }
     const slow = onScreen(p) ? 1 : OFFSCREEN_SLOWER;
@@ -211,7 +220,7 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
     if (wake) { think(wake); continue; }
     const ability = abilityOf(p);
     const { input, motor } = motorTick(mem.motor, {
-      me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, settleLeftMs: p.life.settleLeft, find,
+      me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, settleLeftMs: p.life.settleLeft, find, sees: (q) => inSightLine(w, arena, p, q),
     }, arena, w.tick, rand);
     finish({ input, pick: null, mem: { ...mem, beat, motor } }, null);
   }

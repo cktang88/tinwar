@@ -27,7 +27,12 @@ test('bots move in styles of their own: strafe legs, pauses and leanings differ 
   });
   const legMean = styles.map(({ style }) => (style.legMs[0] + style.legMs[1]) / 2);
   assert.ok(cv(legMean) >= 0.3, `between-bot CV of mean strafe leg ${cv(legMean).toFixed(2)}`);
-  assert.ok(Math.min(...legMean) < 600 && Math.max(...legMean) > 1200, `legs from ${Math.min(...legMean).toFixed(0)} to ${Math.max(...legMean).toFixed(0)} ms`);
+  // Variety only ever makes a bot easier to hit than the bots of old: no style strafes quicker on average than their 725 ms legs, nor
+  // sidesteps a planted gun more often, nor wants less ground for a leg.
+  assert.ok(Math.min(...legMean) >= 725 && Math.max(...legMean) > 1500, `legs from ${Math.min(...legMean).toFixed(0)} to ${Math.max(...legMean).toFixed(0)} ms`);
+  assert.ok(styles.every(({ style }) => style.legMs[0] >= 450 && style.stepMul <= 1 && style.strafePx >= 120), 'no style dodgier than the old bots');
+  const ons = styles.map(({ style }) => style.strafeOn), pxs = styles.map(({ style }) => style.strafePx);
+  assert.ok(Math.min(...ons) < 0.15 && Math.max(...ons) > 0.4 && Math.max(...pxs) - Math.min(...pxs) > 40, 'legs run on and want ground by the bot');
   assert.ok(new Set(styles.map(({ style }) => style.standOdds.toFixed(5))).size > 60, 'stand odds differ');
   assert.ok(new Set(styles.map(({ style }) => Math.sign(style.lean))).size === 2, 'some lean in, some back off');
   const reloads = styles.map(({ style }) => style.reloadAt);
@@ -46,7 +51,9 @@ test('reaction times have a right tail: lognormal about ~260 ms, slower when bus
   const r = seeded(3);
   const plain = Array.from({ length: 4000 }, () => noticeDelayMs(1, {}, r));
   const p10 = quantile(plain, 0.1), p50 = quantile(plain, 0.5), p90 = quantile(plain, 0.9), p99 = quantile(plain, 0.99);
-  assert.ok(p50 > 240 && p50 < 280, `median ${p50.toFixed(0)}ms`);
+  assert.ok(p50 > 280 && p50 < 310, `median ${p50.toFixed(0)}ms`);
+  assert.ok(Math.min(...plain) >= 220, 'never quicker than the old flat draw allowed');
+  assert.ok(mean(plain) >= 285, `mean ${mean(plain).toFixed(0)}ms: no quicker on average than the old 220-350 ms`);
   assert.ok(mean(plain) > p50, 'mean past the median: skewed right');
   assert.ok(p90 - p50 > p50 - p10, `the slow side stretches further (p10 ${p10.toFixed(0)}, p50 ${p50.toFixed(0)}, p90 ${p90.toFixed(0)})`);
   assert.ok(p99 > 1.8 * p50, `a tail: p99 ${p99.toFixed(0)}ms`);
@@ -171,4 +178,36 @@ test('moods only ever make a bot worse: warming up and tilted it aims and reacts
     const m = moodOf({ ...born, deaths }, t);
     assert.ok(m.aimMul >= 1 && m.reactMul >= 1, 'never sharper than settled');
   }
+});
+
+test('an idling bot that is shot gets out of its idle within half a second', () => {
+  let reacted = 0, runs = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    const w = emptyWorld();
+    w.rng = seed;
+    const name = `afk${seed}`;
+    const bot = spawnAt(w, 2000, 2000, { loadout: { weapon: 'assault' }, name });
+    // He stands behind it, off its screen, and opens up once it is idle.
+    const shooter = spawnAt(w, 2000, 2380, { loadout: { weapon: 'assault' }, kind: 'human' });
+    const mem = newBotMemory(seeded(seed), { name, seed });
+    for (const idle of ['afk', 'scan'] as const) {
+      const mems = new Map<number, BotMemory>([[bot.id, { ...mem, intent: { k: 'patrol', goal: { x: 2000, y: 2000 }, idle, until: 1e9, since: 0, holdUntil: 0 } }]]);
+      const r = () => worldRand(w);
+      if (bot.life.k === 'alive') bot.life.hp = 100;
+      bot.angle = -Math.PI / 2;
+      let hitAt: number | null = null, out: number | null = null;
+      for (let i = 0; i < 60 && out === null; i++) {
+        if (bot.life.k === 'alive') bot.life.hp = Math.max(bot.life.hp, 50);
+        thinkBots(w, mems, r, { picks: false, respawn: false, watched: true });
+        setInput(w, shooter.id, i + 1 + (idle === 'scan' ? 1000 : 0), { up: false, down: false, left: false, right: false, angle: -Math.PI / 2, fire: true, shots: i + 1, reload: false, ability: false, aimDist: 380, use: false });
+        step(w, TICK_MS);
+        if (hitAt === null && w.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === bot.id)) hitAt = i;
+        const it = mems.get(bot.id)!.intent;
+        if (hitAt !== null && !(it?.k === 'patrol' && it.idle)) out = i - hitAt;
+      }
+      runs++;
+      if (hitAt !== null && out !== null && out * TICK_MS <= 500) reacted++;
+    }
+  }
+  assert.ok(reacted === runs, `${reacted} of ${runs} idling bots broke off within 0.5 s of being shot`);
 });

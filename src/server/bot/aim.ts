@@ -209,12 +209,12 @@ const TELEPORT_PX_PER_TICK = 120;
 
 /**
  * How long a person takes to take in an enemy, as the reaction-time literature has it: lognormal about a median of `medianMs` (log-sd
- * `logSd`, so most come in a band round it and a few come late), times its sharpness, its temper's and its mood's share. On top:
+ * `logSd`, so most come in a band round it and a few come late; never under the old flat draw's quickest, so no faster on average than before), times its sharpness, its temper's and its mood's share. On top:
  * `busyMul` when it is already fighting someone else (a second choice to make, Hick's law), up to `offAngleMs` more for an enemy as far as
  * behind it from where its gun points (scaled by the angle), and a startle of `surpriseMs` for one who appears this close (`surprisePx`).
  * Capped at `capMul` times the median, so a slow one is slow, not absent.
  */
-export const NOTICE = { medianMs: 260, logSd: 0.3, busyMul: 1.5, offAngleMs: 90, surprisePx: 220, surpriseMs: [100, 200], capMul: 3.5 } as const;
+export const NOTICE = { medianMs: 295, logSd: 0.3, busyMul: 1.5, offAngleMs: 90, surprisePx: 220, surpriseMs: [100, 200], capMul: 3.5 } as const;
 /** What the moment adds to a reaction (see `NOTICE`): already fighting another, how far off its aim he is (rad), how far off he stands (px). */
 export type NoticeCue = { busy?: boolean; offRad?: number; d?: number };
 
@@ -235,7 +235,8 @@ export function probit(p: number): number {
 /** A fresh reaction time, ms, by `NOTICE` (`mul` the sharpness, temper and mood shares together). */
 export function noticeDelayMs(mul: number, cue: NoticeCue, rand: () => number): number {
   const median = NOTICE.medianMs * mul * (cue.busy ? NOTICE.busyMul : 1);
-  const base = Math.min(median * NOTICE.capMul, median * Math.exp(NOTICE.logSd * probit(rand())));
+  // Never quicker than the quickest a bot ever took a man in (`BOT_AIM.noticeMs`): the spread only adds a slow tail.
+  const base = Math.max(BOT_AIM.noticeMs[0] * mul, Math.min(median * NOTICE.capMul, median * Math.exp(NOTICE.logSd * probit(rand()))));
   const angle = NOTICE.offAngleMs * Math.min(1, Math.abs(cue.offRad ?? 0) / Math.PI) * mul;
   const close = cue.d !== undefined && cue.d < NOTICE.surprisePx ? NOTICE.surpriseMs[0] + rand() * (NOTICE.surpriseMs[1] - NOTICE.surpriseMs[0]) : 0;
   return base + angle + close;

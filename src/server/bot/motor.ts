@@ -65,7 +65,7 @@ type Keys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
  * taken him in), down its route, or at a bearing fixed when it decided (a throw). `sigma` is a spray's shake.
  */
 export type Gaze =
-  | { k: 'point'; at: Point; minPx: number; hand: Hand; sigma: number; fire: boolean; follow?: boolean; sway?: number; fireUntil?: number }
+  | { k: 'point'; at: Point; minPx: number; hand: Hand; sigma: number; fire: boolean; follow?: boolean; sway?: number }
   | { k: 'ahead'; sway?: number }
   | { k: 'fixed'; want: number; d: number; hand: Hand; err?: number };
 
@@ -111,7 +111,7 @@ export type Hold = {
    * The strafe it is running (a bot with a style): the kind of leg, its style's leg length and jitter, so a bot off every screen, which
    * thinks only every so often, runs its next leg on its motor when this one is up rather than holding it till its next think.
    */
-  leg?: { kind: Leg; ms: readonly [number, number]; jitter: number };
+  leg?: { kind: Leg; ms: readonly [number, number]; jitter: number; on: number; px: number };
   /** The nav grid it routed on (a barrel going up or coming back makes a new one), and the door on its way and whether it stood open. */
   nav: number;
   door: { i: number; open: boolean } | null;
@@ -185,7 +185,6 @@ const STEP_MS: readonly [number, number] = [300, 700];
 const UNDER_FIRE_STEP_ODDS = 0.75;
 const STRAFE_MS: readonly [number, number] = [450, 1000];
 const STRAFE_PX = 120;
-const STRAFE_ON_ODDS = 0.25;
 /** A strafe leg that would end this near a mate is flipped the other way, so a pair side by side do not pile into one spot. */
 const MATE_CLEAR_PX = 90;
 /** Mates closer than this push a bot's goal away from them, softly (full push at touching, none at this range). */
@@ -195,7 +194,7 @@ const MATE_SHOVE_MIN = 0.35;
 /** Enemies within this of a bot are a crowd, and each one past the first widens the distance it holds. */
 const CROWD_PX = 400;
 const CROWD_HOLD = 0.5;
-const PEEK_SWAY_PX = 70;
+const PEEK_SWAY_PX = 75;
 const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
 export const MIN_TURN_BACK_MS = 400;
 const MIN_LEG_TICKS = Math.round(MIN_TURN_BACK_MS / TICK_MS);
@@ -381,13 +380,14 @@ function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, leg
   const legFor = (step: Motor['stance']['step'], ms: readonly [number, number]) => ({ step, since: v.tick, until: v.tick + Math.max(MIN_LEG_TICKS, Math.round(between(ms, c.rand) / TICK_MS)), heading: null, planted });
   if (!planted) {
     if (style && !legMs && m.stance.step !== 0 && c.rand() < style.standOdds) return legFor(0, style.standMs);
-    // A person's strafe is no metronome: now and then the next leg runs on the same way (`STRAFE_ON_ODDS`), so it drifts rather than rocking about one spot.
-    const on = style && !legMs && m.stance.step !== 0 && c.rand() < STRAFE_ON_ODDS;
+    // A person's strafe is no metronome: now and then the next leg runs on the same way (`Style.strafeOn`), so it drifts rather than rocking about one spot.
+    const on = style && !legMs && m.stance.step !== 0 && c.rand() < style.strafeOn;
     return legFor(m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : on ? m.stance.step : (-m.stance.step as 1 | -1), legMs ?? style?.legMs ?? STRAFE_MS);
   }
   const odds = Math.min(1, (v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds) * (style?.stepMul ?? 1));
   const step = m.stance.step === 0 && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
-  const stand: readonly [number, number] = style ? [STAND_MS[0] * (2 - style.steady) * 0.75, STAND_MS[1] * (2 - style.steady) * 0.75] : STAND_MS;
+  // A rookie stands its gun a while longer than the old default; nobody shorter.
+  const stand: readonly [number, number] = style ? [STAND_MS[0] * (1.5 - 0.5 * style.steady), STAND_MS[1] * (1.5 - 0.5 * style.steady)] : STAND_MS;
   return legFor(step, step === 0 ? stand : STEP_MS);
 }
 
@@ -413,8 +413,8 @@ function leaning(c: IntentCtx, leg: Leg, d: number): Leg {
   return lean > 0 ? 'in' : 'out';
 }
 
-function legPoint(me: Point, heading: number, arena: BotArena, mates: readonly Point[] = []): Point | null {
-  const p = { x: me.x + Math.cos(heading) * STRAFE_PX, y: me.y + Math.sin(heading) * STRAFE_PX };
+function legPoint(me: Point, heading: number, arena: BotArena, mates: readonly Point[] = [], px = STRAFE_PX): Point | null {
+  const p = { x: me.x + Math.cos(heading) * px, y: me.y + Math.sin(heading) * px };
   return isOpen(arena.nav, p) && walkable(arena.nav, me, p) && clearOfLeaves(arena, me, p) && !mates.some((m) => dist(m, p) < MATE_CLEAR_PX && dist(m, p) < dist(m, me)) ? p : null;
 }
 
@@ -497,13 +497,13 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       let heading = stance.heading ?? legHeading(me, t.p, step, kind, legJitter(c));
       if (backing && Math.cos(heading - Math.atan2(t.p.y - me.y, t.p.x - me.x)) > 0.2) heading = legHeading(me, t.p, step, 'out');
       const style = c.habit?.style;
-      const run = (k: Leg): Steer['leg'] => (style ? { kind: k, ms: style.legMs, jitter: style.jitter } : undefined);
-      const ahead = legPoint(me, heading, c.arena, v.allies);
+      const run = (k: Leg): Steer['leg'] => (style ? { kind: k, ms: style.legMs, jitter: style.jitter, on: style.strafeOn, px: style.strafePx } : undefined);
+      const ahead = legPoint(me, heading, c.arena, v.allies, style?.strafePx);
       if (ahead) return { steer: { ...fight(ahead, heading), leg: run(backing ? 'out' : kind) }, stance: { ...stance, heading } };
       const back = step === 1 ? -1 : 1;
       const turned = legHeading(me, t.p, back, leg);
       const until = v.tick + Math.max(MIN_LEG_TICKS, Math.round(between(style?.legMs ?? STRAFE_MS, c.rand) / TICK_MS));
-      const turnedTo = legPoint(me, turned, c.arena, v.allies);
+      const turnedTo = legPoint(me, turned, c.arena, v.allies, style?.strafePx);
       return { steer: { ...fight(turnedTo ?? (closing ? t.p : null), turnedTo ? turned : null), ...(turnedTo && { leg: run(leg) }) }, stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
     }
   }
@@ -837,8 +837,7 @@ function gazeLook(g: Gaze, me: Point, mine: Point, before: AimState, route: Moto
       const err = g.sigma > 0 ? drift(before.err, g.sigma, TICK_MS, rand) : before.err;
       const at = lookAt(g.follow && follow ? follow : g.at, me, mine, g.minPx);
       if (!at) return { look: swayed({ ...rest, hand: g.hand, err: before.err }, g.sway), fire: false };
-      const firing = g.fire && (g.fireUntil === undefined || !clock || clock.tick < g.fireUntil);
-      return { look: swayed({ ...at, want: at.want + (g.sigma > 0 ? err : 0), hand: g.hand, err: g.sigma > 0 ? err : before.err }, g.sway), fire: firing };
+      return { look: swayed({ ...at, want: at.want + (g.sigma > 0 ? err : 0), hand: g.hand, err: g.sigma > 0 ? err : before.err }, g.sway), fire: g.fire };
     }
   }
 }
@@ -927,9 +926,6 @@ function farms(m: Motor, c: IntentCtx, id: number, tick: number, at: Point): { g
   return { go: (tick - farm.since) * TICK_MS >= style.farmDelayMs, farm };
 }
 
-/** Idle, a bored or goofy one now and then lets off a round or two at nothing (`Style.goof`), a think's worth of trigger. */
-const GOOF_ODDS = 0.012;
-const GOOF_TICKS = 5;
 
 /** Its aim and reaction against one target, worsened by its mood (warming up, tilted; see `moodOf`): never sharpened. */
 function moody(s: Sharpness, c: IntentCtx): Sharpness {
@@ -1004,9 +1000,6 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? slowHand(HANDS.startle, c.skill?.turnMul) : scanning ? HANDS.scan : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p, ...(sway && { sway }) } : { k: 'ahead', sway };
   // Hands off the keys and the mouse (an idle moment, see `idleMoment`): its gun stays where it was.
   if (afk && !t && !turnTo) gaze = { k: 'fixed', want: before.angle, d: 300, hand: HANDS.calm };
-  // Idle and looking round, now and then it lets off a round or two at nothing.
-  else if (scanning && !t && intent.k === 'patrol' && intent.idle && c.habit && snap.self.ammo > snap.self.mag * 0.6 && !snap.self.reloading
-    && c.rand() < GOOF_ODDS * c.habit.style.goof * (1 + 2 * c.habit.mood.boredom)) gaze = { ...(gaze as Extract<Gaze, { k: 'point' }>), fire: true, fireUntil: v.tick + GOOF_TICKS };
   const barrels = seenBarrels(snap.barrels);
   const props = seenProps(snap.props);
   let track: Hold['track'] = null;
@@ -1150,6 +1143,8 @@ export type Body = {
   /** The post-sprint bloom still to ease out on its gun, ms (see `settleShare`); left out, none. */
   settleLeftMs?: number;
   find: (id: number) => Point | null;
+  /** Whether nothing that stops the eye (a wall, a standing crate) lies between it and `p`; left out, only the arena's walls are checked. */
+  sees?: (p: Point) => boolean;
 };
 
 const LEG_PX = 120;
@@ -1209,14 +1204,15 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
   // Off every screen it thinks seldom: when its strafe leg is up it runs the next on its own (see `Hold.leg`), back the other way (or on, now
   // and then), round where it last had him. On a screen the leg's end wakes a think instead, so this never runs there.
   if (h.leg && h.heading !== null && stance.step !== 0 && tick >= stance.until && m.engaged) {
-    const step = rand() < STRAFE_ON_ODDS ? stance.step : (-stance.step as 1 | -1);
+    const step = rand() < h.leg.on ? stance.step : (-stance.step as 1 | -1);
     const heading = legHeading(me, m.engaged, step, h.leg.kind, (rand() * 2 - 1) * h.leg.jitter);
     stance = { ...stance, step, since: tick, until: tick + Math.max(MIN_LEG_TICKS, Math.round(between(h.leg.ms, rand) / TICK_MS)), heading };
     h = { ...h, heading };
   }
   let at: Point | null = null, route = m.route;
   if (h.heading !== null) {
-    const p = { x: me.x + Math.cos(h.heading) * LEG_PX, y: me.y + Math.sin(h.heading) * LEG_PX };
+    const px = h.leg?.px ?? LEG_PX;
+    const p = { x: me.x + Math.cos(h.heading) * px, y: me.y + Math.sin(h.heading) * px };
     at = isOpen(arena.nav, p) && walkable(arena.nav, me, p) && clearOfLeaves(arena, me, p) ? p : null;
   } else if (h.at) at = h.at;
   else if (h.to) ({ at, route } = nextWaypoint(m, me, h.to, arena, tick, false, null));
@@ -1229,7 +1225,7 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
   let engaged = m.engaged, engagedSeen = m.engagedSeen, d: number | null = null;
   let look: Look, wantsFire: boolean;
   // It sees him only as a person would: in its sight box and with no wall between. Out of sight it has only where he went (`lostTrack`).
-  const hidden = !!foe && outOfSight(me, foe, arena, h.view);
+  const hidden = !!foe && (outOfSight(me, foe, arena, h.view) || (b.sees !== undefined && !b.sees(foe)));
   if (h.track && foe && engaged?.id === h.track.id) {
     if (!hidden) {
       engaged = engage(engaged, { id: h.track.id, x: foe.x, y: foe.y }, h.track.sharp, tick, rand);

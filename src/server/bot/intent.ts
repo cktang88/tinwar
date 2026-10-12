@@ -564,6 +564,8 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
 /** Whether gunfire heard at `at` draws this bot (see `GUNFIRE`), hashed by the stretch of map and the moment, not drawn. */
 function drawnBy(v: Perception, c: IntentCtx, cur: Intent, at: Point): boolean {
   const h = c.habit!;
+  // Shot at itself, it always goes to see: an idle moment is no excuse to stand in fire.
+  if (shotLately(v)) return true;
   const d = dist(at, v.me);
   const near = d <= GUNFIRE.nearPx ? GUNFIRE.near : GUNFIRE.near + (GUNFIRE.far - GUNFIRE.near) * Math.min(1, (d - GUNFIRE.nearPx) / (GUNFIRE_PULL_PX - GUNFIRE.nearPx));
   const busy = h.busy || cur.k === 'takePosition' || (cur.k === 'patrol' && cur.idle === 'afk');
@@ -629,7 +631,22 @@ const leaveTurnedFight: Interrupt = (cur, v, c) => {
  */
 const outOfReach = (v: Perception, t: Threat) => t.d > GUNS[v.me.gun].range;
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, answerFireInCover, leaveTurnedFight, engageOnSight, fetchSupplies, investigateGunfire];
+/** Hit or shot at this lately counts as under fire for breaking off an idle moment. */
+const IDLE_BREAK_MS = 1500;
+const shotLately = (v: Perception) => v.underFire || (v.hitTick !== undefined && (v.tick - v.hitTick) * TICK_MS < IDLE_BREAK_MS)
+  || (!!v.shotAt && (v.tick - v.shotAt.tick) * TICK_MS < IDLE_BREAK_MS);
+
+/**
+ * An idle moment (see `idleMoment`) ends the moment it is shot at: it goes to where the rounds came from (it turns to look as it does,
+ * see `unseenShooter`), or back to its business if it cannot tell. One in sight is `engageOnSight`'s, which runs first.
+ */
+const idleUnderFire: Interrupt = (cur, v, c) => {
+  if (cur.k !== 'patrol' || !cur.idle || !shotLately(v)) return null;
+  const from = v.shotAt ?? v.lead;
+  return from ? { ...searchPlan(v, c, from), committed: true } : { k: 'patrol', goal: openSpot(c.arena, c.rand, { at: v.me, r: 400 }) };
+};
+
+const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, answerFireInCover, leaveTurnedFight, engageOnSight, idleUnderFire, fetchSupplies, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {

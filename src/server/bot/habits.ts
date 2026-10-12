@@ -16,19 +16,21 @@ type Temper = 'aggressive' | 'cautious' | 'marksman';
  * - `legMs`: how long a strafe leg runs in a fight (a base from 250 to 1500 ms, with its own spread: a rookie's legs run longer, a veteran's vary more);
  * - `standOdds`, `standMs`: the odds a fight leg is a pause instead, and how long (a rookie stands more); `stepMul` scales its temper's odds of a
  *   planted sidestep;
+ * - `strafeOn`: the odds the next leg runs on the same way (so it drifts); `strafePx`: how much open ground it wants ahead of a leg (from the
+ *   old 120 px up: never quicker on its feet than before);
  * - `jitter`: how far a leg's angle wanders from the 45/90/135-degree marks, rad; `lean`: its pull toward closing in (+) or backing off (-) on a side-on leg;
  * - `sprint`: the share of the time it bothers to sprint when it could;
  * - `reloadAt`: the share of its magazine below which it reloads with nobody about (0.3 to 0.95); `forget`: the odds a magazine goes unreloaded
  *   until it runs dry (a rookie's habit);
  * - `farm`: how keen it is to shoot crates for score with nobody about (some never, some always); `farmDelayMs`: how long it looks at one first;
- * - `idle`: the odds it stops a while on getting where it wandered to; `goof`: how readily it fools about (a stray burst, a wander);
+ * - `idle`: the odds it stops a while on getting where it wandered to; `goof`: how readily it wanders off a few steps when idle;
  * - `greed`: the odds it goes for a pack in some danger; `tunnel`: the odds it fixes on one man past the point of breaking off; `revenge`: the
  *   odds it goes after whoever killed it; `pull`: how readily gunfire draws it;
  * - `miss`: the odds, a think, that it overlooks an enemy at the edge of its screen while busy (fighting another, reloading);
  * - `warmMs`, `tiltAt`, `boredMs`: when its moods set in (see `moodOf`).
  */
 export type Style = {
-  legMs: readonly [number, number]; standOdds: number; standMs: readonly [number, number]; stepMul: number; jitter: number; lean: number;
+  legMs: readonly [number, number]; strafeOn: number; strafePx: number; standOdds: number; standMs: readonly [number, number]; stepMul: number; jitter: number; lean: number;
   sprint: number; reloadAt: number; forget: number; farm: number; farmDelayMs: number; idle: number; goof: number;
   greed: number; tunnel: number; revenge: number; pull: number; miss: number; warmMs: number; tiltAt: number; boredMs: number;
   /** 0 for a rookie to 1 for a veteran: how steady its habits and moods are. */
@@ -46,6 +48,8 @@ export function hashed(name: string, salt: number): number {
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 /** No strafe leg runs shorter than this, whatever its style: a leg of a few ticks is keys flickering, not a strafe (test/bots.test.ts). */
 const LEG_FLOOR_MS = 450;
+/** The mean strafe leg every bot ran before styles (`STRAFE_MS`, 450 to 1000 ms). */
+const OLD_LEG_MS = 725;
 const DEG = Math.PI / 180;
 
 /** How steady a skill plays (0 a rookie, 1 a veteran), off its value's place in the bands (see `BOT_SKILL`). */
@@ -55,16 +59,19 @@ const steadiness = (skill: Skill | undefined) => (!skill ? 1 : skill.value < 0.2
 export function styleFor(name: string, skill: Skill | undefined, temper: Temper): Style {
   const u = (i: number) => hashed(name, i * 7919 + Math.floor((skill?.value ?? 1) * 1e6));
   const sk = steadiness(skill);
-  // Strafe legs: a base spread log-evenly over 250 to 1500 ms; a rookie's run longer, a veteran's vary more about its base.
-  const base = Math.min(1500, 250 * 6 ** u(1) * (1 + 0.3 * (1 - sk)));
-  const spread = 0.15 + 0.2 * u(2) + 0.25 * sk;
+  // Strafe legs: a base spread log-evenly from the bots' old mean leg (`OLD_LEG_MS`) to three times it, so no style strafes quicker than
+  // every bot once did; a rookie's run longer, a veteran's vary more about its base, never so much that a leg falls under the floor.
+  const base = OLD_LEG_MS * 3 ** u(1) * (1 + 0.3 * (1 - sk));
+  const spread = Math.min(1 - LEG_FLOOR_MS / base, 0.15 + 0.2 * u(2) + 0.25 * sk);
   const lean = Math.max(-0.4, Math.min(0.4, (u(6) * 2 - 1) * 0.3 + (temper === 'aggressive' ? 0.1 : temper === 'cautious' ? -0.1 : -0.05)));
   const f = u(9);
   return {
-    legMs: [Math.max(LEG_FLOOR_MS, base * (1 - spread)), Math.max(LEG_FLOOR_MS * 1.2, base * (1 + spread))],
+    legMs: [base * (1 - spread), base * (1 + spread)],
+    strafeOn: 0.05 + 0.45 * u(20),
+    strafePx: 120 + 60 * u(21),
     standOdds: u(3) * (0.015 + 0.05 * (1 - sk)),
     standMs: [400, 450 + 200 * (1 - sk)],
-    stepMul: lerp(0.6, 1.3, u(4)) * (0.8 + 0.2 * sk),
+    stepMul: lerp(0.6, 1, u(4)) * (0.8 + 0.2 * sk),
     jitter: (3 + 5 * u(5) + 4 * sk) * DEG,
     lean,
     sprint: 0.55 + 0.45 * u(7),
@@ -93,6 +100,10 @@ export function styleFor(name: string, skill: Skill | undefined, temper: Temper)
  */
 export type Habits = {
   style: Style; born: number; deaths: readonly number[]; alive: number | null; life: number;
+  /** Who killed it, read off the kill feed while it lay dead (`diedTo`), and where he stood. */
+  killer?: { by: number; at: Point } | null;
+  /** The map it is playing (a new map is a fresh start: no grudge, moods from scratch), the magazines it has loaded and its last count of rounds. */
+  map?: string; mags?: number; ammo?: number;
   hurt: { by: number; tick: number; at: Point } | null;
   nemesis: { id: number; at: Point; until: number; seek: boolean } | null;
 };
@@ -118,15 +129,25 @@ export function liveHabits(prev: Habits | undefined, name: string, skill: Skill 
     const died = h.alive;
     const quick = (died - h.life) * TICK_MS < QUICK_LIFE_MS;
     const deaths = [...h.deaths.filter((t) => (died - t) * TICK_MS < TILT_WINDOW_MS * 2), ...(quick ? [died] : [])];
-    const killer = h.hurt && (died - h.hurt.tick) * TICK_MS <= KILLER_MS ? h.hurt : null;
+    const killer = h.killer ?? (h.hurt && (died - h.hurt.tick) * TICK_MS <= KILLER_MS ? h.hurt : null);
     const grudge = GRUDGE_MS[0] + (GRUDGE_MS[1] - GRUDGE_MS[0]) * hashed(name, died);
     const nemesis = killer ? { id: killer.by, at: killer.at, until: tick + Math.round(grudge / TICK_MS), seek: hashed(name, died + 1) < h.style.revenge + 0.3 * tiltOf(h.style, deaths, tick) } : h.nemesis;
-    h = { ...h, deaths, hurt: null, nemesis, life: tick };
+    h = { ...h, deaths, hurt: null, nemesis, life: tick, killer: null };
   }
   if (hitBy && hitBy.tick === tick && hitBy.owner !== undefined) h = { ...h, hurt: { by: hitBy.owner, tick, at: seen(hitBy.owner) ?? { x: me.x, y: me.y } } };
   const settled = h.nemesis && (kills.includes(h.nemesis.id) || tick > h.nemesis.until);
   return { ...h, alive: tick, ...(settled && { nemesis: null }) };
 }
+
+/** Its killer as the kill feed names him (read while it lies dead, see tick.ts), for the next life's grudge. */
+export const diedTo = (h: Habits, by: number | null, at: Point | null): Habits => (by === null || !at ? h : { ...h, killer: { by, at: { x: at.x, y: at.y } } });
+
+/** A new map is a fresh start: no grudge, no tilt, and it warms up again. Otherwise the habits as they were. */
+export const onMap = (h: Habits, map: string, tick: number): Habits =>
+  h.map === undefined ? { ...h, map } : h.map === map ? h : { ...h, map, born: tick, deaths: [], nemesis: null, killer: null, hurt: null };
+
+/** Its magazines loaded so far: one more each time its rounds go up (a reload, a pack), for `HabitCtx.forgets`. */
+export const loaded = (h: Habits, ammo: number): Habits => ({ ...h, mags: (h.mags ?? 0) + (h.ammo !== undefined && ammo > h.ammo ? 1 : 0), ammo });
 
 /** Tilt, 0 to 1: `tiltAt` quick deaths inside the window, fading from the last of them; a veteran's is half. */
 function tiltOf(s: Style, deaths: readonly number[], tick: number): number {
@@ -163,9 +184,9 @@ export type HabitCtx = {
   stayMs: number;
 };
 
-/** Its habits as a think reads them; `mags` counts the magazines it has fired (its rounds over its magazine), for `forgets`. */
-export function habitCtx(h: Habits, name: string, tick: number, busy: boolean, mags: number): HabitCtx {
-  return { style: h.style, mood: moodOf(h, tick), nemesis: h.nemesis, busy, forgets: hashed(name, 50_000 + mags) < h.style.forget, stayMs: (tick - h.born) * TICK_MS };
+/** Its habits as a think reads them; whether it forgets this magazine is one decision a magazine loaded (`loaded`). */
+export function habitCtx(h: Habits, name: string, tick: number, busy: boolean): HabitCtx {
+  return { style: h.style, mood: moodOf(h, tick), nemesis: h.nemesis, busy, forgets: hashed(name, 50_000 + (h.mags ?? 0)) < h.style.forget, stayMs: (tick - h.born) * TICK_MS };
 }
 
 /** The enemy it most wants among those it sees: its nemesis, if he is in sight. */
