@@ -300,9 +300,12 @@ function words(line: string): string[] {
  * on the blocklist, digits beyond "1v1", any word about bots, models, prompts or being human (spaced, dotted or run together), self-harm
  * however it is spelt, "skip", and anything over 40 characters.
  */
+/** Text folded the way `cleanLine` sees it: NFKC, lowercase, look-alike letters to ASCII. Anything else non-ASCII is left as it is. */
+export const foldText = (text: string): string => [...text.normalize('NFKC').toLowerCase()].map((ch) => CONFUSABLE[ch] ?? ch).join('');
+
 export function cleanLine(text: string | null | undefined, moderator: Moderator = DEFAULT_MOD): string | null {
   if (!text) return null;
-  const folded = [...text.normalize('NFKC').toLowerCase()].map((ch) => CONFUSABLE[ch] ?? ch).join('');
+  const folded = foldText(text);
   if (/[^\x00-\x7f]/.test(folded.replace(/[^\p{L}]/gu, ''))) return null;
   const line = folded.replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim().replace(/\.+$/, '').trim();
   if (!line || line === 'skip' || line.length > LINE_MAX) return null;

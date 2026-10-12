@@ -101,12 +101,14 @@ test('one call in flight per room', async () => {
 test('a timeout or an error gives the bank line, and the writer backs off', async () => {
   const c = clock();
   const bank = (await import('../src/server/bot/social.ts')).bankLine(speaker(CHATTY, 7), KILL, []);
-  const hang = fake(() => new Promise(() => {}));
+  let signal: AbortSignal | null = null;
+  const hang = fake((req) => { signal = req.signal; return new Promise(() => {}); });
   const chat = makeLlmChat({ provider: hang.provider, timeoutMs: 20, now: c.now, random: always, log: () => {} });
   const got = chat.forRoom('r')(speaker(CHATTY, 7), KILL, []);
   assert.ok(got instanceof Promise);
   assert.equal(await got, bank, 'the bank stood in on a timeout');
   assert.equal(chat.stats().timeouts, 1);
+  assert.equal((signal as AbortSignal | null)?.aborted, true, 'the request was aborted');
   assert.ok(!(chat.forRoom('r2')(speaker(CHATTY), KILL, []) instanceof Promise), 'backing off');
   c.t += 16_000;
   assert.ok(chat.forRoom('r3')(speaker(CHATTY), KILL, []) instanceof Promise, 'and back after the backoff');
@@ -300,7 +302,8 @@ test('the Anthropic provider asks for a fast, short line: no thinking, low effor
   assert.deepEqual(b.thinking, { type: 'disabled' });
   assert.deepEqual(b.output_config, { effort: 'low' });
   assert.ok(!('temperature' in b) && !('top_p' in b) && !('top_k' in b));
-  assert.deepEqual((b.system as { text: string }[])[0]!.text, SYSTEM_PROMPT);
+  assert.equal(b.system, SYSTEM_PROMPT);
+  assert.ok(!JSON.stringify(b).includes('cache_control'), 'nothing to cache at this size');
   assert.equal(await anthropicProvider('k', undefined, { fetchFn: reply(200, message('', 'refusal')) }).complete(req), null, 'a refusal is no line');
   await assert.rejects(anthropicProvider('k', undefined, { fetchFn: reply(429, { type: 'error', error: { type: 'rate_limit_error', message: 'slow' } }) }).complete(req), (e) => e instanceof ProviderError && e.status === 429);
 });
@@ -327,4 +330,65 @@ test('asked if it is a bot it never denies it or claims to be human, and a perso
   assert.equal(await chat.forRoom('r')(me, botq, []), null);
   assert.match(SYSTEM_PROMPT, /Never deny it/);
   assert.ok(!SYSTEM_PROMPT.includes('no lol'));
+});
+
+test('review cases: a bot question anywhere in what the model saw allows only a brush-off', async () => {
+  const me = speaker('bob');
+  const line = (from: string, text: string, at: number): ChatLine => ({ from, text, at });
+  // "bob are u a bot?" earlier, then an addressed "bob??".
+  const r1 = [line('person', 'bob are u a bot?', 0), line('x', 'gg', 1), line('person', 'bob??', 2)];
+  assert.equal(vetLine('no lol', me, r1, { k: 'addressed', text: 'bob??' }).k, 'reject');
+  // "bob is a bot lol", then a death.
+  assert.equal(vetLine('nah', me, [line('person', 'bob is a bot lol', 0)], { k: 'death' }).k, 'reject');
+  assert.equal(vetLine('rip', me, [line('person', 'bob is a bot lol', 0)], { k: 'death' }).k, 'reject', 'anything but a brush-off');
+  // "are u a bot?" four lines back, then a kill.
+  const r3 = [line('person', 'are u a bot?', 0), line('a', 'lol', 1), line('b', 'gg', 2), line('c', 'rip', 3)];
+  assert.equal(vetLine('no lol', me, r3, KILL).k, 'reject');
+  // "u a bot" (no question mark) answered "nope".
+  const v = vetLine('nope', me, [], { k: 'question', text: 'u a bot' });
+  assert.ok(v.k === 'reject' && v.silent);
+  // Spaced, dotted, hack accusations, "real"/"human".
+  for (const q of ['r u a b o t', 'is he an a.i.', 'bob ur hacking', 'aimbot lol', 'u human?', 'is bob real']) {
+    assert.equal(vetLine('ye', me, [line('p', q, 0)], KILL).k, 'reject', q);
+    assert.deepEqual(vetLine('bro what', me, [line('p', q, 0)], KILL), { k: 'line', text: 'bro what' }, q);
+  }
+  const chat = makeLlmChat({ provider: fake('no lol').provider, random: always, log: () => {} });
+  assert.equal(await chat.forRoom('r')(speaker(CHATTY), KILL, r3.map((l) => ({ ...l, text: l.text.replace('bob', CHATTY) }))), null, 'silence, not the bank');
+});
+
+test('Unicode tricks are folded or refused', () => {
+  const me = speaker(CHATTY);
+  assert.equal(vetLine('im a hu​man', me, [], KILL).k, 'reject', 'zero-width space');
+  assert.equal(vetLine('аі lol', me, [], KILL).k, 'reject', 'Cyrillic "ai"');
+  assert.equal(vetLine('nіce bоt', me, [], KILL).k, 'reject', 'Cyrillic "bot"');
+  assert.equal(vetLine('ｂｏｔ', me, [], KILL).k, 'reject', 'full-width "bot"');
+  assert.deepEqual(vetLine('ｇｇ', me, [], KILL), { k: 'line', text: 'gg' }, 'full-width letters fold to ASCII');
+  assert.equal(vetLine('gg \u{1F602}', me, [], KILL).k, 'reject', 'emoji is not ASCII');
+  // A Cyrillic bot question in chat still counts.
+  assert.equal(vetLine('no', me, [{ from: 'p', text: 'r u a bоt', at: 0 }], KILL).k, 'reject');
+});
+
+test('no identity or personal claims, and personal questions get silence', () => {
+  const me = speaker(CHATTY);
+  for (const bad of ['im a girl lol', 'i am from texas', 'im 14', 'im twelve years', 'my mom says no', 'my insta is dead', 'im from brazil', '14 yo', 'boy', 'usa lol'])
+    assert.equal(vetLine(bad, me, [], KILL).k, 'reject', bad);
+  for (const q of ['where u from', 'how old r u', 'boy or girl', 'u got discord', 'whats ur insta', 'wanna meet irl']) {
+    const v = vetLine('ye', me, [{ from: 'p', text: q, at: 0 }], { k: 'death' });
+    assert.ok(v.k === 'reject' && v.silent, q);
+    assert.ok(vetLine('lag', me, [{ from: 'p', text: q, at: 0 }], { k: 'death' }).k === 'reject', `${q}: only idk or a brush-off`);
+    assert.deepEqual(vetLine('idk', me, [{ from: 'p', text: q, at: 0 }], { k: 'death' }), { k: 'line', text: 'idk' });
+  }
+  assert.deepEqual(vetLine('im on fire', me, [], KILL), { k: 'line', text: 'im on fire' });
+});
+
+test('a missing SDK turns the writer off once, with one log line', async () => {
+  const logs: string[] = [];
+  let imports = 0;
+  const provider = anthropicProvider('k', undefined, { importSdk: () => { imports++; return Promise.reject(new Error('Cannot find package')); } });
+  const chat = makeLlmChat({ provider, random: always, log: (l) => logs.push(l) });
+  const bank = (await import('../src/server/bot/social.ts')).bankLine(speaker(CHATTY, 5), KILL, []);
+  assert.equal(await chat.forRoom('r')(speaker(CHATTY, 5), KILL, []), bank);
+  for (let i = 0; i < 5; i++) assert.ok(!(chat.forRoom(`r${i}`)(speaker(CHATTY), KILL, []) instanceof Promise), 'off for good');
+  assert.equal(imports, 1);
+  assert.deepEqual(logs, ['LLM chat off: @anthropic-ai/sdk missing']);
 });
