@@ -12,3 +12,4 @@ import './wasteland.ts';
 import './summit.ts';
 import './harborlife.ts';
 import './quarry.ts';
+import './plaza.ts';

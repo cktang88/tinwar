@@ -6,8 +6,8 @@ import { BEACON_HZ, DECOR_LIGHT_CAP, DECOR_SHADOW_CAP, fixtureLight, lampColor, 
 import { FACE } from '../src/client/tilt.ts';
 import { EASTER_EGGS, FLOOR_VIGNETTES, LORE } from '../src/client/vignettes.ts';
 
-// Causeway is a themed harbour now (themes/harbor*.ts) and skips the generic yard decor.
-const YARDS = ['plaza', 'oldtown', 'quarry'] as const;
+// Causeway is a themed harbour now (themes/harbor*.ts) and skips the generic yard decor; so does any yard that gets a theme.
+const YARDS = (['plaza', 'oldtown', 'quarry'] as const).filter((id) => !MAPS[id].theme);
 const plans = new Map<string, DecorPlan>();
 const planOf = (id: keyof typeof MAPS) => { let p = plans.get(id); if (!p) plans.set(id, (p = planDecor(MAPS[id]))); return p; };
 const night: FxState = { dark: 1, now: 5000, reduced: false, alarm: true };

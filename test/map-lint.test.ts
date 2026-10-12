@@ -122,10 +122,10 @@ test('a lone prop, or one whose twin is another kind, is a problem', () => {
 });
 
 test('every wall material a map uses has its own lint key, a distinct power of two', () => {
-    for (const m of Object.values(MAPS)) {
+  for (const m of Object.values(MAPS)) {
     const materials = [...new Set(m.walls.map((w) => w.material))];
     const keys = materials.map(materialKeys());
     assert.equal(new Set(keys).size, materials.length, 'two materials share a key');
-  for (const k of keys) assert.ok(Number.isInteger(Math.log2(k)), `${k} is not a power of two`);
+    for (const k of keys) assert.ok(Number.isInteger(Math.log2(k)), `${k} is not a power of two`);
   }
 });

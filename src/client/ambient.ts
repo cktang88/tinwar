@@ -1,4 +1,5 @@
 import { ZONE_RADIUS, type MapDef } from '../shared/maps.ts';
+import { polyParts } from '../shared/mapgeo.ts';
 import { ambientFor, type AmbientConfig, type AmbientGroup, type CritterKind } from './ambientreg.ts';
 import { cellOf, putCell, type SpriteId } from './ambientart.ts';
 import './ambientmaps.ts';
@@ -100,7 +101,8 @@ const NOT_PERCH = new Set(['water', 'pond', 'hedge', 'embhedge', 'drift']);
 function placementOf(map: MapDef, mapId: string, cfg: AmbientConfig): Group[] {
   const rand = mulberry(hashOf(mapId));
   const size = map.size;
-  const solid = map.walls;
+  // Grid walls, and the solid parts of polygon walls (a map built of polygons has birds on its rooftops too).
+  const solid: readonly (Rect & { material: string })[] = map.polys?.length ? [...map.walls, ...polyParts(map).filter((p) => !p.ns && !p.nb)] : map.walls;
   const keepOut: Rect[] = [];
   for (const r of [...map.spawns.red, ...map.spawns.blue, ...map.spawns.ffa]) keepOut.push({ x: r.x - 160, y: r.y - 160, w: r.w + 320, h: r.h + 320 });
   for (const z of map.zones) keepOut.push({ x: z.x - ZONE_RADIUS - 80, y: z.y - ZONE_RADIUS - 80, w: 2 * (ZONE_RADIUS + 80), h: 2 * (ZONE_RADIUS + 80) });

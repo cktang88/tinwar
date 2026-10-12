@@ -21,7 +21,7 @@ import { AIRBASE } from './maps/airbase.ts';
 export type Center = { x: number; y: number };
 export type WallMaterial = 'concrete' | 'sandstone' | 'planter' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap' | 'qledge' | 'qblock' | 'qplant' | 'qcabin' | 'qshed' | 'otwall' | 'otstone' | 'otfurn' | 'otstall';
 /** A map's own look (src/client/themes): its floor, wall art, decor and lights. */
-export type ThemeId = 'market' | 'museum' | 'subpen' | 'park' | 'summit' | 'railyard' | 'harbor' | 'embassy' | 'airbase' | 'wasteland' | 'quarry' | 'oldtown';
+export type ThemeId = 'market' | 'museum' | 'subpen' | 'park' | 'summit' | 'railyard' | 'harbor' | 'embassy' | 'airbase' | 'wasteland' | 'quarry' | 'oldtown' | 'plaza';
 export type MapWall = Rect & { material: WallMaterial };
 
 export const ZONE_RADIUS = 180;
