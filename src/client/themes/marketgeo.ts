@@ -12,10 +12,12 @@ import { FACE, type Solid } from '../tilt.ts';
 import { boundsOf, clipExtruded, outline, paintDoor, type DoorStyle, type G } from './geokit.ts';
 import { paintCart, paintLandmark, paintShopfront } from './marketwalls.ts';
 import { districtAt } from './marketkit.ts';
+import { marketRoofSprite, ROOF_MARGIN } from './marketroofs.ts';
 import type { Theme } from './registry.ts';
 
 const PLASTER: PolyLook = { top: '#8d8272', front: '#4a4339', lit: '#b3a792', shade: '#5f574b' };
 const SHUTTER: PolyLook = { top: '#8a9096', front: '#474c52', lit: '#b0b6bc', shade: '#5b6168' };
+const CONCRETE: PolyLook = { top: '#8e9093', front: '#4c4e52', lit: '#b2b4b7', shade: '#64666a' };
 const FRAME: PolyLook = { top: '#6a6f76', front: '#33373d', lit: '#8c9299', shade: '#4a4f56' };
 
 const shutter: DoorStyle = {
@@ -74,6 +76,20 @@ function clipped(g: G, p: MapPoly, paint: (g: G, s: Solid) => void, kind: 'cart'
 
 export const marketGeo: Pick<Theme, 'drawPoly' | 'door' | 'roof'> = {
   drawPoly(g: G, p: MapPoly): boolean {
+    // The canal is painted into the floor (market.ts); its poly only stops bodies.
+    if (p.material === 'canal') return true;
+    if (p.shape === 'pillar') {
+      const h = p.height ?? 30;
+      drawExtruded(g, p.points, h, CONCRETE);
+      const b = boundsOf(p.points), cx = b.x + b.w / 2, cy = b.y + b.h / 2, r = b.w / 2;
+      // hazard stripes on the front face, and the bay's number painted on top
+      g.save(); clipExtruded(g, p.points, h);
+      g.beginPath(); g.rect(b.x - 2, cy, b.w + 4, r + h + 2); g.clip();
+      for (let x = b.x - 40; x < b.x + b.w + 20; x += 14) { g.fillStyle = '#e8c23a'; g.beginPath(); g.moveTo(x, cy + r + h); g.lineTo(x + 7, cy + r + h); g.lineTo(x + 7 + h, cy + r); g.lineTo(x + h, cy + r); g.closePath(); g.fill(); }
+      g.restore();
+      g.font = '700 16px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#2f5fa8'; g.fillText(`P${1 + (Math.round(cx + cy) % 4)}`, cx, cy);
+      return true;
+    }
     if (p.shape === 'cart') { clipped(g, p, paintCart, 'cart', FACE.cart); return true; }
     if (p.shape === 'shrine') { clipped(g, p, (c, sd) => paintLandmark(c, sd, true), 'shrine', FACE.shrine); return true; }
     if (p.material === 'shop') {
@@ -89,6 +105,13 @@ export const marketGeo: Pick<Theme, 'drawPoly' | 'door' | 'roof'> = {
     return paintDoor(g, d, leaves, open, info, shutter);
   },
   roof(g: G, r: MapRoof, _alpha: number, info: GeoInfo): boolean {
+    const hall = marketRoofSprite(r);
+    if (hall) {
+      const b = boundsOf(r.points);
+      g.drawImage(hall, b.x - ROOF_MARGIN, b.y - ROOF_MARGIN);
+      if (info.dark > 0) { g.fillStyle = `rgba(20, 28, 60, ${0.5 * info.dark})`; g.fillRect(b.x, b.y, b.w, b.h); }
+      return true;
+    }
     if (r.material !== 'shop') return false;
     const c = roofSprite(r);
     if (!c) return false;
