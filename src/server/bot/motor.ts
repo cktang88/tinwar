@@ -52,6 +52,10 @@ export type Motor = {
   hold?: Hold | null;
   /** Standing with nothing to look at: the way it looks round (a lane open from where it stands, or a sound), kept until `until` (see `scanPoint`). */
   scan?: { at: Point; until: number } | null;
+  /** Just after a kill: it stands and looks round until `until`, reloading on reflex if `reload` (see `afterKill`). */
+  pause?: { until: number; reload: boolean } | null;
+  /** The crate it has its eye on (`key`) and since when: it looks a moment before it starts shooting it (`Style.farmDelayMs`). */
+  farm?: { key: number; since: number } | null;
 };
 
 type Keys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
@@ -101,6 +105,13 @@ export type Hold = {
   judge?: number;
   /** Whether it stood at `to` when it decided, so only arriving there later wakes it to plan the next move. */
   arrived: boolean;
+  /** Its view radius when it decided, for the sight box its motor checks the enemy it tracks against between thinks (see `motorTick`). */
+  view?: number;
+  /**
+   * The strafe it is running (a bot with a style): the kind of leg, its style's leg length and jitter, so a bot off every screen, which
+   * thinks only every so often, runs its next leg on its motor when this one is up rather than holding it till its next think.
+   */
+  leg?: { kind: Leg; ms: readonly [number, number]; jitter: number; on: number; px: number };
   /** The nav grid it routed on (a barrel going up or coming back makes a new one), and the door on its way and whether it stood open. */
   nav: number;
   door: { i: number; open: boolean } | null;
@@ -183,7 +194,7 @@ const MATE_SHOVE_MIN = 0.35;
 /** Enemies within this of a bot are a crowd, and each one past the first widens the distance it holds. */
 const CROWD_PX = 400;
 const CROWD_HOLD = 0.5;
-const PEEK_SWAY_PX = 70;
+const PEEK_SWAY_PX = 75;
 const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
 export const MIN_TURN_BACK_MS = 400;
 const MIN_LEG_TICKS = Math.round(MIN_TURN_BACK_MS / TICK_MS);
@@ -224,7 +235,7 @@ function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly R
 }
 
 /** `heading` is set when `to` is the end of a strafe or dodge leg: between thinks the bot keeps running that way rather than stopping there. */
-type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean; heading?: number | null };
+type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean; heading?: number | null; leg?: Hold['leg'] };
 
 const LOOK_HOLD_INSIDE_PX = 150;
 /** An enemy in sight this far off where its gun points catches it off-angle (see `HANDS.startle`). */
@@ -233,6 +244,8 @@ const LOOK_AHEAD_PX = 400;
 /** An enemy who comes into sight this near where its gun points was pre-aimed: it takes him in in `PRE_AIMED_REACT` of its usual time. */
 const PRE_AIMED_RAD = (10 * Math.PI) / 180;
 const PRE_AIMED_REACT = 0.6;
+/** One it had in sight this lately is no surprise when he shows close again (see `NOTICE.surpriseMs`). */
+const SURPRISE_KNOWN_MS = 2000;
 /** Below this share of its magazine it reloads even in an enemy's line. */
 const OPEN_RELOAD_FRAC = 0.2;
 
@@ -354,27 +367,54 @@ function breaksSight(me: Point, e: Engagement | null, solids: readonly Rect[]): 
   return segmentBlocked(solids, me.x, me.y, fx - me.x, fy - me.y);
 }
 
-function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
+/**
+ * The next strafe leg (or stand) once the current one is up. Its legs run its own style's length (`Style.legMs`), and now and then it
+ * pauses a beat between them (`Style.standOdds`, a rookie more), never two pauses running; a planted gun sidesteps at its temper's odds times
+ * its style's `stepMul`. Every leg runs at least `MIN_LEG_TICKS`, so it never flips its keys back and forth in place. `legMs` given (a peek's
+ * sway) overrides its style.
+ */
+function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs?: readonly [number, number]): Motor['stance'] {
   const age = v.tick - m.stance.since;
   if (planted === m.stance.planted ? v.tick < m.stance.until : age < MIN_LEG_TICKS) return m.stance;
+  const style = c.habit?.style;
   const legFor = (step: Motor['stance']['step'], ms: readonly [number, number]) => ({ step, since: v.tick, until: v.tick + Math.max(MIN_LEG_TICKS, Math.round(between(ms, c.rand) / TICK_MS)), heading: null, planted });
-  if (!planted) return legFor(m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : (-m.stance.step as 1 | -1), legMs);
-  const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
+  if (!planted) {
+    if (style && !legMs && m.stance.step !== 0 && c.rand() < style.standOdds) return legFor(0, style.standMs);
+    // A person's strafe is no metronome: now and then the next leg runs on the same way (`Style.strafeOn`), so it drifts rather than rocking about one spot.
+    const on = style && !legMs && m.stance.step !== 0 && c.rand() < style.strafeOn;
+    return legFor(m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : on ? m.stance.step : (-m.stance.step as 1 | -1), legMs ?? style?.legMs ?? STRAFE_MS);
+  }
+  const odds = Math.min(1, (v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds) * (style?.stepMul ?? 1));
   const step = m.stance.step === 0 && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
-  return legFor(step, step === 0 ? STAND_MS : STEP_MS);
+  // A rookie stands its gun a while longer than the old default; nobody shorter.
+  const stand: readonly [number, number] = style ? [STAND_MS[0] * (1.5 - 0.5 * style.steady), STAND_MS[1] * (1.5 - 0.5 * style.steady)] : STAND_MS;
+  return legFor(step, step === 0 ? stand : STEP_MS);
 }
 
 /** A strafe leg's heading round `at`: closing in (45 degrees off head-on), side on (90), or backing off (135, back and sideways). */
 type Leg = 'in' | 'side' | 'out';
 const LEG_ANGLE: Record<Leg, number> = { in: Math.PI / 4, side: Math.PI / 2, out: (3 * Math.PI) / 4 };
 
-function legHeading(me: Point, at: Point, step: 1 | -1, leg: Leg): number {
-  const a = Math.atan2(at.y - me.y, at.x - me.x) + step * LEG_ANGLE[leg];
+/** `jitter` (rad) moves the leg's angle off its mark before it is snapped to one of the eight ways the keys run (see `Style.jitter`). */
+function legHeading(me: Point, at: Point, step: 1 | -1, leg: Leg, jitter = 0): number {
+  const a = Math.atan2(at.y - me.y, at.x - me.x) + step * (LEG_ANGLE[leg] + jitter);
   return Math.round(a / (Math.PI / 4)) * (Math.PI / 4);
 }
 
-function legPoint(me: Point, heading: number, arena: BotArena, mates: readonly Point[] = []): Point | null {
-  const p = { x: me.x + Math.cos(heading) * STRAFE_PX, y: me.y + Math.sin(heading) * STRAFE_PX };
+/** A fresh leg's jitter off its mark (see `Style.jitter`), drawn once for the leg; none without a style. */
+const legJitter = (c: IntentCtx) => (c.habit ? (c.rand() * 2 - 1) * c.habit.style.jitter : 0);
+
+/** A side-on leg leans in or out by its style (`Style.lean`): a pusher drifts in as it strafes, a careful one edges back. Drawn once a leg. */
+function leaning(c: IntentCtx, leg: Leg, d: number): Leg {
+  const lean = c.habit?.style.lean ?? 0;
+  // Only with room to lean: never in toward where it would back off again, nor out past where it would close again.
+  const room = lean > 0 ? d > Math.max(c.band.hold, c.band.headOn) * 1.6 : d < c.band.max * 0.75;
+  if (leg !== 'side' || lean === 0 || !room || c.rand() >= Math.abs(lean)) return leg;
+  return lean > 0 ? 'in' : 'out';
+}
+
+function legPoint(me: Point, heading: number, arena: BotArena, mates: readonly Point[] = [], px = STRAFE_PX): Point | null {
+  const p = { x: me.x + Math.cos(heading) * px, y: me.y + Math.sin(heading) * px };
   return isOpen(arena.nav, p) && walkable(arena.nav, me, p) && clearOfLeaves(arena, me, p) && !mates.some((m) => dist(m, p) < MATE_CLEAR_PX && dist(m, p) < dist(m, me)) ? p : null;
 }
 
@@ -412,7 +452,8 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const reload = intent.phase === 'hide' && !t && v.self.ammo < v.self.mag;
       const peeking = (to: Point, stance: Motor['stance']) => ({ steer: { to, face, reload, crates: false }, stance });
       if (intent.phase === 'hide') return peeking(intent.spot, m.stance);
-      const crossMs = (PEEK_SWAY_PX / v.self.speed) * 1000;
+      // The sway walks the gap less the arrival slack at either end (it stops once within `ARRIVED_PX`), then pauses `SWAY_PAUSE_MS`.
+      const crossMs = ((PEEK_SWAY_PX - ARRIVED_PX) / v.self.speed) * 1000;
       const stance = nextStance(m, v, c, plants(v, c, t?.d ?? 0, true), [crossMs + SWAY_PAUSE_MS[0], crossMs + SWAY_PAUSE_MS[1]]);
       if (stance.step === 0) return peeking(intent.peek, stance);
       const out = Math.atan2(intent.peek.y - intent.spot.y, intent.peek.x - intent.spot.x);
@@ -452,15 +493,18 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const stance = nextStance(m, v, c, !closing && !backing && plants(v, c, t.d, false));
       const step = stance.step;
       if (step === 0) return { steer: fight(null), stance };
-      let heading = stance.heading ?? legHeading(me, t.p, step, leg);
+      const kind = stance.heading === null ? leaning(c, leg, t.d) : leg;
+      let heading = stance.heading ?? legHeading(me, t.p, step, kind, legJitter(c));
       if (backing && Math.cos(heading - Math.atan2(t.p.y - me.y, t.p.x - me.x)) > 0.2) heading = legHeading(me, t.p, step, 'out');
-      const ahead = legPoint(me, heading, c.arena, v.allies);
-      if (ahead) return { steer: fight(ahead, heading), stance: { ...stance, heading } };
+      const style = c.habit?.style;
+      const run = (k: Leg): Steer['leg'] => (style ? { kind: k, ms: style.legMs, jitter: style.jitter, on: style.strafeOn, px: style.strafePx } : undefined);
+      const ahead = legPoint(me, heading, c.arena, v.allies, style?.strafePx);
+      if (ahead) return { steer: { ...fight(ahead, heading), leg: run(backing ? 'out' : kind) }, stance: { ...stance, heading } };
       const back = step === 1 ? -1 : 1;
       const turned = legHeading(me, t.p, back, leg);
-      const until = v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS);
-      const turnedTo = legPoint(me, turned, c.arena, v.allies);
-      return { steer: fight(turnedTo ?? (closing ? t.p : null), turnedTo ? turned : null), stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
+      const until = v.tick + Math.max(MIN_LEG_TICKS, Math.round(between(style?.legMs ?? STRAFE_MS, c.rand) / TICK_MS));
+      const turnedTo = legPoint(me, turned, c.arena, v.allies, style?.strafePx);
+      return { steer: { ...fight(turnedTo ?? (closing ? t.p : null), turnedTo ? turned : null), ...(turnedTo && { leg: run(leg) }) }, stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
     }
   }
 }
@@ -829,16 +873,65 @@ function resting(rhythm: Hold['rhythm'], gun: GunId, own: { spray: number; fired
   return holdsFire(gun, rhythm, { ...read, d: read.d, spray: own.spray, sinceShotMs: Math.min((tick - own.firedTick) * TICK_MS, sinceSprintMs), pausing: tick < (tap?.pauseUntil ?? -Infinity) });
 }
 
-/** The per-tick bookkeeping of where it is pressing and whether it gets anywhere (see `headway`, `CRAWL`). */
-function walked(m: Motor, me: Point, at: Point | null, drive: Drive, route: Motor['route'], tick: number, replanned: boolean, crawling: boolean): Pick<Motor, 'stuckTicks' | 'progress' | 'last' | 'dir' | 'dirSince' | 'pace' | 'route'> {
+/**
+ * The per-tick bookkeeping of where it is pressing and whether it gets anywhere (see `headway`, `CRAWL`). On a strafe or dodge leg (`leg`)
+ * going nowhere is the point: a free stride along the leg is headway, so a bot strafing to and fro about one spot is never taken for one
+ * crawling along a wall (and sent off sideways on a detour mid-leg).
+ */
+function walked(m: Motor, me: Point, at: Point | null, drive: Drive, route: Motor['route'], tick: number, replanned: boolean, crawling: boolean, leg = false): Pick<Motor, 'stuckTicks' | 'progress' | 'last' | 'dir' | 'dirSince' | 'pace' | 'route'> {
   const gained = at ? dist(m.last, at) - dist(me, at) : 0;
   const pressing = drive.dir !== null;
   const left = routeLeft(me, route);
   return {
     route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, last: { x: me.x, y: me.y },
     stuckTicks: pressing && gained < 1 && !replanned ? m.stuckTicks + 1 : 0,
-    progress: !pressing || crawling || headway(m, me, left) ? { x: me.x, y: me.y, tick, left, rubbed: false } : { ...m.progress, rubbed: m.progress.rubbed || m.stuckTicks >= BLOCKED_TICKS },
+    progress: !pressing || crawling || headway(m, me, left) || (leg && gained >= 1) ? { x: me.x, y: me.y, tick, left, rubbed: false } : { ...m.progress, rubbed: m.progress.rubbed || m.stuckTicks >= BLOCKED_TICKS },
   };
+}
+
+/**
+ * A kill of its own since it last thought: a person stops a beat and looks round (`KILL_PAUSE_MS`), and most reload on reflex there and then,
+ * the more so the readier its reload habit (`Style.reloadAt`: odds from `KILL_RELOAD[0]` to `[1]`). The pause it is in, or null.
+ */
+const KILL_PAUSE_MS: readonly [number, number] = [200, 800];
+const KILL_RELOAD: readonly [number, number] = [0.5, 0.8];
+const KILL_RELOAD_CLEAR_PX = 500;
+function afterKill(m: Motor, v: Perception, c: IntentCtx, snap: Snapshot): Motor['pause'] {
+  const style = c.habit?.style;
+  if (style && snap.events.some((e) => e.e === 'kill' && e.killerId === v.me.id && e.victimId !== v.me.id)) {
+    const habit = (style.reloadAt - 0.3) / 0.65;
+    return { until: v.tick + Math.round(between(KILL_PAUSE_MS, c.rand) / TICK_MS), reload: c.rand() < KILL_RELOAD[0] + (KILL_RELOAD[1] - KILL_RELOAD[0]) * habit };
+  }
+  return m.pause && v.tick < m.pause.until ? m.pause : null;
+}
+
+/** It sprints when it could in its own share of the time (`Style.sprint`), by stretches of `SPRINT_SPELL_MS`, hashed: never on and off tick to tick. */
+const SPRINT_SPELL_MS = 4000;
+const sprintsNow = (c: IntentCtx, id: number, tick: number) => !c.habit || lane(id, 500 + (Math.floor((tick * TICK_MS) / SPRINT_SPELL_MS) % 10_000)) < c.habit.style.sprint;
+/** Getting about with nothing pressing, where its sprint habit has a say; moving between cover, or under fire, everyone runs. */
+const ROAMS = new Set<Intent['k']>(['patrol', 'search', 'resupply', 'takePosition', 'flank']);
+
+/**
+ * Whether it shoots the crate at `at` for score (its style's `farm`: some never do, some always, the rest by the crate, hashed and kept a while),
+ * and once it has looked at it `Style.farmDelayMs`. Without a style, at once, as every bot once did.
+ */
+const FARM_MEMORY_MS = 20_000;
+function farms(m: Motor, c: IntentCtx, id: number, tick: number, at: Point): { go: boolean; farm: Motor['farm'] } {
+  const style = c.habit?.style;
+  if (!style) return { go: true, farm: null };
+  const key = Math.round(at.x) * 7 + Math.round(at.y) * 13;
+  const keen = style.farm >= 1 || (style.farm > 0 && lane(id, (key + Math.floor((tick * TICK_MS) / FARM_MEMORY_MS)) % 100_000) < style.farm);
+  if (!keen) return { go: false, farm: null };
+  const farm = m.farm?.key === key ? m.farm : { key, since: tick };
+  return { go: (tick - farm.since) * TICK_MS >= style.farmDelayMs, farm };
+}
+
+
+/** Its aim and reaction against one target, worsened by its mood (warming up, tilted; see `moodOf`): never sharpened. */
+function moody(s: Sharpness, c: IntentCtx): Sharpness {
+  const mood = c.habit?.mood;
+  if (!mood || (mood.aimMul === 1 && mood.reactMul === 1)) return s;
+  return { ...s, errMul: (s.errMul ?? 1) * mood.aimMul, reactionMul: s.reactionMul * mood.reactMul };
 }
 
 export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap: Snapshot): { input: InputState; motor: Motor } {
@@ -855,7 +948,14 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const cue = dangerAt && v.shotAt?.owner === dangerAt.id ? boltCue(v.shotAt, me) : null;
   const dodgeNow = dodging ? nextDodge(m.dodge ?? null, v.tick, c, style, fired, v.self.reloading, cue) : null;
   const steered = steer(intent, v, c, m, readyAbility, dodgeNow, dangerAt);
-  const { steer: s, stance } = steered;
+  const { stance } = steered;
+  // Just after a kill, with nobody else in sight: it stands a beat and looks round, reloading on reflex (see `afterKill`).
+  const pause = afterKill(m, v, c, snap);
+  const afk = intent.k === 'patrol' && intent.idle === 'afk' && v.threats.length === 0 && !v.underFire;
+  // With nobody else in sight it stands; with others about but none close it still reloads on reflex (a habit that gets people killed).
+  const reflex = pause?.reload && v.threats.every((x) => x.d > KILL_RELOAD_CLEAR_PX);
+  const s: Steer = pause && v.threats.length === 0 ? { ...steered.steer, to: null, heading: null, reload: steered.steer.reload || pause.reload, crates: false }
+    : reflex ? { ...steered.steer, reload: true } : afk ? { ...steered.steer, crates: false } : steered.steer;
   const dodge = steered.dodge !== undefined ? steered.dodge : dodgeNow;
   const crawling = m.dir !== null && v.tick - m.progress.tick > CRAWL.ticks;
   // Out of an open swing door's sweep, whether making for a spot or standing still (see `clearOfSwings`).
@@ -898,26 +998,37 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const sway = t !== undefined || turnTo !== null ? 0 : !faceAt ? SWAY.walk : !!scan && faceAt === scan.at ? SWAY.scan : SWAY.hold;
   const scanning = !!scan && faceAt === scan.at;
   let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? slowHand(HANDS.startle, c.skill?.turnMul) : scanning ? HANDS.scan : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p, ...(sway && { sway }) } : { k: 'ahead', sway };
+  // Hands off the keys and the mouse (an idle moment, see `idleMoment`): its gun stays where it was.
+  if (afk && !t && !turnTo) gaze = { k: 'fixed', want: before.angle, d: 300, hand: HANDS.calm };
   const barrels = seenBarrels(snap.barrels);
   const props = seenProps(snap.props);
   let track: Hold['track'] = null;
   let threat: Situation['threat'] = null;
+  let farm: Motor['farm'] = null;
   if (t) {
     const tracked = held(t.p.id) ? m.engaged : null;
     // Its target's row, played at its own skill (a rookie's aim error, reaction, hand, tracking and lead; see `BOT_SKILL`).
-    const sharp = skilled(sharpnessAgainst(t.p), c.skill ?? BOT_SKILL.veteran);
+    const sharp = moody(skilled(sharpnessAgainst(t.p), c.skill ?? BOT_SKILL.veteran), c);
     // An enemy who steps into the angle its gun already holds is shot on sight: the reaction a person has for a target he was waiting for.
-    const preAimed = !tracked && !!m.hold?.watching && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) < PRE_AIMED_RAD;
-    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, c.persona.reactMul * (preAimed ? PRE_AIMED_REACT : 1));
+    const offRad = Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle));
+    const preAimed = !tracked && !!m.hold?.watching && offRad < PRE_AIMED_RAD;
+    // Taking in a new man costs a fresh reaction: slower when it was fighting another (a second choice), the further off its aim he is, and
+    // with a start when he turns up close (see `NOTICE`).
+    // Busy: it is fighting another it can still see (a choice between two). A start: he turns up close out of nowhere (not one it had in sight lately).
+    const switching = !tracked && m.engaged !== null && m.engaged.id !== t.p.id && v.tick - m.engagedSeen <= REACQUIRE_TICKS && v.threats.some((x) => x.p.id === m.engaged!.id);
+    const known = c.tac?.seen.some((x) => x.id === t.p.id && (v.tick - x.tick) * TICK_MS < SURPRISE_KNOWN_MS) ?? false;
+    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, c.persona.reactMul * (preAimed ? PRE_AIMED_REACT : 1), { busy: switching, offRad: preAimed ? 0 : offRad, ...(!known && { d: t.d }) });
     const shot = barrelToShoot(me, barrels, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range)
       ?? propToShoot(me, props, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range);
     // Glass and an enemy's one-way Shield are seen through but stop rounds: a bot does not empty its magazine into them.
     const blocked = !shot && (shotWouldBurnMe(barrels, me, t.p) || shotWouldHurtMe(props, me, t.p) || !clearShot(c.arena.walls, me, t.p));
     track = { id: t.p.id, sharp, shoot: shot ? { x: shot.x, y: shot.y } : null, fire: !blocked };
     if (v.tick >= engaged.noticeAtTick) threat = { d: t.d };
-  } else if (s.crates && snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading) {
+  } else if (s.crates && snap.self.ammo >= snap.self.mag * (c.habit ? c.habit.style.reloadAt : 0.5) && !snap.self.reloading) {
     const crate = crateInSight(me, snap.crates, [...c.arena.walls, ...c.arena.barrels], gun.range * 0.95, botSight(snap.self.viewRadius, me.gun, me.angle));
-    if (crate) gaze = { k: 'point', at: crate, minPx: 0, hand: HANDS.calm, sigma: 0, fire: true };
+    const keen = crate ? farms(m, c, me.id, v.tick, crate) : null;
+    farm = keen?.farm ?? null;
+    if (crate && keen && (keen.go || keen.farm)) gaze = { k: 'point', at: crate, minPx: 0, hand: HANDS.calm, sigma: 0, fire: keen.go };
   }
   const tracking = t !== undefined && engaged !== null && v.tick >= engaged.noticeAtTick;
   let look: Look, wantsFire: boolean;
@@ -988,12 +1099,14 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const tap = nextTap(rhythm, fire, m.tap, v.tick, own, snap.self.ammo);
   const angle = aim.angle, aimDist = Math.max(1, look.d);
   // Not in the open with an enemy about: a half-empty magazine waits for cover from where it last saw him (a dry one never waits).
-  const reloadWish = s.reload || (!t && snap.self.ammo < snap.self.mag / 2 && (!exposed || snap.self.ammo < snap.self.mag * OPEN_RELOAD_FRAC));
+  // Its own habit (`Style.reloadAt`) says how empty is empty enough; a magazine it forgets (`HabitCtx.forgets`) it fights on until it runs dry.
+  const reloadAt = c.habit ? (c.habit.forgets ? 0 : c.habit.style.reloadAt) : 0.5;
+  const reloadWish = s.reload || (!t && !afk && snap.self.ammo < snap.self.mag * reloadAt && (!exposed || snap.self.ammo < snap.self.mag * OPEN_RELOAD_FRAC));
   const reload = !fire && snap.self.ammo < snap.self.mag && !snap.self.reloading && reloadWish;
   // A bot sprints only to travel: with no enemy in sight (or its fight just ended) or when running to cover to heal. Anything else, it walks, so it can fire.
   const travelling = anyKey(keys);
   const calm = v.tick - m.engagedSeen > SPRINT_CALM_TICKS;
-  const sprintWish = intent.k === 'retreatAndHeal' || (!t && engaged === null && v.threats.length === 0 && calm);
+  const sprintWish = intent.k === 'retreatAndHeal' || (!t && engaged === null && v.threats.length === 0 && calm && (!ROAMS.has(intent.k) || v.underFire || sprintsNow(c, me.id, v.tick)));
   const sprint = travelling && !fire && !wantsFire && wanted === null && sprintWish;
 
   // What the motor keeps doing until the next think: a leg is run on its heading, a bend off the route (a mate's shadow, a weave, a wait at a door) held as a point.
@@ -1004,19 +1117,21 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     dodge && !(dodge.stop && style.k === 'plant') ? dodge.until : Infinity,
     dodge?.turnAt ?? Infinity,
     engaged && t ? engaged.noticeAtTick : Infinity,
+    pause ? pause.until : Infinity,
   ].filter((x) => x > v.tick);
   const hold: Hold = {
     tick: v.tick, to, at: heading === null && way.at !== routed.at ? way.at : null, heading, keys: keys !== drive.keys ? keys : null,
     gaze, track, turn, ability: wanted, stillToFire, reload: reloadWish, sprint: sprintWish && wanted === null, mag: snap.self.mag, rhythm, settleMs: snap.self.settleMs ?? 0, urgent,
     wakeAt: Math.min(Infinity, ...timers), wakeOnFire: style.k === 'plant' && fighting !== undefined, arrived: to !== null && dist(me, to) < ARRIVED_PX * 2,
     nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors), ...(watch && faceAt === watch && { watching: true }), ...(judge !== 1 && { judge }),
+    view: snap.self.viewRadius, ...(heading !== null && heading === s.heading && s.leg && { leg: s.leg }),
   };
   return {
     input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false, sprint },
     motor: {
-      ...walked(m, me, way.at, drive, way.route, v.tick, way.replanned, crawling),
+      ...walked(m, me, way.at, drive, way.route, v.tick, way.replanned, crawling, heading !== null),
       stance, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }), scan,
-      ...((dodge || m.dodge) && { dodge }), hold,
+      ...((dodge || m.dodge) && { dodge }), hold, ...((pause || m.pause) && { pause }), ...((farm || m.farm) && { farm }),
     },
   };
 }
@@ -1028,6 +1143,8 @@ export type Body = {
   /** The post-sprint bloom still to ease out on its gun, ms (see `settleShare`); left out, none. */
   settleLeftMs?: number;
   find: (id: number) => Point | null;
+  /** Whether nothing that stops the eye (a wall, a standing crate) lies between it and `p`; left out, only the arena's walls are checked. */
+  sees?: (p: Point) => boolean;
 };
 
 const LEG_PX = 120;
@@ -1061,17 +1178,41 @@ export function motorWake(m: Motor, me: Point, tick: number, arena: BotArena, do
   return null;
 }
 
+/** How long a spray it had going carries on after the man it tracks drops out of sight (a person's finger is a beat behind his eyes). */
+const SPRAY_CARRY_MS = 250;
+/** Where it reckons a man who went out of sight has got to: his last seen motion carried on, fading out over `LOST_TAU_MS`. */
+const LOST_TAU_MS = 300;
+function lostTrack(e: Engagement, goneMs: number): Engagement {
+  const tau = LOST_TAU_MS / 1000, t = goneMs / 1000, fade = Math.exp(-t / tau), k = tau * (1 - fade);
+  return { ...e, x: e.x + e.vx * k, y: e.y + e.vy * k, vx: e.vx * fade, vy: e.vy * fade };
+}
+
+/** Whether `p` is out of a bot's sight at `me`: off its sight box (with view radius `view`, if known) or behind a wall that stops the eye. */
+function outOfSight(me: Body['me'], p: Point, arena: BotArena, view: number | undefined): boolean {
+  if (view !== undefined && !inBotSight(botSight(view, me.gun, me.angle), me, p)) return true;
+  return segmentBlocked(arena.sightWalls, me.x, me.y, p.x - me.x, p.y - me.y);
+}
+
 /**
  * One tick of the bot's hands between thinks, carrying out `m.hold`: it walks its route (or runs its leg, or holds its spot) with the same
  * key logic and stuck bookkeeping as a think, turns its gun toward what it looks at by this tick's time, tracking its enemy where he
  * stands now and leading him, and pulls the trigger once it is on him. No snapshot, no sight lines, no planning: a few hundred operations.
  */
 export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand: () => number): { input: InputState; motor: Motor } {
-  const h = m.hold!;
+  let h = m.hold!, stance = m.stance;
   const me = b.me;
+  // Off every screen it thinks seldom: when its strafe leg is up it runs the next on its own (see `Hold.leg`), back the other way (or on, now
+  // and then), round where it last had him. On a screen the leg's end wakes a think instead, so this never runs there.
+  if (h.leg && h.heading !== null && stance.step !== 0 && tick >= stance.until && m.engaged) {
+    const step = rand() < h.leg.on ? stance.step : (-stance.step as 1 | -1);
+    const heading = legHeading(me, m.engaged, step, h.leg.kind, (rand() * 2 - 1) * h.leg.jitter);
+    stance = { ...stance, step, since: tick, until: tick + Math.max(MIN_LEG_TICKS, Math.round(between(h.leg.ms, rand) / TICK_MS)), heading };
+    h = { ...h, heading };
+  }
   let at: Point | null = null, route = m.route;
   if (h.heading !== null) {
-    const p = { x: me.x + Math.cos(h.heading) * LEG_PX, y: me.y + Math.sin(h.heading) * LEG_PX };
+    const px = h.leg?.px ?? LEG_PX;
+    const p = { x: me.x + Math.cos(h.heading) * px, y: me.y + Math.sin(h.heading) * px };
     at = isOpen(arena.nav, p) && walkable(arena.nav, me, p) && clearOfLeaves(arena, me, p) ? p : null;
   } else if (h.at) at = h.at;
   else if (h.to) ({ at, route } = nextWaypoint(m, me, h.to, arena, tick, false, null));
@@ -1083,15 +1224,22 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
   const foe = h.track ? b.find(h.track.id) : null;
   let engaged = m.engaged, engagedSeen = m.engagedSeen, d: number | null = null;
   let look: Look, wantsFire: boolean;
+  // It sees him only as a person would: in its sight box and with no wall between. Out of sight it has only where he went (`lostTrack`).
+  const hidden = !!foe && (outOfSight(me, foe, arena, h.view) || (b.sees !== undefined && !b.sees(foe)));
   if (h.track && foe && engaged?.id === h.track.id) {
-    engaged = engage(engaged, { id: h.track.id, x: foe.x, y: foe.y }, h.track.sharp, tick, rand);
-    engagedSeen = tick;
+    if (!hidden) {
+      engaged = engage(engaged, { id: h.track.id, x: foe.x, y: foe.y }, h.track.sharp, tick, rand);
+      engagedSeen = tick;
+    }
     if (tick >= engaged.noticeAtTick) {
-      look = trackLook(engaged, me, mine, me.gun, h.track.sharp, tick, before, rand, h.track.shoot);
-      d = dist(foe, me);
-      wantsFire = h.track.shoot !== null || (d < GUNS[me.gun].range * 0.95 * (h.judge ?? 1) && h.track.fire);
-    } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, foe, { id: me.id, tick }));
-  } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, foe, { id: me.id, tick }));
+      const goneMs = hidden ? (tick - (engaged.at ?? tick)) * TICK_MS : 0;
+      const on = hidden ? lostTrack(engaged, goneMs) : engaged;
+      look = trackLook(on, me, mine, me.gun, h.track.sharp, tick, before, rand, hidden ? null : h.track.shoot);
+      d = dist(on, me);
+      // Out of sight it lets go of the trigger, but a spray already going carries on a moment where he went (`SPRAY_CARRY_MS`).
+      wantsFire = (!hidden || (!!h.urgent && goneMs <= SPRAY_CARRY_MS)) && ((h.track.shoot !== null && !hidden) || (d < GUNS[me.gun].range * 0.95 * (h.judge ?? 1) && h.track.fire));
+    } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, hidden ? null : foe, { id: me.id, tick }));
+  } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, hidden ? null : foe, { id: me.id, tick }));
   if (h.turn) {
     const g = h.turn.gaze as Extract<Gaze, { k: 'fixed' }>;
     look = { ...look, want: g.want, spin: 0, d: g.d, hand: g.hand, err: g.err ?? look.err, sway: undefined };
@@ -1108,8 +1256,8 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
   return {
     input: { ...keys, angle: aim.angle, fire, shots, reload, ability, aimDist: Math.max(1, look.d), use: false, sprint },
     motor: {
-      ...m, ...walked(m, me, at, drive, route, tick, false, false), engaged, engagedSeen, aim, shots, ...(tap && { tap }),
-      hold: h,
+      ...m, ...walked(m, me, at, drive, route, tick, false, false, h.heading !== null), engaged, engagedSeen, aim, shots, ...(tap && { tap }),
+      stance, hold: h,
     },
   };
 }

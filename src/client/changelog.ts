@@ -8,7 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-12',
     items: [
-      'Your spray blooms half as wide and settles twice as fast (bots keep the old bloom), no zombie bite takes more than a third of your health, and bots shot behind cover tuck in fully or move, look around when idle, rookies panic-spray from too far, and a spin or a wave at a stranger can buy you a truce; rooms feel livelier, with players staying on between rounds and drifting in and out mid-match, and every name on the board and the death card links to a service record',
+      'Your spray blooms half as wide and settles twice as fast (bots keep the old bloom), no zombie bite takes more than a third of your health, and bots tuck in fully behind cover, move, react and reload each their own way, hold grudges and never track you through walls; a spin or a wave at a stranger can buy you a truce, and rooms feel livelier, with players staying on between rounds and drifting in and out mid-match',
     ],
   },
   {

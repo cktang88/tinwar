@@ -11,6 +11,7 @@ import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { VETERAN } from '../src/server/bot/aim.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
+import { styleFor } from '../src/server/bot/habits.ts';
 import { emptyWorld, equip, hpOf, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const CRATE = 40;
@@ -64,19 +65,26 @@ test('a bot chases the nearer of two hunted markers', () => {
   assert.ok(input.left && !input.right && !input.down, 'heads left to the marker 1300px away, not the one 1980px away');
 });
 
-test('a bot with nobody in view shoots a crate in the clear and scores for it', () => {
-  const w = emptyWorld();
-  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
-  addCrate(w, 1300, 1000);
-  const r = seeded(1);
-  let mem = newBotMemory(r, { skill: VETERAN });
-  for (let i = 0; i < 90; i++) {
-    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
-    mem = d.mem;
-    setInput(w, bot.id, i + 1, d.input);
-    step(w, TICK_MS);
-  }
-  assert.ok(bot.score > 0, `scored ${bot.score} from the crate`);
+test('a bot with nobody in view shoots a crate in the clear and scores for it, if crates are its habit', () => {
+  // Some players farm every crate they see, some never bother (`Style.farm`, hashed from the name): one of each.
+  const names = Array.from({ length: 200 }, (_, i) => `crate${i}`);
+  const keen = names.find((n) => styleFor(n, VETERAN, 'cautious').farm === 1)!, never = names.find((n) => styleFor(n, VETERAN, 'cautious').farm === 0)!;
+  const score = (name: string) => {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' }, name });
+    addCrate(w, 1300, 1000);
+    const r = seeded(1);
+    let mem = newBotMemory(r, { skill: VETERAN });
+    for (let i = 0; i < 90; i++) {
+      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+      mem = d.mem;
+      setInput(w, bot.id, i + 1, d.input);
+      step(w, TICK_MS);
+    }
+    return bot.score;
+  };
+  assert.ok(score(keen) > 0, 'a crate farmer scored from the crate');
+  assert.equal(score(never), 0, 'one who never farms leaves it be');
 });
 
 test('a bot holds fire at a crate behind a wall', () => {

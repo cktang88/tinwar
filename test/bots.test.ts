@@ -50,13 +50,20 @@ test('a bot holds fire at an enemy behind a wall and fires once it can see them'
 });
 
 test('a bot waits a human-like reaction time after first seeing an enemy before it fires', () => {
+  // A person's reaction is lognormal about ~295 ms (`NOTICE` in aim.ts), times temper, skill and a warming-up mood: most land in a band
+  // round the middle, a few come late, none come instantly or never.
+  const all: number[] = [];
   for (let seed = 1; seed <= 20; seed++) {
-    const firstFire = watch({ seed, ticks: 30, targetAt: { x: 1400, y: 1000 } }).find((l) => l.fire);
+    const firstFire = watch({ seed, ticks: 40, targetAt: { x: 1400, y: 1000 } }).find((l) => l.fire);
     assert.ok(firstFire, `seed ${seed}: fires eventually`);
     const ms = firstFire.tick * TICK_MS;
-    // 220-350 ms, by temper: a hothead's quickest is 0.8 of that (`Personality.reactMul`).
-    assert.ok(ms >= 0.8 * 220 - TICK_MS / 2 && ms <= 400 + TICK_MS, `seed ${seed}: first shot after ${ms.toFixed(0)}ms`);
+    // Never quicker than the old flat draw's quickest (220 ms, a hothead's 0.8 of it); slow ones come late.
+    assert.ok(ms >= 0.8 * 220 - TICK_MS / 2 && ms <= 900, `seed ${seed}: first shot after ${ms.toFixed(0)}ms`);
+    all.push(ms);
   }
+  all.sort((a, b) => a - b);
+  const median = all[all.length >> 1]!;
+  assert.ok(median >= 220 && median <= 450, `median first shot ${median.toFixed(0)}ms`);
 });
 
 test('a bot misses a fast-strafing target by more than a still one', () => {

@@ -114,15 +114,36 @@ export function unseenShooter(v: Perception): Point | null {
   return inBotSight(botSight(v.self.viewRadius, v.me.gun, v.me.angle, v.me.alive), v.me, s) ? null : { x: s.x, y: s.y };
 }
 
-export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: Awareness): { awareness: Awareness; view: Perception } {
+/** The outer share of its sight box (each side) that counts as the edge of its screen, where a busy bot may overlook a man (see `Attention`). */
+const EDGE_SHARE = 0.2;
+
+/**
+ * What it can attend to this think. `busy` (fighting someone, or reloading): an enemy at the edge of its screen (`EDGE_SHARE`) that it is not
+ * already fighting (`engaged`), and who is not shooting at it, goes unnoticed this think at the odds `miss`. `nemesis`: the man it most wants,
+ * put first among those it sees after any shooting at it.
+ */
+export type Attention = { busy: boolean; miss: number; engaged: number | null; nemesis: number | null; rand: () => number };
+
+/** Whether `p` stands in the outer `EDGE_SHARE` of the sight box `box` of a bot at `me`. */
+const atEdge = (box: LookSides, me: Point, p: Point): boolean => {
+  const dx = p.x - me.x, dy = p.y - me.y, k = 1 - EDGE_SHARE;
+  return dx > box.r * k || -dx > box.l * k || dy > box.d * k || -dy > box.u * k;
+};
+
+export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: Awareness, attention?: Attention): { awareness: Awareness; view: Perception } {
   const tick = snap.tick;
   const solids: Rect[] = [...arena.sightWalls, ...snap.crates.map(crateRect)];
   const sight = botSight(snap.self.viewRadius, me.gun, me.angle, me.alive);
   const enemy = (p: PlayerView) => p.id !== me.id && (me.team === null || p.team !== me.team);
   const inSight = (p: PlayerView) => enemy(p) && !p.spawnShield && inBotSight(sight, me, p) && clearShot(solids, me, p);
-  const standing = snap.players.filter((p) => p.alive && inSight(p));
+  // Busy, it may overlook one at the edge of its screen (never the man it fights, nor one it already knows is shooting at it).
+  const shooterIds = new Set([prev.hitBy?.owner, prev.shotAt?.owner]);
+  const overlooked = (p: PlayerView) => !!attention?.busy && p.id !== attention.engaged && !shooterIds.has(p.id)
+    && !prev.contacts.some((c) => c.id === p.id && c.seenTick >= tick - 12) && atEdge(sight, me, p) && attention.rand() < attention.miss;
+  const standing = snap.players.filter((p) => p.alive && inSight(p) && !overlooked(p));
+  const wanted = (p: PlayerView) => (attention?.nemesis === p.id ? 1 : 0);
   const visible = standing.map((p) => ({ p, d: dist(p, me) }))
-    .sort((a, b) => danger(b.p) - danger(a.p) || a.d - b.d);
+    .sort((a, b) => danger(b.p) - danger(a.p) || wanted(b.p) - wanted(a.p) || a.d - b.d);
 
   const seen = new Set(visible.map((t) => t.p.id));
   const contacts = [
