@@ -1,4 +1,5 @@
 import { marketGeo } from './marketgeo.ts';
+import { paintPlaces } from './marketplaces.ts';
 import { MAPS } from '../../shared/maps.ts';
 import { seeded } from '../grain.ts';
 import { setLight } from '../lighting.ts';
@@ -47,12 +48,8 @@ function paintMarketFloor(g: G, size: number, seed: number, plan: FloorPlan) {
       default: if (hash(i + 3, j) < 0.1) { g.fillStyle = hexA(d.seam, 0.5); g.fillRect(x + 4, y + 20, 42, 1.5); }
     }
   }
-  // 3. worn lanes: the avenues' centrelines are paler where boots and tyres have rubbed the wet tar
-  g.lineCap = 'round';
-  for (const [a, b] of [[[300, 300], [5700, 5700]], [[300, 5700], [5700, 300]]] as const) {
-    for (const [lw, al] of [[260, 0.035], [120, 0.04]] as const) { g.strokeStyle = `rgba(230,220,200,${al})`; g.lineWidth = lw; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); }
-  }
-  g.lineCap = 'butt';
+  // 3. the places: the canal and its bridges, hall floors, the squares and their names (marketplaces.ts)
+  paintPlaces(g, size, map);
   // 4. puddles with the district's light on them
   for (const p of deriveOf(map).puddles) {
     const r = seeded(p.seed * 977 + 5);

@@ -276,8 +276,75 @@ function signboard(g: G, s: Solid, d: District, name: string) {
   text(g, name, x + w / 2, y + h / 2 + 0.5, size, d.neon2);
 }
 
+/** How each district builds its hall and compound walls: top, front face, the trim along the top and the course pattern. */
+const WALLS: Record<string, { top: string; front: string; trim: string; course: 'brick' | 'tile' | 'plank' | 'block' | 'lacquer' }> = {
+  temple: { top: '#8a3a2e', front: '#56201a', trim: '#e8b84a', course: 'lacquer' },
+  lantern: { top: '#7e4a3e', front: '#4a2a24', trim: '#ff4d6d', course: 'brick' },
+  fish: { top: '#9fb3bc', front: '#4f6670', trim: '#6fd8ff', course: 'tile' },
+  produce: { top: '#7a7d5e', front: '#45482f', trim: '#9be36a', course: 'plank' },
+  gate: { top: '#6a6278', front: '#3a3446', trim: '#ff4fd0', course: 'block' },
+  spice: { top: '#9a6a44', front: '#5a3a22', trim: '#c78bff', course: 'brick' },
+  arcade: { top: '#5a6272', front: '#2c323e', trim: '#3fe0e0', course: 'block' },
+  noodle: { top: '#9a7a48', front: '#56442a', trim: '#ffd34d', course: 'plank' },
+  grill: { top: '#5e4a40', front: '#36261f', trim: '#ff7a2a', course: 'brick' },
+};
+
+/** A thin run of shopfront cells is not a shop but a wall: a hall's, a compound's, a lane's. Coursed, capped, trimmed in the district's neon. */
+function paintWall(g: G, s: Solid, d: District) {
+  const st = WALLS[d.id] ?? WALLS.gate!;
+  const rand = seeded((hash(s.x + 7, s.y + 3) * 4294967296) >>> 0);
+  box(g, s, st.top, st.front);
+  const f = FACE.shopfront, fy = s.y + s.h;
+  // the courses on the front face
+  g.save(); g.beginPath(); g.rect(s.x, fy, s.w, f); g.clip();
+  g.strokeStyle = 'rgba(10,10,14,0.35)'; g.lineWidth = 1; g.beginPath();
+  if (st.course === 'brick' || st.course === 'block') {
+    const bh = st.course === 'brick' ? 5 : 9, bw = st.course === 'brick' ? 14 : 30;
+    for (let y = fy + bh, k = 0; y < fy + f; y += bh, k++) { g.moveTo(s.x, y + 0.5); g.lineTo(s.x + s.w, y + 0.5); }
+    for (let y = fy, k = 0; y < fy + f; y += bh, k++) for (let x = s.x + (k % 2 ? bw / 2 : 0); x < s.x + s.w; x += bw) { g.moveTo(x + 0.5, y); g.lineTo(x + 0.5, y + bh); }
+  } else if (st.course === 'tile') {
+    for (let y = fy + 6; y < fy + f; y += 6) { g.moveTo(s.x, y + 0.5); g.lineTo(s.x + s.w, y + 0.5); }
+    for (let x = s.x + 6; x < s.x + s.w; x += 6) { g.moveTo(x + 0.5, fy); g.lineTo(x + 0.5, fy + f); }
+  } else if (st.course === 'plank') {
+    for (let x = s.x + 9; x < s.x + s.w; x += 9) { g.moveTo(x + 0.5, fy); g.lineTo(x + 0.5, fy + f); }
+  } else {
+    // lacquered timber: posts every so often with gold caps
+    for (let x = s.x + 40; x < s.x + s.w - 10; x += 60) { g.fillStyle = shade(st.front, -0.3); g.fillRect(x, fy, 6, f); g.fillStyle = st.trim; g.fillRect(x, fy + 1, 6, 2); }
+  }
+  g.stroke();
+  g.restore();
+  // the top: a coping strip, and the course of the wall seen from above
+  g.fillStyle = shade(st.top, 0.16); g.fillRect(s.x + 3, s.y + 3, s.w - 6, Math.min(8, s.h - 6));
+  g.fillStyle = 'rgba(10,10,14,0.22)';
+  if (s.w >= s.h) for (let x = s.x + 24; x < s.x + s.w - 4; x += 24) g.fillRect(x, s.y + 4, 1.5, s.h - 8);
+  else for (let y = s.y + 24; y < s.y + s.h - 4; y += 24) g.fillRect(s.x + 4, y, s.w - 8, 1.5);
+  if (d.id === 'temple') { // glazed ridge tiles along the top of the temple's walls
+    g.fillStyle = '#3f5a4a';
+    if (s.w >= s.h) { g.fillRect(s.x + 2, s.y + s.h / 2 - 5, s.w - 4, 10); g.fillStyle = 'rgba(255,255,255,0.22)'; for (let x = s.x + 4; x < s.x + s.w - 4; x += 10) g.fillRect(x, s.y + s.h / 2 - 4, 5, 3); }
+    else { g.fillRect(s.x + s.w / 2 - 5, s.y + 2, 10, s.h - 4); g.fillStyle = 'rgba(255,255,255,0.22)'; for (let y = s.y + 4; y < s.y + s.h - 4; y += 10) g.fillRect(s.x + s.w / 2 - 4, y, 3, 5); }
+  }
+  // the neon trim under the coping, along the street face
+  g.fillStyle = hexA(st.trim, 0.85); g.fillRect(s.x + 4, fy + 2.5, Math.max(0, s.w - 8), 2.6);
+  // windows, posters and a wall lamp on the long runs
+  if (s.w >= 150) {
+    for (let x = s.x + 30 + rand() * 30; x < s.x + s.w - 40; x += 70 + rand() * 50) {
+      const r = rand();
+      if (r < 0.45) { g.fillStyle = rand() < 0.6 ? 'rgba(255,214,140,0.85)' : hexA(st.trim, 0.7); g.fillRect(x, fy + 6, 16, f - 10); ink(g, 1.2); g.strokeRect(x, fy + 6, 16, f - 10); g.strokeRect(x + 8, fy + 6, 0.1, f - 10); }
+      else if (r < 0.75) poster(g, x, fy + 4, 12, f - 6, [st.trim, '#e5412d', '#ffd34d'][Math.floor(rand() * 3)]!, x);
+      else { disc(g, x + 6, fy + 7, 3.4, '#ffe6a8'); g.fillStyle = hexA('#ffd08a', 0.18); g.beginPath(); g.arc(x + 6, fy + 9, 12, 0, TAU); g.fill(); }
+    }
+  }
+  if (s.h >= 150 && s.w <= 50) {
+    // a long side wall: pipes and a drain spout seen from above
+    g.strokeStyle = '#3a3f48'; g.lineWidth = 3; g.beginPath(); g.moveTo(s.x + s.w - 12, s.y + 10); g.lineTo(s.x + s.w - 12, s.y + s.h - 10); g.stroke();
+    for (let y = s.y + 40 + rand() * 60; y < s.y + s.h - 30; y += 120 + rand() * 80) airCon(g, s.x + 8, y);
+  }
+  outline(g, s);
+}
+
 export function paintShopfront(g: G, s: Solid) {
   const d = districtAt(s.x + s.w / 2, s.y + s.h / 2);
+  if (Math.min(s.w, s.h) <= 50) { paintWall(g, s, d); return; }
   const rand = seeded((hash(s.x, s.y) * 4294967296) >>> 0);
   const roof = ROOFS[d.id] ?? ROOFS.temple!;
   const front = shade(roof.base, -0.62);
