@@ -107,7 +107,8 @@ const within = <T>(ms: number, label: string, p: Promise<T>) => Promise.race([p,
 test('a client that stops answering pings is dropped, a healthy one stays', { timeout: 15_000 }, async () => {
   const HEARTBEAT_MS = 250;
   const server = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-heartbeat-')), limits: { heartbeatMs: HEARTBEAT_MS } });
-  const humans = async () => ((await (await fetch(`http://localhost:${server.port}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === 'ffa')!.humans;
+  // The public room list counts players, not people (see e2e.test.ts): the room itself says how many of them are human.
+  const humans = async () => server.rooms.get('ffa')!.info().humans;
   try {
     // The silent client answers pings by hand until both have joined, so a slow welcome under load cannot get it dropped before
     // the test has seen it seated; then it falls silent.

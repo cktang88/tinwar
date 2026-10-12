@@ -51,12 +51,14 @@ test('a friend always shows on your minimap, marked as a friend, wherever they a
   assert.equal(Math.round(mark.x), Math.round(b.x));
 });
 
-test('the leaderboard tells people from bots, so only people are offered as friends', () => {
+test('the leaderboard a person sees never tells people from bots, but comes ranked with people above bots on a tie', () => {
   const w = emptyWorld();
-  const person = spawnAt(w, 300, 300, { kind: 'human' }), bot = spawnAt(w, 900, 300);
+  const bot = spawnAt(w, 900, 300), person = spawnAt(w, 300, 300, { kind: 'human' });
   const rows = snapshotFor(w, person.id).leaderboard;
-  assert.equal(rows.find((r) => r.id === person.id)?.human, true);
-  assert.equal(rows.find((r) => r.id === bot.id)?.human, undefined);
+  assert.ok(rows.every((r) => !('human' in r)), 'no row says who is a person');
+  assert.deepEqual(rows.map((r) => r.id), [person.id, bot.id], 'the server ranks the person first on a tie');
+  // A bot's own snapshot never leaves the server: its brain still reads who is a person.
+  assert.equal(snapshotFor(w, bot.id).leaderboard.find((r) => r.id === person.id)?.human, true);
 });
 
 test('a dead player with a friend standing comes back right beside them', () => {
@@ -100,10 +102,6 @@ test('in a room: an invite reaches its player, accepting makes friends on one te
   const ann = idOf(a), ben = idOf(b), cat = idOf(c);
   const pa = room.world.players.get(ann)!, pb = room.world.players.get(ben)!;
   assert.notEqual(pa.team, pb.team, 'the first two people start on opposite sides');
-
-  const bot = [...room.world.players.values()].find((p) => p.kind === 'bot')!;
-  a.send({ t: 'friend', a: 'invite', id: bot.id });
-  assert.ok(a.sent.some((m) => m.t === 'friendNote' && m.text === 'Only players can be friends.'));
 
   a.send({ t: 'friend', a: 'invite', id: ben });
   assert.deepEqual(b.sent.find((m) => m.t === 'friendInvite'), { t: 'friendInvite', from: ann, name: 'Ann' });
@@ -236,4 +234,25 @@ test('a Last Standing redeploy lands beside a standing friend', () => {
   run(w, 100);
   assert.equal(a.life.k, 'alive', 'redeployed');
   assert.ok(Math.hypot(a.x - b.x, a.y - b.y) < WORLD.playerRadius * 4, `beside Ben (${Math.round(Math.hypot(a.x - b.x, a.y - b.y))} px)`);
+});
+
+test('a friend invite to a bot fails softly: it reads as sent and is simply never answered', async () => {
+  const { createRoom } = await import('../src/server/room.ts');
+  const { fakeSocket, PISTOL } = await import('./helpers.ts');
+  const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as import('../src/server/accounts.ts').Accounts;
+  const room = createRoom('ffa', 'FFA', 3, accounts);
+  const a = fakeSocket();
+  room.connect(a.socket);
+  a.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5 });
+  const ann = (a.sent.find((m) => m.t === 'welcome') as { id: number }).id;
+  const bot = [...room.world.players.values()].find((p) => p.kind === 'bot')!;
+  a.send({ t: 'friend', a: 'invite', id: bot.id });
+  const notes = a.sent.filter((m) => m.t === 'friendNote').map((m) => (m as { text: string }).text);
+  assert.deepEqual(notes, [`Friend invite sent to ${bot.name}.`], 'the same note an invite to a person gets');
+  for (let i = 0; i < 300; i++) room.tick();
+  assert.ok(!areFriends(room.world, ann, bot.id), 'the bot never accepts');
+  assert.ok(!a.sent.some((m) => m.t === 'friends' && (m as { ids: number[] }).ids.length > 0));
+  assert.ok(!a.sent.some((m) => m.t === 'friendNote' && /declined|accepted|Only players/.test((m as { text: string }).text)), 'nor declines, nor says it is a bot');
+  room.close();
+  a.close();
 });

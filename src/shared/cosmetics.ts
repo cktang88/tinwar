@@ -339,15 +339,28 @@ export function seeded(seed: number): () => number {
   };
 }
 
-/** What a bot named `name` wears: a deterministic mix from level-gated common and rare items, and now and then a title. */
-export function botCosmetics(name: string): Cos | null {
+/**
+ * A bot's account level, hashed from its name: a casual player's, 3 to about 55, most in the teens and twenties. Its name plate's level chip
+ * and its service record (server/botprofile.ts) both show it, as a person's do.
+ */
+export function botLevel(name: string): number {
+  const u = seeded(hash32(`level:${name.toLowerCase()}`))();
+  return 3 + Math.floor(52 * u ** 1.5);
+}
+
+/** What a bot named `name` wears: a deterministic mix of common and rare items its level has unlocked, and now and then a title. */
+export function botPicks(name: string): Picks {
   const rand = seeded(hash32(`bot:${name}`));
+  const level = botLevel(name);
   const picks: Picks = {};
   for (const slot of SLOTS) {
-    const pool = cosmeticsIn(slot).filter((c) => 'level' in c.unlock && (c.rarity === 'common' || c.rarity === 'rare') && c.id !== DEFAULTS[slot]);
+    const pool = cosmeticsIn(slot).filter((c) => 'level' in c.unlock && c.unlock.level <= level && (c.rarity === 'common' || c.rarity === 'rare') && c.id !== DEFAULTS[slot]);
     const chance = slot === 'title' ? 0.2 : 0.6;
     const roll = rand(), at = rand();
     if (roll < chance && pool.length) picks[slot] = pool[Math.floor(at * pool.length)]!.id;
   }
-  return toCos(picks);
+  return picks;
 }
+
+/** What a bot named `name` shows in a match: what it wears and its level chip, as a person with a profile does. */
+export const botCosmetics = (name: string): Cos | null => toCos(botPicks(name), botLevel(name));

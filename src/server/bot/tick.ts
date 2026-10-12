@@ -7,7 +7,7 @@ import { interestLook, snapshotFor } from '../../shared/sim/snapshot.ts';
 import { abilityOf, choosePick, effectiveStats } from '../../shared/sim/stats.ts';
 import { segmentBlocked, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import { crateRect, IDLE_INPUT, isEnemy, type Player, type World } from '../../shared/sim/world.ts';
-import { botThink, randomLoadout, type BotDecision, type BotMemory } from '../bots.ts';
+import { botThink, nextLoadout, PICK_DELAY, pickDelayMs, randomLoadout, respawnDelayMs, spawnSettleMs, whim, type BotDecision, type BotMemory } from '../bots.ts';
 import { arenaFor, type BotArena } from './arena.ts';
 import { botSight, freshAwareness, inBotSight } from './awareness.ts';
 import { freshMotor, motorTick, motorWake } from './motor.ts';
@@ -130,6 +130,36 @@ function newSighting(w: World, arena: BotArena, me: Player, sight: LookSides, se
   return false;
 }
 
+/**
+ * Whether a dead bot has sat out its respawn delay (`respawnDelayMs`) past the moment it could respawn. Zombies keep no such clock: a
+ * squad bot stands up with the squad.
+ */
+function respawnDue(w: World, id: number): boolean {
+  const p = w.players.get(id);
+  if (!p || p.life.k !== 'dead' || w.run) return true;
+  return w.now >= p.life.respawnAt + respawnDelayMs(p.name, p.life.respawnAt);
+}
+
+/**
+ * What a bot comes back with: the loadout it keeps for its stay (its colour and armor always, its gun mostly, `nextLoadout`), or a fresh
+ * draw for one that keeps none in a Zombies run. Counts its dry lives and remembers the loadout for the next.
+ */
+function comeBack(w: World, id: number, mem: BotMemory, rand: () => number): BotMemory {
+  const p = w.players.get(id)!;
+  if (w.run) return { ...mem, loadout: randomLoadout(rand) };
+  const dry = p.lifeKills > 0 ? 0 : (mem.dry ?? 0) + 1;
+  const at = p.life.k === 'dead' ? p.life.respawnAt : w.now;
+  return { ...mem, dry, loadout: nextLoadout(mem.loadout ?? p.loadout, dry, p.name, at) };
+}
+
+/** Where a settling bot looks: a small, unhurried turn (at most 25 degrees, 90 a second) off the way it spawned facing, its own for this spawn. */
+const SETTLE_TURN_PER_TICK = (Math.PI / 2) / WORLD.tickHz;
+function settleLook(p: Player, until: number, facing: number): number {
+  const want = facing + (whim(`look:${p.name}:${until}`)() - 0.5) * (50 * Math.PI) / 180;
+  const off = Math.atan2(Math.sin(want - p.angle), Math.cos(want - p.angle));
+  return p.angle + Math.max(-SETTLE_TURN_PER_TICK, Math.min(SETTLE_TURN_PER_TICK, off));
+}
+
 export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => number, { picks = true, respawn: revive = true, watched = false, onDecision }: BotTickOptions = {}): { respawned: number[]; picked: number } {
   const arena = arenaFor(w);
   const respawned: number[] = [];
@@ -161,17 +191,24 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
   /** A planted gun's round has just left: it moves off its spot (see `Hold.wakeOnFire`). */
   const fired = (id: number, mem: BotMemory) => !!mem.motor.hold?.wakeOnFire && shots.some((e) => e.owner === id);
 
-  for (const [id, mem] of mems) {
+  for (let [id, mem] of mems) {
     const p = w.players.get(id);
     const finish = (d: BotDecision, snap: Snapshot | null) => {
-      mems.set(id, d.mem);
+      let next = d.mem;
       setInput(w, id, w.tick, d.input);
       if (d.build) build(w, id, d.build.kind, d.build.cx, d.build.cy, d.build.lv);
       if (d.upgrade) upgrade(w, id, d.upgrade.cx, d.upgrade.cy);
-      if (picks && d.pick && choosePick(w, id, d.pick.level, d.pick.option)) picked++;
-      const back = revive && canRespawn(w, id) && respawn(w, id, randomLoadout(rand));
-      if (back) respawned.push(id);
-      onDecision?.(id, snap, mem, d, back);
+      if (picks && d.pick) {
+        // A versus bot mulls a pick over for a few seconds, longer mid-fight (`pickDelayMs`); a Zombies squad bot takes it at once.
+        let wait = next.pickWait;
+        if (!w.run && wait?.level !== d.pick.level) next = { ...next, pickWait: (wait = { level: d.pick.level, at: w.now + pickDelayMs(w.players.get(id)?.name ?? '', d.pick.level, w.now) }) };
+        const due = !wait || w.now >= wait.at + (next.motor.hold?.track ? PICK_DELAY.engagedMs : 0);
+        if (due && choosePick(w, id, d.pick.level, d.pick.option)) { picked++; if (next.pickWait) { const { pickWait: _, ...rest } = next; next = rest; } }
+      }
+      const back = revive && canRespawn(w, id) && respawnDue(w, id) && respawn(w, id, (next = comeBack(w, id, next, rand)).loadout!);
+      if (back) { respawned.push(id); const q = w.players.get(id)!; next = { ...next, settleUntil: w.now + spawnSettleMs(q.name, w.now), settleFacing: q.angle }; }
+      mems.set(id, next);
+      onDecision?.(id, snap, mem, next === d.mem ? d : { ...d, mem: next }, back);
     };
     const think = (tier: Wake) => {
       const snap = botSnapshot(w, id, eventsSince(history, mem.beat?.thought));
@@ -183,6 +220,16 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
       }
       finish(d, snap);
     };
+    if (p && mem.settleUntil !== undefined) {
+      // Fresh from a spawn: it only looks round until its settle ends, or at once when hit or shot at.
+      if (p.life.k === 'alive' && !w.run && w.now < mem.settleUntil && !news(p, mem)) {
+        finish({ input: { ...IDLE_INPUT, shots: mem.motor.shots, angle: settleLook(p, mem.settleUntil, mem.settleFacing ?? p.angle) }, pick: null, mem }, null);
+        continue;
+      }
+      const { settleUntil: _, settleFacing: _f, ...rest } = mem;
+      mem = rest;
+      mems.set(id, mem);
+    }
     if (!p || !tiered) {
       // Zombies and royale: the old cadence, every tick on screen and every third off it; a skipped bot keeps pressing what it chose.
       if (!p || onScreen(p) || (w.tick + id) % OFFSCREEN_THINK_EVERY === 0) think(null);

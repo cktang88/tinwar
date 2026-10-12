@@ -4,7 +4,7 @@ import { parseMuted, serializeMuted, type MutedNames } from './chatmute.ts';
 import { parsePicks, type Equipped, type Picks, type Slot } from '../shared/cosmetics.ts';
 import { parseProfile, type ProfileLite } from './progression.ts';
 
-export type ServerInfo = { id: string; mode: ModeId; players: number; humans: number };
+export type ServerInfo = { id: string; mode: ModeId; players: number };
 type Stats = { name: string; kills: number; deaths: number; score: number; games: number; best: number };
 export type Account = { token: string; name: string };
 
@@ -21,7 +21,7 @@ export async function fetchServers(): Promise<ServerInfo[]> {
   if (!Array.isArray(data)) return [];
   return data.flatMap((s): ServerInfo[] =>
     isObj(s) && (typeof s.id === 'string' || typeof s.id === 'number') && MODE_IDS.includes(s.mode as ModeId)
-      ? [{ id: String(s.id), mode: s.mode as ModeId, players: n(s.players), humans: n(s.humans) }]
+      ? [{ id: String(s.id), mode: s.mode as ModeId, players: n(s.players) }]
       : []);
 }
 

@@ -2,7 +2,7 @@ import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, SIDES, STR
 import type {
   AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, FloorPlateView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
-import { rankRows, ZOMBIE_FX, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
+import { byRank, ZOMBIE_FX, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS, HEAL_POLE, spotsClaymore } from './abilities.ts';
@@ -13,7 +13,7 @@ import { armorByte, packViews } from './packs.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, hasPerk, isHunted, pendingPick, PERK_RULES, rushMul } from './stats.ts';
 import { isTracked } from './zomperks.ts';
-import { zombieMaxHp } from './run.ts';
+import { squadOf, zombieMaxHp } from './run.ts';
 import { rangeView, targetViews } from './targets.ts';
 import { buildingView, tenths } from './build.ts';
 import { redeploysOpen, resultFor, ringView, stillIn } from './royale.ts';
@@ -48,7 +48,10 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     hp: life.k === 'dead' ? 0 : Math.ceil(life.hp), maxHp: stats.maxHp,
     color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
-    score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
+    score: p.score, level: p.level, armorTier: p.loadout.armor, hunted: huntedFor(w, me, p),
+    // Whether a player is a person or a bot reaches no client: only the viewer's own entry carries it (their bloom rules), and a bot's
+    // brain, which never leaves the server, reads everyone's.
+    ...((p.id === me.id || me.kind === 'bot') && { kind: p.kind }),
     ...(alive && life.armor < ARMORS[p.loadout.armor].points && { ap: armorByte(life.armor, ARMORS[p.loadout.armor].points) }),
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
     ...(alive && p.lifeKills >= STREAK.showAt && { streak: p.lifeKills }),
@@ -133,7 +136,12 @@ function zombieMarks(w: World, me: Player, heatPx: number): MinimapMark[] {
   return marks.sort((a, b) => a.d - b.d).slice(0, MINIMAP_ZOMBIES).map(({ m }) => m);
 }
 
-const leaderboard = (w: World): LeaderRow[] => rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team, ...(p.kind === 'human' && { human: true as const }) })));
+/**
+ * The board, ranked here (people above bots on a tie, `byRank`) so no client needs to know who is which: the rows carry `human` only for
+ * a bot's own snapshot, which never leaves the server.
+ */
+const leaderboard = (w: World, me: Player): LeaderRow[] => [...w.players.values()].sort(byRank)
+  .map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team, ...(me.kind === 'bot' && p.kind === 'human' && { human: true as const }) }));
 
 function matchView(w: World): MatchView {
   const untilChange = w.mapChangeAt - w.now;
@@ -238,7 +246,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
-    players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
+    players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w, me), match: matchView(w), events: visibleEvents,
     barrels: barrelViews(w), props: propViews(w), airdrop: airdropView(w),
     ...(w.packs.length && { packs: packViews(w) }),
     ...(MAPS[w.map].doors?.length && { doors: doorViews(w).filter(([i]) => { const d = MAPS[w.map].doors![i]!; return inView(d.x + (d.axis === 'h' ? d.w / 2 : 0), d.y + (d.axis === 'v' ? d.w / 2 : 0), d.w + 300); }) }),
@@ -292,6 +300,8 @@ function runView(w: World, run: Run): RunView {
     survivors: run.survivors,
     lost: run.lost,
     ready: [...run.ready],
+    share: ZOM.hordeShare(squadOf(w)),
+    crew: [...w.players.values()].filter((p) => p.kind === 'human' && p.life.k === 'alive').length,
     ...(phase.k === 'day' && run.restocked && { restocked: run.restocked }),
     report: phase.k === 'over'
       ? {

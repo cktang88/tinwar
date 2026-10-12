@@ -14,7 +14,7 @@ import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { glow, PALETTE, shade, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
-import { BUILD_CONTROLS, buildRows, buildsByNight, downedLine, forecast, phaseLine, readyHint, squadShare, upgradeTarget, useHint, NIGHT_BUILD_HINT, type BuildChip, type HintChip } from './zombies.ts';
+import { BUILD_CONTROLS, buildRows, buildsByNight, downedLine, forecast, phaseLine, readyHint, upgradeTarget, useHint, NIGHT_BUILD_HINT, type BuildChip, type HintChip } from './zombies.ts';
 import { airdropLine, drawAirdropMap } from './arenafx.ts';
 import { aliveLabel, drawRingMap, ringLine, ringPill, spectateLines, wipedLine } from './royale.ts';
 import { drawCachesMap, drawTowersMap } from './lootart.ts';
@@ -889,13 +889,13 @@ export const setHudFriends = (ids: ReadonlySet<number>) => { friendIds = ids; };
 
 /** The board's names as last drawn (HUD units), so a click on one can open its menu; the one under the cursor is underlined. */
 /** `right` is the board's left edge, where its menu opens beside it. */
-type BoardName = { id: number; name: string; human: boolean; x: number; y: number; w: number; h: number; right: number };
+type BoardName = { id: number; name: string; x: number; y: number; w: number; h: number; right: number };
 let boardNames: BoardName[] = [];
 let boardHover: number | null = null;
 export const setBoardHover = (id: number | null) => { boardHover = id; };
 
 /** Dev probe: the board's clickable names as last drawn, in CSS px. */
-export const drawnBoardNames = () => boardNames.map((n) => ({ id: n.id, name: n.name, human: n.human, x: n.x * hudScale, y: n.y * hudScale, w: n.w * hudScale, h: n.h * hudScale }));
+export const drawnBoardNames = () => boardNames.map((n) => ({ id: n.id, name: n.name, x: n.x * hudScale, y: n.y * hudScale, w: n.w * hudScale, h: n.h * hudScale }));
 
 /** The board name under (sx, sy) CSS px, with its box in CSS px; never your own row. Only the desktop board is clickable. */
 export function boardNameAt(sx: number, sy: number): (BoardName & { right: number }) | null {
@@ -967,7 +967,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
     if (!mine) {
       // A name is a button: underlined under the cursor, and a click opens the friend menu beside the board.
       const nameW = Math.min(ctx.measureText(r.name).width, Math.max(10, nameMax));
-      names.push({ id: r.id, name: r.name, human: !!r.human, x: nx - 3, y: y - rowH / 2, w: nameW + 6, h: rowH, right: x });
+      names.push({ id: r.id, name: r.name, x: nx - 3, y: y - rowH / 2, w: nameW + 6, h: rowH, right: x });
       if (boardHover === r.id) { ctx.fillStyle = color; ctx.fillRect(nx, y + 6, nameW, 1.5); }
     }
     let ix = x + pw - BOARD.pad - scoreW - 4;
@@ -1345,7 +1345,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   let below = y + 30;
   if (alert) below += drawCoreAlert(hud, run.core, below) + 6;
   if (run.phase === 'over') return;
-  if (run.phase === 'day') platedLine(ctx, `Tonight · ${forecast(run.night, squadShare(hud.snap.players))}`, cx, below, TYPE.body, PALETTE.gold, 700, ACCENT);
+  if (run.phase === 'day') platedLine(ctx, `Tonight · ${forecast(run.night, run.share ?? 1)}`, cx, below, TYPE.body, PALETTE.gold, 700, ACCENT);
   if (me?.downed) {
     drawDownedSelf(hud, me.downed);
     return;
@@ -1362,7 +1362,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
     hintBar(ctx, s, controls, w / 2, row, 'BUILD');
   } else if (run.phase === 'day' || buildsByNight(hud.snap)) {
     const hints = run.phase === 'day'
-      ? [{ key: 'B', what: 'build walls, turrets and more' }, { key: 'N', what: readyHint(run, hud.snap.players, hud.snap.self.id) }]
+      ? [{ key: 'B', what: 'build walls, turrets and more' }, { key: 'N', what: readyHint(run, hud.snap.self.id) }]
       : [{ key: 'B', what: NIGHT_BUILD_HINT }];
     hintBar(ctx, s, hints, w / 2, row, null);
     const up = upgradeTarget(hud.snap, s.lastSelf);

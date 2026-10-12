@@ -4,7 +4,7 @@ import { selfOf, type KillEvent } from './derive.ts';
 import { TICK_MS } from './interp.ts';
 import { PALETTE } from './palette.ts';
 import { royaleCallouts } from './royale.ts';
-import { runCallouts, squadShare, type RunCallout } from './zombies.ts';
+import { runCallouts, type RunCallout } from './zombies.ts';
 
 const TONE: Record<RunCallout['tone'], string> = { night: '#a08cff', dawn: PALETTE.gold, warn: '#ff9f43' };
 
@@ -52,7 +52,7 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
     .sort((a, b) => MEDALS[b].score - MEDALS[a].score);
   for (const medal of earnedNow) medals.push({ k: 'medal', medal, born: nextToastAt(medals, now) });
   if ((!me?.alive && !me?.downed) || next.run?.phase === 'over') return { callouts: [], popups, medals, best: false };
-  for (const c of runCallouts(prev?.run, next.run, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS, squadShare(next.players))) {
+  for (const c of runCallouts(prev?.run, next.run, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS, next.run?.share ?? 1)) {
     announce({ title: c.title, line: c.line, color: TONE[c.tone], ring: c.tone !== 'warn' });
   }
   for (const c of royaleCallouts(prev?.royale, next.royale, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS)) announce({ ...c, color: '#c9b3ff', ring: false });

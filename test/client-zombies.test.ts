@@ -332,10 +332,10 @@ test('the forecast puts the deadliest kinds first and sizes the horde for the sq
 });
 
 test('the N hint counts the humans ready for night', () => {
-  const players = [{ id: 1, kind: 'human' as const, alive: true }, { id: 2, kind: 'human' as const, alive: true }, { id: 3, kind: 'bot' as const, alive: true }];
-  assert.equal(readyHint(runView(), players, 1), 'ready for night · 0/2');
-  assert.equal(readyHint(runView({ ready: [1] }), players, 1), 'ready · 1/2 · N to wait');
-  assert.equal(readyHint(runView(), players.slice(0, 1), 1), 'bring the night now');
+  // The server counts the squad's people standing (`crew`): the client is never told which of the squad they are.
+  assert.equal(readyHint({ ...runView(), crew: 2 }, 1), 'ready for night · 0/2');
+  assert.equal(readyHint({ ...runView({ ready: [1] }), crew: 2 }, 1), 'ready · 1/2 · N to wait');
+  assert.equal(readyHint({ ...runView(), crew: 1 }, 1), 'bring the night now');
 });
 
 test('holding E names the job the server does, even for a building a sliver short of whole', () => {

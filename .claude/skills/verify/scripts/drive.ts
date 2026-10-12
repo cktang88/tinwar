@@ -59,9 +59,9 @@ const ensureAlive = async () => {
   await until(() => !!me()?.alive, 4000);
   await sleep(300);
 };
-const humansIn = async (room: string) => ((await (await fetch(`${BASE}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === room)?.humans;
+/** The room list's entry for `room`: it counts players and never says how many of them are people. */
+const listed = async (room: string) => ((await (await fetch(`${BASE}/api/servers`)).json()) as Record<string, unknown>[]).find((r) => r.id === room);
 
-let humansBefore = 0;
 let pickedWeapon: WeaponId | null = null;
 const observerChat: { from: string; text: string }[] = [];
 let observerBoard: string[] = [];
@@ -150,7 +150,6 @@ const STEPS: Record<string, () => Promise<void>> = {
   },
   async join() {
     await until(() => observerBoard.includes('Observer'));
-    humansBefore = (await humansIn('ffa')) ?? 0;
     frames.welcome = null;
     const signedIn = await js(`localStorage.getItem('skirmish.account')`);
     await clickPlay();
@@ -159,7 +158,8 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('menu hidden and HUD shown', await until(async () => js(`document.getElementById('menu').hidden && !document.getElementById('hud').hidden`)));
     expect('own player present in snapshots', await until(() => !!me()));
     if (pickedWeapon) expect('joined player carries the picked weapon (server snapshot)', me()?.gun === pickedWeapon, `gun ${me()?.gun}`);
-    expect('server human count in ffa rises by one', await until(async () => (await humansIn('ffa')) === humansBefore + 1), `baseline ${humansBefore} incl. observer`);
+    const entry = await listed('ffa');
+    expect('the room list counts players and never says how many are people', !!entry && !('humans' in entry) && typeof entry.players === 'number', JSON.stringify(entry));
     expect('observer leaderboard lists the player', await until(() => observerBoard.includes(NAME)));
     await shot('joined');
   },
@@ -393,8 +393,6 @@ const STEPS: Record<string, () => Promise<void>> = {
   async leave() {
     await cdp('Page.reload', { ignoreCache: true });
     expect('the departed player drops off the observer leaderboard after the page unloads (reload)', await until(() => !observerBoard.includes(NAME), REMOTE_URL ? 25_000 : 6000));
-    // A public site can gain or lose real visitors mid-run, so the head count is only meaningful against a private local server.
-    if (!REMOTE_URL) expect('server human count returns to baseline after the page unloads (reload)', await until(async () => (await humansIn('ffa')) === humansBefore, 6000), `baseline ${humansBefore}`);
   },
 };
 

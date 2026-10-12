@@ -1,5 +1,6 @@
 import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type BuildingKind, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
 import type { InputState, Loadout, Snapshot } from '../shared/protocol.ts';
+import { hash32, seeded } from '../shared/cosmetics.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { fearNow, skillFor, skillKnobs, skillOf, stressOf, TICK_MS as BOT_TICK_MS, type Skill } from './bot/aim.ts';
@@ -29,6 +30,19 @@ export type BotMemory = {
    * `never` has it spend nothing at all (no building, upgrading, mending or reloading), as a human who never builds. Unset, it follows the squad's rule.
    */
   siegeBuild?: 'always' | 'never';
+  /**
+   * Who it is between lives: the colour and armor it picked when it joined, kept for its whole stay, and the gun it usually comes back with
+   * (see `nextLoadout`). Absent (a bench's or a test's bot), it keeps whatever it last spawned with.
+   */
+  loadout?: Loadout;
+  /** Lives in a row it has ended without a kill: a run of them makes it likelier to try another gun. */
+  dry?: number;
+  /** Server time a fresh spawn's settle ends: until then it only looks round, as a person getting their bearings does (see `SPAWN_SETTLE`). */
+  settleUntil?: number;
+  /** Which way it faced as it spawned: its settle looks round from there. */
+  settleFacing?: number;
+  /** The open pick it is mulling over, and the server time it takes it (see `pickDelayMs`). */
+  pickWait?: { level: number; at: number };
 };
 
 /**
@@ -76,11 +90,65 @@ function choosePickOption(options: readonly PickOption[], gun: GunId, persona: P
  * A fresh bot's memory: its temper drawn from `rand`, and its skill hashed from its name and the room's seed (`skillFor`: the same name in
  * the same room is the same player each time it joins), or given (`skill`), or else drawn from `rand` after its temper.
  */
-export function newBotMemory(rand: () => number, who: { name: string; seed: number } | { skill: Skill } | null = null): BotMemory {
+export function newBotMemory(rand: () => number, who: { name: string; seed: number } | { skill: Skill } | null = null, loadout?: Loadout): BotMemory {
   const persona = pick(PERSONALITY_IDS, rand);
   const skill = who === null ? skillOf(rand()) : 'skill' in who ? who.skill : skillFor(who.name, who.seed);
-  return { persona, skill, intent: null, awareness: freshAwareness(), motor: freshMotor() };
+  return { persona, skill, intent: null, awareness: freshAwareness(), motor: freshMotor(), ...(loadout && { loadout }) };
 }
+
+/** A bot staying on for another match keeps who it is (temper, skill, loadout) but nothing of the last match's fight: a fresh brain. */
+export const forgetMatch = (mem: BotMemory): BotMemory => {
+  const { beat: _b, tactics: _t, siege: _s, settleUntil: _u, settleFacing: _f, pickWait: _p, ...rest } = mem;
+  return { ...rest, intent: null, awareness: freshAwareness(), motor: { ...freshMotor(), shots: mem.motor.shots } };
+};
+
+/** A small stream hashed from `key`, for a bot's per-life whims: it leaves the world's random stream (and so every other bot) alone. */
+export const whim = (key: string): (() => number) => seeded(hash32(key));
+
+/** A standard normal draw from two uniforms (Box-Muller). */
+const gauss = (r: () => number) => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+
+/**
+ * How long past the moment it may respawn a bot takes to click back in: people read the recap, change their mind, glance at their phone.
+ * A lognormal with a median of `medianMs` and a tail to about `tailMs`, and now and then (`afkShare`) an AFK of `afk` ms.
+ */
+export const RESPAWN_DELAY = { medianMs: 1800, logSd: 0.6, capMs: 9000, afkShare: 0.025, afk: [15_000, 25_000] as const };
+
+/** The delay for the life that ended with the respawn clock at `respawnAt` (a server time), the same every time for the same bot and death. */
+export function respawnDelayMs(name: string, respawnAt: number): number {
+  const r = whim(`respawn:${name}:${respawnAt}`);
+  if (r() < RESPAWN_DELAY.afkShare) return RESPAWN_DELAY.afk[0] + r() * (RESPAWN_DELAY.afk[1] - RESPAWN_DELAY.afk[0]);
+  return Math.min(RESPAWN_DELAY.capMs, RESPAWN_DELAY.medianMs * Math.exp(RESPAWN_DELAY.logSd * gauss(r)));
+}
+
+/** A fresh spawn's settle: a moment of only looking round before the first key is pressed. A hit or a round at it ends it at once. */
+export const SPAWN_SETTLE = { minMs: 300, maxMs: 1200 };
+export const spawnSettleMs = (name: string, at: number): number => SPAWN_SETTLE.minMs + whim(`settle:${name}:${at}`)() * (SPAWN_SETTLE.maxMs - SPAWN_SETTLE.minMs);
+
+/** How often a bot comes back with another gun: now and then, more after a run of lives without a kill. */
+export const GUN_SWITCH = { base: 0.15, perDry: 0.1, max: 0.55 };
+
+/**
+ * What a bot comes back with: its own colour and armor every life, and usually the gun it had. `dry` counts lives in a row without a kill,
+ * this one included; past the first, each makes another gun likelier.
+ */
+export function nextLoadout(kept: Loadout, dry: number, name: string, at: number): Loadout {
+  const r = whim(`loadout:${name}:${at}`);
+  const odds = Math.min(GUN_SWITCH.max, GUN_SWITCH.base + GUN_SWITCH.perDry * Math.max(0, dry - 1));
+  if (r() >= odds) return kept;
+  const others = WEAPON_IDS.filter((w) => w !== kept.weapon);
+  return { ...kept, weapon: others[Math.floor(r() * others.length)]! };
+}
+
+/**
+ * How long a bot mulls over a pick that has just opened: a person finishes the moment they are in, or glances at the menu between fights,
+ * so 1 to 8 s, short ones commoner. In a fight it waits longer still (`PICK_DELAY.engagedMs` more).
+ */
+export const PICK_DELAY = { minMs: 1000, maxMs: 8000, engagedMs: 4000 };
+export const pickDelayMs = (name: string, level: number, at: number): number => {
+  const r = whim(`pick:${name}:${level}:${at}`)();
+  return PICK_DELAY.minMs + r * r * (PICK_DELAY.maxMs - PICK_DELAY.minMs);
+};
 
 export function randomLoadout(rand: () => number): Loadout {
   return { weapon: pick(WEAPON_IDS, rand), armor: pick(ARMOR_IDS, rand), color: pick(COLOR_IDS, rand) };
@@ -132,7 +200,7 @@ export function botSeats(humans: TeamCounts, minPlayers: number, botsPerHuman: n
 }
 
 /** Bots go by everyday gamertags, so a room reads like a lobby of real players. */
-const BOT_NAMES = [
+export const BOT_NAMES: readonly string[] = [
   'mariah_27', 'TheoPlays', 'robby500', 'KayOnXbox', 'HassanK9', 'livin4games', 'BigAl1978', 'sandybeach88',
   'Jules_404', 'FrancoPlays', 'nickatnite22', 'MindyMoo', 'rajplaysgames', 'benji2k', 'ItsMeTori', 'DustyController',
   'cameron_17', 'lizzieQ', 'MoRunsMid', 'JakeFromIT', 'paulieB', 'KeishaPlays', 'ArcticMikey', 'Nando_6',

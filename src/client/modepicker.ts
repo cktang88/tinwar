@@ -5,7 +5,7 @@ import { MODE_INFO, type SceneId } from './modecards.ts';
  * pitch, and Next, which goes on to the loadout step with that mode (the loadout step's Deploy joins the match). The range has no
  * loadout step, so its Next opens the range at once. The last mode picked is remembered on this device.
  */
-export type ModeRoom = { id: string; mode: string; players: number; humans?: number };
+export type ModeRoom = { id: string; mode: string; players: number };
 export type ModeOption = {
   mode: SceneId;
   /** The short code on its chip: FFA, TDM, DOM, BR, ZOM or RANGE. */
@@ -26,7 +26,7 @@ export function modeOptions(rooms: readonly ModeRoom[] | null, squad: string | n
   const out: ModeOption[] = [];
   for (const r of rooms ?? []) {
     if (!isScene(r.mode) || out.some((o) => o.mode === r.mode)) continue;
-    const detail = `${r.players} ${r.players === 1 ? 'player' : 'players'}${r.humans ? ` · ${r.humans} human` : ''}`;
+    const detail = `${r.players} ${r.players === 1 ? 'player' : 'players'}`;
     out.push({ mode: r.mode, tag: r.mode, name: MODE_INFO[r.mode].name, pitch: MODE_INFO[r.mode].pitch, live: `${r.players} playing`, detail });
   }
   out.push({ mode: 'ZOM', tag: 'ZOM', name: 'Zombies squad', pitch: MODE_INFO.ZOM.pitch, live: squad ? `Squad ${squad}` : 'Up to 4', detail: squad ? `Squad ${squad}` : 'Up to 4 players' });

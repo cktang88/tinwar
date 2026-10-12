@@ -20,6 +20,8 @@
 }
 .friend-btn:hover { filter: brightness(1.08); }
 .friend-btn.is-quiet { background: #3a404b; color: #ece6d6; }
+.friend-menu-record { display: block; margin-top: calc(8px * var(--ui, 1)); color: #a39d8e; font-weight: 700; font-size: calc(13px * var(--ui, 1)); text-decoration: none; }
+.friend-menu-record:hover { color: #ece6d6; text-decoration: underline; }
 .friend-btn.is-sent { background: #3a404b; color: #a39d8e; cursor: default; box-shadow: none; }
 
 .friend-invites {

@@ -18,7 +18,9 @@ import { botCosmetics, XP } from '../shared/cosmetics.ts';
 import type { Accounts } from './accounts.ts';
 import { NO_PROFILES, type Profiles } from './profiles.ts';
 import { applyRangeMsg, isPractice } from './range.ts';
-import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+import { botName, botSeats, forgetMatch, newBotMemory, randomLoadout, spawnSettleMs, type BotMemory } from './bots.ts';
+import { LOBBY, refillMs, sessionMs, stayers } from './lobby.ts';
+import { botBadge } from './botprofile.ts';
 import { thinkBots } from './bot/tick.ts';
 import { newZomWatch, settleLeaver, watchZombies, type ZomDelta } from './zomcareer.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
@@ -104,41 +106,74 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     return [['red', seats.red], ['blue', seats.blue]];
   }
 
-  /** The bots of the last match, so a new match draws different faces rather than the same lobby again. */
-  let lastBots = new Set<string>();
+  /** The bots that left this match (and those that left at its start), so no newcomer takes a name that just walked out. */
+  let gone = new Set<string>();
   let seenMatch: World['match'] | null = null;
+  /** When each bot means to leave (see lobby.ts), the room's last leave, and when a seat a leaver emptied fills. */
+  const leaveAt = new Map<number, number>();
+  let lastLeaveAt = 0, refillAt: number | null = null;
   function addBot(team: Team) {
-    const name = uniqueName(botName(new Set([...names(), ...lastBots]), botRand), names(), registered);
-    const p = addPlayer(world, name, randomLoadout(botRand), { team });
+    const name = uniqueName(botName(new Set([...names(), ...gone]), botRand), names(), registered);
+    const loadout = randomLoadout(botRand);
+    const p = addPlayer(world, name, loadout, { team });
     if (mode === 'BR') enterRoyale(world, p);
-    bots.set(p.id, newBotMemory(botRand, { name, seed }));
+    bots.set(p.id, { ...newBotMemory(botRand, { name, seed }, loadout), settleUntil: world.now + spawnSettleMs(name, world.now), settleFacing: p.angle });
+    leaveAt.set(p.id, world.now + sessionMs(name, seed, world.now));
     p.cos = botCosmetics(name);
+    p.badge = botBadge(name);
     return p;
+  }
+  function dropBot(id: number) {
+    bots.delete(id);
+    leaveAt.delete(id);
+    removePlayer(world, id);
+    if (world.royale) world.royale.entrants = world.royale.entrants.filter((e) => e !== id);
   }
 
   /** Whether a Last Standing match can still take a new player: until its redeploys close. */
   const seatOpen = (_team: Team) => !world.royale || (redeploysOpen(world.royale) && world.match.k === 'playing');
 
-  /** A new match brings a new lobby: every bot of the last one leaves, and fresh ones (new names, loadouts and skill) take the seats. */
-  function freshBots() {
-    lastBots = new Set([...bots.keys()].map((id) => world.players.get(id)?.name).filter((n): n is string => !!n));
-    for (const id of [...bots.keys()]) {
-      bots.delete(id);
-      removePlayer(world, id);
-      if (world.royale) world.royale.entrants = world.royale.entrants.filter((e) => e !== id);
+  /**
+   * A new match keeps some of the last one's bots, who stay for another round with a fresh head for it, and the rest leave; newcomers with
+   * names none of the leavers had take their seats (see lobby.ts).
+   */
+  function nextLobby() {
+    const stay = stayers([...bots.keys()], (id) => leaveAt.get(id) ?? Infinity, world.now, botRand);
+    gone = new Set();
+    for (const [id, mem] of [...bots]) {
+      // A Last Standing match takes in only who stands at its start: a bot left out of it leaves too.
+      if (stay.has(id) && (!world.royale || world.royale.entrants.includes(id))) { bots.set(id, forgetMatch(mem)); continue; }
+      const name = world.players.get(id)?.name;
+      if (name) gone.add(name);
+      dropBot(id);
     }
+    lastLeaveAt = world.now;
+    refillAt = null;
     balanceBots();
+  }
+
+  /** Mid-match, a bot whose session is over leaves now and then (at its next death, or a while later), and a newcomer takes its seat soon after. */
+  function churn() {
+    if (practice || (mode !== 'FFA' && mode !== 'TDM' && mode !== 'DOM') || world.match.k !== 'playing') return;
+    if (refillAt !== null && world.now >= refillAt) { refillAt = null; balanceBots(); return; }
+    const ends = world.mapChangeAt;
+    if (refillAt !== null || world.now - lastLeaveAt < LOBBY.gapMs || ends - world.now < LOBBY.tailMs) return;
+    for (const id of bots.keys()) {
+      const p = world.players.get(id), at = leaveAt.get(id) ?? Infinity;
+      if (!p || world.now < at || (p.life.k === 'alive' && world.now < at + LOBBY.graceMs)) continue;
+      gone.add(p.name);
+      dropBot(id);
+      lastLeaveAt = world.now;
+      refillAt = world.now + refillMs(seed, world.now);
+      return;
+    }
   }
 
   function balanceBots() {
     for (const [team, want] of botTargets()) {
       const mine = [...bots.keys()].filter((id) => world.players.get(id)?.team === team);
-      for (const id of mine.slice(want)) {
-        bots.delete(id);
-        removePlayer(world, id);
-        // A bot let go to make room for a person was never really in the match: it takes no place in it.
-        if (world.royale) world.royale.entrants = world.royale.entrants.filter((e) => e !== id);
-      }
+      // A bot let go to make room for a person was never really in the match: it takes no place in it.
+      for (const id of mine.slice(want)) dropBot(id);
       if (seatOpen(team)) for (let i = mine.length; i < want; i++) addBot(team);
     }
   }
@@ -161,6 +196,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     if (!seat) { benchUntilNextMatch(p); return p; }
     takeSeat(world, p, seat);
     bots.delete(seat.id);
+    leaveAt.delete(seat.id);
     removePlayer(world, seat.id);
     return p;
   }
@@ -467,14 +503,17 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     balanceBots();
   }
 
-  /** A friend invite, its answer, or the end of a friendship, between people only: bots cannot be friended. */
+  /**
+   * A friend invite, its answer, or the end of a friendship. An invite to a bot goes out like any other, as far as its sender can tell, and
+   * simply never gets an answer, as one to a person who ignores it: nothing tells a player who in the room is a bot.
+   */
   function friendMsg(client: Extract<Client, { k: 'joined' }>, action: FriendAction, other: number) {
     const id = client.playerId;
     const me = world.players.get(id), them = world.players.get(other);
     if (!me || other === id) return;
     switch (action) {
       case 'invite': {
-        if (!them || them.kind !== 'human' || !clientOf(other)) { friendNote(id, 'Only players can be friends.'); return; }
+        if (!them) { friendNote(id, 'Only players can be friends.'); return; }
         if (areFriends(world, id, other)) return;
         // They asked first: inviting them back is a yes.
         if (asked(id, other)) { friendMsg(client, 'accept', other); return; }
@@ -483,7 +522,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         lastInviteAt.set(id, now);
         if (asked(other, id)) { friendNote(id, `Already asked ${them.name}.`); return; }
         invites.set(other, (invites.get(other) ?? new Map()).set(id, now));
-        send(clientOf(other)!.ws, { t: 'friendInvite', from: id, name: me.name });
+        const to = clientOf(other);
+        if (to) send(to.ws, { t: 'friendInvite', from: id, name: me.name });
         friendNote(id, `Friend invite sent to ${them.name}.`);
         return;
       }
@@ -564,9 +604,10 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     if (practice) { /* nothing is paid */ } else if (mode === 'ZOM') payRun(); else payRound();
     // A round that starts (after a banner, or at once when the clock ran out with nobody to crown) brings a fresh lobby of bots.
     if (world.match !== seenMatch) {
-      if (seenMatch && world.match.k === 'playing' && !practice && mode !== 'ZOM') freshBots();
+      if (seenMatch && world.match.k === 'playing' && !practice && mode !== 'ZOM') nextLobby();
       seenMatch = world.match;
     }
+    churn();
     for (const c of joined()) notify(c);
     return events;
   }

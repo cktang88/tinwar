@@ -115,11 +115,12 @@ test('Discord: one constant, and the link stays hidden while it is empty', () =>
 });
 
 test('mode picker: rooms in server order then Zombies and the range; the last pick is remembered', () => {
-  const rooms = [{ id: 'ffa', mode: 'FFA', players: 18 }, { id: 'tdm', mode: 'TDM', players: 1, humans: 1 }, { id: 'x', mode: 'NOPE', players: 3 }];
+  const rooms = [{ id: 'ffa', mode: 'FFA', players: 18 }, { id: 'tdm', mode: 'TDM', players: 1 }, { id: 'x', mode: 'NOPE', players: 3 }];
   const opts = modeOptions(rooms, null);
   assert.deepEqual(opts.map((o) => o.mode), ['FFA', 'TDM', 'ZOM', 'RNG']);
   assert.deepEqual([opts[0]!.tag, opts[0]!.name, opts[0]!.live], ['FFA', 'Free for all', '18 playing']);
-  assert.equal(opts[1]!.detail, '1 player · 1 human');
+  // A plain count: the picker never says how many of them are people.
+  assert.equal(opts[1]!.detail, '1 player');
   assert.equal(modeOptions([], 'ab12').find((o) => o.mode === 'ZOM')!.detail, 'Squad ab12');
   assert.equal(pickMode(opts, null, null), 'FFA', 'the first by default');
   assert.equal(pickMode(opts, null, 'TDM'), 'TDM', 'the one remembered');

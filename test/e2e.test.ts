@@ -118,8 +118,10 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
     conns[room] = c;
   }
 
-  const servers = (await (await fetch(base + '/api/servers')).json()) as { id: string; mode: string; players: number; humans: number }[];
-  assert.deepEqual(servers.map((s) => [s.id, s.mode, s.humans]), [['ffa', 'FFA', 1], ['tdm', 'TDM', 1], ['dom', 'DOM', 1], ['br', 'BR', 0]]);
+  const servers = (await (await fetch(base + '/api/servers')).json()) as { id: string; mode: string; players: number }[];
+  assert.deepEqual(servers.map((s) => [s.id, s.mode]), [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 'DOM'], ['br', 'BR']]);
+  // A room reads as a lobby of players: the list never says how many of them are people.
+  for (const s of servers) assert.deepEqual(Object.keys(s).sort(), ['id', 'mode', 'players']);
   for (const s of servers) assert.equal(s.players, WORLD.minPlayers, 'bots fill the room to minPlayers');
 
   const ffa = conns.ffa;
@@ -159,10 +161,8 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   await ffa.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Bad message', 5000, 'Bad message');
 
   for (const c of Object.values(conns)) c.ws.close();
-  await waitUntil(async () => {
-    const s = (await (await fetch(base + '/api/servers')).json()) as { humans: number }[];
-    return s.every((r) => r.humans === 0);
-  });
+  // The public list counts players only; the rooms themselves say how many are people.
+  await waitUntil(async () => [...server.rooms.values()].every((r) => r.info().humans === 0));
 
   const stats = (await (await fetch(base + '/api/stats/Tester')).json()) as { name: string; games: number; kills: number; deaths: number; score: number; best: number };
   assert.equal(stats.name, 'Tester');

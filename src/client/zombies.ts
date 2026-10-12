@@ -24,8 +24,6 @@ const sidesOf = (night: number) => {
   return from.length === SIDES.length ? 'every side' : `the ${listOf(from)}`;
 };
 
-export const squadShare = (players: readonly Pick<PlayerView, 'kind'>[]) =>
-  ZOM.hordeShare({ humans: players.filter((p) => p.kind === 'human').length, bots: players.filter((p) => p.kind !== 'human').length });
 
 /** What a night brings for a squad with this `share` of the horde and from where, by the night table: the deadliest kinds first, by what each pays, then how many in all. */
 export function forecast(night: number, share: number): string {
@@ -37,11 +35,10 @@ export function forecast(night: number, share: number): string {
 }
 
 /** The day's hint for N: how many of the squad's humans are ready for night, and whether you are. */
-export function readyHint(run: Pick<RunView, 'ready'>, players: readonly Pick<PlayerView, 'id' | 'kind' | 'alive'>[], selfId: number): string {
-  const humans = players.filter((p) => p.kind === 'human' && p.alive);
-  const ready = humans.filter((p) => run.ready.includes(p.id)).length;
-  if (!run.ready.includes(selfId)) return humans.length > 1 ? `ready for night · ${ready}/${humans.length}` : 'bring the night now';
-  return `ready · ${ready}/${humans.length} · N to wait`;
+export function readyHint(run: Pick<RunView, 'ready' | 'crew'>, selfId: number): string {
+  const ready = run.ready.length, crew = Math.max(run.crew ?? 1, ready);
+  if (!run.ready.includes(selfId)) return crew > 1 ? `ready for night · ${ready}/${crew}` : 'bring the night now';
+  return `ready · ${ready}/${crew} · N to wait`;
 }
 
 export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: number | null): string {

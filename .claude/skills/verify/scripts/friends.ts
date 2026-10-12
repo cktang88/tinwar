@@ -57,9 +57,9 @@ try {
   ok(a.id > 0 && b.id > 0, 'both players joined', `Ann ${a.id}, Ben ${b.id}`);
   ok((await a.page.js(`getComputedStyle(document.getElementById('pause-cog')).display`)) === 'none', 'the desktop HUD has no pause cog over the board');
 
-  let row: { x: number; y: number; w: number; h: number; human: boolean } | undefined;
-  for (let i = 0; i < 60 && !row; i++) { row = ((await a.page.js(`window.skirmishDev.friends.board()`)) as { id: number; x: number; y: number; w: number; h: number; human: boolean }[]).find((n) => n.id === b.id); if (!row) await sleep(100); }
-  ok(!!row && row.human, "Ben's name is a button on Ann's board, marked as a person", row ? `${row.x.toFixed(0)},${row.y.toFixed(0)} ${row.w.toFixed(0)}x${row.h.toFixed(0)}` : 'not drawn');
+  let row: { x: number; y: number; w: number; h: number } | undefined;
+  for (let i = 0; i < 60 && !row; i++) { row = ((await a.page.js(`window.skirmishDev.friends.board()`)) as { id: number; x: number; y: number; w: number; h: number }[]).find((n) => n.id === b.id); if (!row) await sleep(100); }
+  ok(!!row && !('human' in row), "Ben's name is a button on Ann's board, which never says who is a person", row ? `${row.x.toFixed(0)},${row.y.toFixed(0)} ${row.w.toFixed(0)}x${row.h.toFixed(0)}` : 'not drawn');
   if (!row) throw new Error('no row');
   const cx = row.x + row.w / 2, cy = row.y + row.h / 2;
   const board = { x: row.x - 70, y: Math.max(0, row.y - 40), width: W - (row.x - 70), height: 120 };

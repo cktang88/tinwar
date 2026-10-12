@@ -175,7 +175,7 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
   for (const sv of servers) {
     const c = entry.cards.get(sv.id);
     if (!c) continue;
-    const text = `${sv.players} ${sv.players === 1 ? 'player' : 'players'}${sv.humans ? ` · ${sv.humans} human` : ''}`;
+    const text = `${sv.players} ${sv.players === 1 ? 'player' : 'players'}`;
     if (c.live.textContent !== text) c.live.textContent = text;
     c.btn.ariaPressed = String(sv.id === selected);
   }

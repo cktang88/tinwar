@@ -12,7 +12,7 @@ import { tickDowned } from './downed.ts';
 import { perkOnZombieHit, perkOnZombieKill } from './zomperks.ts';
 import { coreRect, coverRects, loadMap, newId, newRun, rand, solidRects, spawnPoint, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
 
-function squadOf(w: World) {
+export function squadOf(w: World) {
   const squad = { humans: 0, bots: 0 };
   for (const p of w.players.values()) squad[p.kind === 'human' ? 'humans' : 'bots']++;
   return squad;

@@ -13,6 +13,7 @@ import { openAccounts, RESET_MS, type Accounts } from './accounts.ts';
 import { mailerFromEnv, resetMessage, type Mailer } from './mail.ts';
 import { normalizeEmail } from '../shared/email.ts';
 import { openProfiles, profileView, type GuestClaim, type Profiles } from './profiles.ts';
+import { botProfile, isBotName } from './botprofile.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeFaultLog, makeKeyedLimiter, makeWindowGate, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
@@ -189,7 +190,8 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
   try { url = new URL(req.url ?? '/', 'http://x'); } catch { return json(res, 400, { error: 'Bad request target' }); }
   const path = url.pathname;
   if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size, ...rooms.load() });
-  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM' && info.mode !== 'RNG'));
+  // How many are in each room, not how many of them are people: a room should read as a lobby of players (the server still knows, `info()`).
+  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM' && info.mode !== 'RNG').map(({ id, mode, players }) => ({ id, mode, players })));
   if (req.method === 'POST' && path === '/api/squads') {
     if (!allowSquad(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many squads. Try again in a minute.' });
     const room = rooms.openSquad();
@@ -211,7 +213,8 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
   if (req.method === 'GET' && path.startsWith('/api/profile/')) {
     let name: string;
     try { name = decodeURIComponent(path.slice('/api/profile/'.length)); } catch { return json(res, 400, { error: 'Bad player name' }); }
-    const p = profiles.get(name);
+    // A bot keeps no profile, but its name has a record like anyone's (botprofile.ts): nothing on a page tells a bot from a person.
+    const p = profiles.get(name) ?? (isBotName(name) ? botProfile(name) : null);
     return p ? json(res, 200, profileView(p)) : json(res, 404, { error: 'No such player' });
   }
   if (req.method === 'POST' && path === '/api/equip') {

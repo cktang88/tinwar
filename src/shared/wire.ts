@@ -1,7 +1,7 @@
 import type { Cos } from './cosmetics.ts';
 import { MINIMAP_EVERY, STICKY_KEYS, type PlayerView, type Snapshot, type SnapshotWire } from './protocol.ts';
 
-const DECIMALS: Readonly<Record<string, number>> = { angle: 2, push: 2, progress: 2, reloadFrac: 2, suppression: 2, settle: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
+const DECIMALS: Readonly<Record<string, number>> = { share: 3, angle: 2, push: 2, progress: 2, reloadFrac: 2, suppression: 2, settle: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
 
 const POW = [1, 10, 100, 1000];
 

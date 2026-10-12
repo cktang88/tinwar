@@ -100,7 +100,11 @@ export type PlayerView = {
    * is full and with no armor, so a fresh life costs nothing on the wire.
    */
   ap?: number;
-  kind: PlayerKind;
+  /**
+   * Person or bot: only on the viewer's own entry (it sets their bloom rules), and on everyone's in a bot's snapshot, which never leaves the
+   * server. No client learns who else is a bot.
+   */
+  kind?: PlayerKind;
   /** True for an enemy holding a stage-2 gun, and for yourself when you hold one. */
   hunted: boolean;
   /** Fresh from a spawn and not yet firing: takes no damage. */
@@ -189,6 +193,10 @@ export type RunReport = {
 export type RunView = {
   phase: 'day' | 'night' | 'over'; night: number; phaseEndsAt: number | null; scrap: number;
   core: { x: number; y: number; hp: number; maxHp: number }; aliveZombies: number; waveLeft: number; survivors: number; lost: number; ready: number[]; report: RunReport | null;
+  /** The squad's share of a full horde as it stands now (`ZOM.hordeShare`), for the night's forecast. */
+  share?: number;
+  /** How many of the squad's people stand and can ready for night (the N hint's count); who among the squad they are is not said. */
+  crew?: number;
   /** By day: how many turrets and vents dawn restocked to full, free; absent when none needed it. */
   restocked?: number;
 };
@@ -347,7 +355,7 @@ export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | 
 /** How long a friend invite waits for an answer: its plate goes from the invitee's screen then, and the server forgets it. */
 export const FRIEND_INVITE_SHOWN_MS = 20_000;
 
-/** `human` marks a person (absent for a bot): only people can be friended. */
+/** `human` marks a person, only in a bot's own snapshot (server-side); a client's board rows never carry it, and come ranked already. */
 export type LeaderRow = { id: number; name: string; score: number; kills: number; deaths: number; team: Team; human?: true };
 /**
  * Most round kills first, then fewest deaths, then people above bots. The FFA timer crowns whoever this puts first, so the leaderboard and

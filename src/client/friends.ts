@@ -2,7 +2,7 @@ import { FRIEND_INVITE_SHOWN_MS, type ClientMsg } from '../shared/protocol.ts';
 
 /**
  * Friends in a match, the page's side: the small menu a click on a board name opens beside the leaderboard (Add friend, or
- * Remove friend for one already a friend; a bot's says it cannot be friended), and the invites other players send, each a
+ * Remove friend for one already a friend, and a link to their service record), and the invites other players send, each a
  * plate with Accept and Decline under the top of the screen until answered or it runs out. The server owns friendships
  * (room.ts) and says who your friends are; what being friends does (no hurting each other, always on the minimap,
  * coming back beside each other) lives in the sim.
@@ -13,7 +13,7 @@ import { FRIEND_INVITE_SHOWN_MS, type ClientMsg } from '../shared/protocol.ts';
 
 export { FRIEND_INVITE_SHOWN_MS };
 
-export type BoardPick = { id: number; name: string; human: boolean; x: number; y: number; w: number; h: number; right: number };
+export type BoardPick = { id: number; name: string; x: number; y: number; w: number; h: number; right: number };
 
 type Deps = { send(msg: ClientMsg): void; onChange(ids: ReadonlySet<number>): void };
 
@@ -60,11 +60,6 @@ export function createFriendsUi(deps: Deps) {
       note.className = 'friend-menu-note is-friend';
       note.textContent = '♥ Friend';
       el.append(note, button('Remove friend', 'friend-btn is-quiet', () => { deps.send({ t: 'friend', a: 'remove', id: pick.id }); closeMenu(); }));
-    } else if (!pick.human) {
-      const note = document.createElement('div');
-      note.className = 'friend-menu-note';
-      note.textContent = "Bots can't be friends";
-      el.append(note);
     } else if (asked.has(pick.id)) {
       el.append(button('Invite sent', 'friend-btn is-sent', () => {}));
     } else {
@@ -75,6 +70,8 @@ export function createFriendsUi(deps: Deps) {
         closeMenu();
       }));
     }
+    // Everyone on the board has a service record, whoever they are (the server keeps one for every name it seats).
+    el.append(Object.assign(document.createElement('a'), { className: 'friend-menu-record', href: `profile.html?name=${encodeURIComponent(pick.name)}`, target: '_blank', rel: 'noopener', textContent: 'Service record ›' }));
     el.style.right = `${Math.max(8, innerWidth - pick.right + 8)}px`;
     el.style.top = `${Math.max(8, pick.y + pick.h / 2)}px`;
     document.body.append(el);

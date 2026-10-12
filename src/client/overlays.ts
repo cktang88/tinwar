@@ -365,8 +365,7 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
       recapShown = state.recap;
       recapCompact = compact;
       const killer = state.kill?.killerId !== null && state.kill?.killerId !== state.s.myId ? state.kill?.killer ?? null : null;
-      const human = snap.players.find((p) => p.id === state.kill?.killerId)?.kind === 'human';
-      renderRecap(deathRecap, state.recap, killer, human, compact);
+      renderRecap(deathRecap, state.recap, killer, compact);
     }
     const text = deathText(state.kill, state.loss);
     deathTitle.textContent = text.title;
@@ -437,7 +436,7 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
 }
 
 /** The life just lost as a row of stat tiles, each stamped when it set a record, then the records and who to take revenge on. */
-function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null, nemesisHuman: boolean, compact: boolean) {
+function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null, compact: boolean) {
   el.hidden = !recap;
   if (!recap) return;
   const tiles = recap.stats.map((s, i) => {
@@ -461,8 +460,8 @@ function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | nul
   if (nemesis) {
     // On a phone the line is as short as it can be: who, and what revenge pays.
     const line = Object.assign(document.createElement('p'), { className: 'recap-nemesis', textContent: compact ? `Nemesis ${nemesis} · +${STREAK.revengeScore} revenge ` : `${nemesis} is your nemesis now. Kill them for +${STREAK.revengeScore}. ` });
-    // A human killer has a service record worth a look; bots keep none.
-    if (nemesisHuman) line.append(Object.assign(document.createElement('a'), { href: `profile.html?name=${encodeURIComponent(nemesis)}`, target: '_blank', rel: 'noopener', textContent: 'Their record ›' }));
+    // Every killer has a service record worth a look.
+    line.append(Object.assign(document.createElement('a'), { href: `profile.html?name=${encodeURIComponent(nemesis)}`, target: '_blank', rel: 'noopener', textContent: 'Their record ›' }));
     lines.push(line);
   }
   el.replaceChildren(...lines);

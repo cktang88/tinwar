@@ -22,7 +22,7 @@ test('a zombies snapshot shows the horde in view as compact tuples, the squad wa
   assert.deepEqual(snap.buildings, [{ kind: 'wall', cx: 26, cy: 28, hp: 4 }]);
   assert.deepEqual(snap.run, {
     phase: 'day', night: 1, phaseEndsAt: ZOM.dayMs, scrap: ZOM.startScrap, core: { x: 1500, y: 1500, hp: ZOM.coreHp, maxHp: ZOM.coreHp },
-    aliveZombies: 2, waveLeft: 2, survivors: ZOM.survivors, lost: 0, ready: [], report: null,
+    aliveZombies: 2, waveLeft: 2, survivors: ZOM.survivors, lost: 0, ready: [], report: null, share: ZOM.hordeShare({ humans: 0, bots: 1 }), crew: 0,
   });
 });
 
