@@ -8,6 +8,7 @@ import { FLOOR, INK } from '../palette.ts';
 import type { Solid, SolidKind } from '../tilt.ts';
 import { registerTheme, type ThemeView } from './registry.ts';
 import { districtAt, drawKit, paintDistricts } from './subpenkit.ts';
+import { drawOverhead, drawStripGlow, paintKitFloor } from './subpenprops.ts';
 
 /**
  * Sub Pen: a covert submarine base. Steel, rust and teal-grey under sodium lamps and red alarm beacons: riveted bulkheads
@@ -592,6 +593,7 @@ function paintDeckFloor(g: CanvasRenderingContext2D, size: number, seed: number,
   }
 
   paintDistricts(g, seed, walls);
+  paintKitFloor(g, seed);
   paintMarkings(g, plan, seed);
 
   // Grime gathers toward the map's edge.
@@ -884,5 +886,7 @@ registerTheme('subpen', {
     drawBeacons(ctx, now, view, s.beacons);
     drawKit(ctx, now, view, map, s.lamps);
     drawSteam(ctx, now, view, s.vents);
+    drawStripGlow(ctx, now, view);
   },
+  over(ctx, _now, view, map) { drawOverhead(ctx, view, map); },
 });

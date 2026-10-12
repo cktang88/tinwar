@@ -48,6 +48,7 @@ export const DISTRICTS: readonly District[] = [
   { id: 'pen2', name: 'SLIP 2', sub: 'KELPIE', rect: { x: 3000, y: 3500, w: 3000, h: 1000 }, light: '#8fe3d6', tint: 'rgba(40, 90, 100, 0.07)', floor: 'plate' },
   { id: 'dock1', name: 'DOCK 1', sub: 'SODIUM BAY', rect: { x: 0, y: 0, w: 2500, h: 1500 }, light: '#ffb347', tint: 'rgba(255, 160, 60, 0.07)', floor: 'lanes' },
   { id: 'sump', name: 'SUMP YARD', rect: { x: 2500, y: 0, w: 1000, h: 1500 }, light: '#9fe8e0', tint: 'rgba(60, 150, 160, 0.08)', floor: 'wet' },
+  { id: 'bunks', name: 'CREW', sub: 'WARDROOM', rect: { x: 5000, y: 1500, w: 1000, h: 1000 }, light: '#ffd9a0', tint: 'rgba(160, 110, 70, 0.08)', floor: 'bunk' },
   { id: 'control', name: 'CONTROL', sub: 'NIGHT WATCH', rect: { x: 3500, y: 0, w: 2500, h: 2000 }, light: '#ff5a48', tint: 'rgba(70, 70, 130, 0.12)', floor: 'checker' },
   { id: 'comms', name: 'COMMS', sub: 'BUNKER', rect: { x: 3500, y: 2000, w: 2500, h: 1500 }, light: '#b9c8ff', tint: 'rgba(110, 130, 190, 0.08)', floor: 'rings' },
   { id: 'store', name: 'TORPEDO STORE', rect: { x: 0, y: 2500, w: 2500, h: 1000 }, light: '#ff9a3c', tint: 'rgba(200, 90, 40, 0.09)', floor: 'hazard' },
@@ -55,7 +56,6 @@ export const DISTRICTS: readonly District[] = [
   { id: 'shop', name: 'MACHINE SHOP', sub: 'ORTIZ', rect: { x: 0, y: 4500, w: 2500, h: 1500 }, light: '#7fe0c0', tint: 'rgba(60, 140, 110, 0.09)', floor: 'grid' },
   { id: 'fuel', name: 'FUEL DEPOT', rect: { x: 2500, y: 4500, w: 1000, h: 1500 }, light: '#ff9a3c', tint: 'rgba(200, 110, 40, 0.09)', floor: 'hazard' },
   { id: 'dock2', name: 'DOCK 2', sub: 'WORK LIGHTS', rect: { x: 3500, y: 4500, w: 2500, h: 1500 }, light: '#8fe3d6', tint: 'rgba(60, 150, 170, 0.08)', floor: 'wet' },
-  { id: 'bunks', name: 'CREW QUARTERS', rect: { x: 3500, y: 3500, w: 2500, h: 1000 }, light: '#ffd9a0', tint: 'rgba(160, 110, 70, 0.08)', floor: 'bunk' },
   { id: 'centre', name: 'CENTRAL DOCK', rect: { x: 2500, y: 1500, w: 1000, h: 3000 }, light: '#d3e6ff', tint: 'rgba(150, 190, 230, 0.06)', floor: 'emblem' },
 ];
 const FALLBACK: District = { id: 'yard', name: 'YARD', rect: { x: 0, y: 0, w: SIZE, h: SIZE }, light: '#ffb347', tint: 'rgba(0,0,0,0)', floor: 'plate' };
@@ -225,6 +225,7 @@ export function paintDistricts(g: CanvasRenderingContext2D, seed: number, walls:
   }
   // District names, stencilled big where the lane is clear, with the sub-line under.
   for (const d of DISTRICTS) {
+    if (d.id === 'bunks') continue; // The crew's corner is mostly hut; its stencil is the WARDROOM on the hut floor (subpenprops.ts).
     const px = d.id === 'store' || d.id === 'flood' ? 78 : 96;
     const spot = signSpot(walls, d, 620, 190);
     if (!spot) continue;
