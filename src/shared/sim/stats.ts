@@ -372,9 +372,8 @@ export function payAlive(w: World, p: Player) {
   if (life.k !== 'alive' || w.run || w.range || w.match.k !== 'playing') return;
   while (w.now - life.aliveSince >= WORLD.aliveScoreMs) {
     life.aliveSince += WORLD.aliveScoreMs;
-    const before = p.score;
+    // Quietly: no chip for it, the progress line just moves.
     addScore(w, p, WORLD.aliveScore);
-    w.events.push({ e: 'gain', id: p.id, from: 'alive', xp: p.score - before });
   }
 }
 

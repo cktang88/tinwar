@@ -297,8 +297,7 @@ export type GameEvent =
   | { e: 'pack'; k: 'pick'; x: number; y: number };
 
 /** Where a `gain` came from: a health or ammo pack, a supply plane's crate, a Last Squad drop, an armor pack. */
-/** `alive`: score for staying alive (`WORLD.aliveScore`). */
-export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor' | 'loot' | 'body' | 'alive';
+export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor' | 'loot' | 'body';
 
 export type Circle = { x: number; y: number; r: number };
 /**
