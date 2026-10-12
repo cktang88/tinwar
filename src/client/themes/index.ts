@@ -7,6 +7,7 @@ import './airbase.ts';
 import './railyard.ts';
 import './harbor.ts';
 import './embassy.ts';
+import './oldtown.ts';
 import './wasteland.ts';
 import './summit.ts';
 import './harborlife.ts';
