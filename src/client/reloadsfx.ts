@@ -46,6 +46,7 @@ const THEME_FLOOR: Record<ThemeId, Surface> = {
   quarry: 'dirt',
   oldtown: 'concrete',
   plaza: 'concrete',
+  range: 'dirt',
 };
 let probe: ((x: number, y: number) => Surface | null) | null = null;
 /** A map or theme that knows its floor to the tile (a wooden dock in a concrete harbor) registers it here; null falls back to the map's own floor. */

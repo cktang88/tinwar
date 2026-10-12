@@ -12,7 +12,7 @@ export const LIGHT = { x: 0.62, y: 0.78 } as const;
 const SHADOW_PER_HEIGHT = 3.3;
 export const LIP = 4;
 
-export type SolidKind = 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'brick' | 'pad' | 'core' | 'crate' | 'supply' | 'wood' | 'sandbag' | 'steel' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap' | 'qledge' | 'qblock' | 'qplant' | 'qcabin' | 'qshed' | 'otwall' | 'otstone' | 'otfurn' | 'otstall';
+export type SolidKind = 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'brick' | 'pad' | 'core' | 'crate' | 'supply' | 'wood' | 'sandbag' | 'steel' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap' | 'qledge' | 'qblock' | 'qplant' | 'qcabin' | 'qshed' | 'otwall' | 'otstone' | 'otfurn' | 'otstall' | 'rgwall' | 'rgbags' | 'rgblast' | 'rgbench' | 'rgtable' | 'rgtower' | 'rghut' | 'rgply' | 'rgberm';
 type Bed = { inset: number; ground: string; leaves: readonly (readonly [string, number])[] };
 type Material = { top: string; grain: Grain; height: number; bed?: Bed };
 
@@ -28,7 +28,7 @@ const GRAIN: Grain = { specks: 120, blotches: 0, scratches: 0.2, seams: null, ti
  * front face. Bodies are drawn over it, so a player standing at a wall's foot is in front of the wall. These are the heights
  * the painters (this file and the theme kits, which mirror them) draw a front face at; `FACE` is how tall it ends up on screen.
  */
-export const PAINT_FACE: Record<SolidKind, number> = { hangar: 18, cinder: 16, sbags: 13, gse: 12, bunk: 10, pallet: 10, jersey: 12, stall: 14, shopfront: 18, stack: 12, cart: 10, shrine: 16, gallery: 18, marble: 16, vitrine: 14, plinth: 22, counter: 14, sandstone: 15, concrete: 16, slate: 14, brick: 12, planter: 12, crate: 12, supply: 13, pad: 6, curb: 0, core: 0, wood: 10, sandbag: 13, steel: 15, hull: 14, tower: 24, bulkhead: 16, rack: 12, water: 0, hedge: 18, pond: 8, parkstone: 16, trunk: 14, bench: 9, play: 13, terminus: 18, ironwork: 10, boxcar: 16, sleepers: 12, kiosk: 14, coalheap: 10, timber: 18, hearth: 16, bartop: 14, drift: 10, machine: 16, embwall: 16, embglass: 14, embfurn: 12, embrack: 14, embhedge: 18, rubble: 16, scrap: 14, qledge: 18, qblock: 16, qplant: 18, qcabin: 16, qshed: 18, otwall: 18, otstone: 16, otfurn: 10, otstall: 10 };
+export const PAINT_FACE: Record<SolidKind, number> = { hangar: 18, cinder: 16, sbags: 13, gse: 12, bunk: 10, pallet: 10, jersey: 12, stall: 14, shopfront: 18, stack: 12, cart: 10, shrine: 16, gallery: 18, marble: 16, vitrine: 14, plinth: 22, counter: 14, sandstone: 15, concrete: 16, slate: 14, brick: 12, planter: 12, crate: 12, supply: 13, pad: 6, curb: 0, core: 0, wood: 10, sandbag: 13, steel: 15, hull: 14, tower: 24, bulkhead: 16, rack: 12, water: 0, hedge: 18, pond: 8, parkstone: 16, trunk: 14, bench: 9, play: 13, terminus: 18, ironwork: 10, boxcar: 16, sleepers: 12, kiosk: 14, coalheap: 10, timber: 18, hearth: 16, bartop: 14, drift: 10, machine: 16, embwall: 16, embglass: 14, embfurn: 12, embrack: 14, embhedge: 18, rubble: 16, scrap: 14, qledge: 18, qblock: 16, qplant: 18, qcabin: 16, qshed: 18, otwall: 18, otstone: 16, otfurn: 10, otstall: 10, rgwall: 18, rgbags: 13, rgblast: 16, rgbench: 10, rgtable: 10, rgtower: 22, rghut: 16, rgply: 16, rgberm: 20 };
 /** The sprite's own pixel height is untouched until it is baked, then its front face is stretched to this much. */
 const FACE_PER_HEIGHT = 0.5;
 const FACE_MAX = 26;
@@ -99,6 +99,16 @@ export const MATERIALS: Record<SolidKind, Material> = {
   otstone: { top: '#a39a88', grain: GRAIN, height: 38 },
   otfurn: { top: '#8a5a34', grain: GRAIN, height: 18 },
   otstall: { top: '#9a6a3a', grain: GRAIN, height: 20 },
+  // Range (themes/range*.ts paints these itself; the numbers here drive shadow reach and the loose-sprite size).
+  rgwall: { top: '#9a968a', grain: GRAIN, height: 46 },
+  rgbags: { top: '#b4a07a', grain: GRAIN, height: 30 },
+  rgblast: { top: '#8f8c84', grain: GRAIN, height: 40 },
+  rgbench: { top: '#8d6b44', grain: GRAIN, height: 18 },
+  rgtable: { top: '#6c7356', grain: GRAIN, height: 18 },
+  rgtower: { top: '#6c7356', grain: GRAIN, height: 70 },
+  rghut: { top: '#5f6a4c', grain: GRAIN, height: 44 },
+  rgply: { top: '#c9a878', grain: GRAIN, height: 46 },
+  rgberm: { top: '#7a6a4c', grain: GRAIN, height: 40 },
   // Sandbags: stacked, stitched and lit along their crowns.
   sandstone: { top: '#b4a07a', grain: { ...GRAIN, seams: 'bags', tile: 96 }, height: 46 },
   concrete: { top: '#78808c', grain: { ...GRAIN, seams: 'panel', tile: 200, rivets: true }, height: 46 },
@@ -553,6 +563,7 @@ const CORE: Record<SolidKind, { dark: string; lit: string }> = {
   embwall: { dark: '#4a463e', lit: '#6c675b' }, embglass: { dark: '#2c3f46', lit: '#4a6670' }, embfurn: { dark: '#3a2412', lit: '#5a3a20' }, embrack: { dark: '#1e242e', lit: '#323b48' }, embhedge: { dark: '#1f3a20', lit: '#38602f' },
   rubble: { dark: '#3a3833', lit: '#5a574e' }, scrap: { dark: '#3a2a1e', lit: '#5c4330' },
   qledge: { dark: '#4a463e', lit: '#6a655a' }, qblock: { dark: '#7d745e', lit: '#a2987e' }, qplant: { dark: '#3a3d44', lit: '#5a5f6a' }, qcabin: { dark: '#5a5a58', lit: '#8a8a84' }, qshed: { dark: '#2e3a32', lit: '#46584c' }, otwall: { dark: '#4a3a2a', lit: '#7a6448' }, otstone: { dark: '#4a463e', lit: '#6c675b' }, otfurn: { dark: '#3a2412', lit: '#5a3a20' }, otstall: { dark: '#3a2412', lit: '#5a3a20' },
+  rgwall: { dark: '#4a473f', lit: '#6c685c' }, rgbags: { dark: '#6e5d40', lit: '#8a7752' }, rgblast: { dark: '#4a4840', lit: '#6a665a' }, rgbench: { dark: '#3a2616', lit: '#5c4129' }, rgtable: { dark: '#2e3326', lit: '#4a5240' }, rgtower: { dark: '#2e3326', lit: '#4a5240' }, rghut: { dark: '#2a3022', lit: '#434c36' }, rgply: { dark: '#5a4428', lit: '#8a6a42' }, rgberm: { dark: '#3a3022', lit: '#5a4a34' },
   sandstone: { dark: '#6e5d40', lit: '#8a7752' },
   concrete: { dark: '#25282e', lit: '#383c44' },
   slate: { dark: '#2a2e35', lit: '#3d424b' },
@@ -1112,6 +1123,7 @@ const FRONT: Record<SolidKind, string> = {
   embwall: '#8d8676', embglass: '#52707a', embfurn: '#4a2f1a', embrack: '#262c36', embhedge: '#2c4c28', rubble: '#4e4b44', scrap: '#5a4030',
   qledge: '#57524a', qblock: '#9a9078', qplant: '#7a6424', qcabin: '#8e8b82', qshed: '#3c4c42',
   otwall: '#8a7a5e', otstone: '#6a6356', otfurn: '#4a2f1a', otstall: '#5a3a20',
+  rgwall: '#6e6a60', rgbags: '#8b7a56', rgblast: '#6a665c', rgbench: '#5c4129', rgtable: '#4a5240', rgtower: '#4a5240', rghut: '#434c36', rgply: '#9a7a4e', rgberm: '#5a4a34',
   stall: '#553a22', shopfront: '#2f2c36', stack: '#6a4e2c', cart: '#5a5f66', shrine: '#5e5a50',
   gallery: '#5a2431', marble: '#9b937f', vitrine: '#5f8087', plinth: '#7d6f55', counter: '#55371f',
   hull: '#35464c', tower: '#3f555b', bulkhead: '#454c57', rack: '#2f343c', water: '#10181c', hedge: '#2f4a2b', pond: '#22403f', parkstone: '#7b7562', trunk: '#46321f', bench: '#664a2d', play: '#8a6f2a',
