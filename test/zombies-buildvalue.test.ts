@@ -40,8 +40,9 @@ test('every turret, wall tier and utility is the best of its kind somewhere, and
 test('a step up pays at least what a second level-I copy would where the turret is built for, and a maxed turret is not twice the buy of a fresh one', () => {
   // Each turret at what it is for: the cheap sentry against the night's own mix, the scatter's walk bought, the cannon against brutes, the mortar against bloaters,
   // the coil's marks, the vent through a chokepoint.
-  const niche: Record<TurretKind, { kinds?: ZombieKind[]; metric?: Metric; gap?: boolean }> = {
-    sentry: {}, scatter: { metric: 'timeBought' }, cannon: { kinds: ['brute'] }, mortar: { metric: 'farHarm', gap: true }, tesla: { metric: 'marked' }, vent: { gap: true },
+  // The scatter's walk bought swings most from run to run, so it is judged over two seeds.
+  const niche: Record<TurretKind, { kinds?: ZombieKind[]; metric?: Metric; gap?: boolean; seeds?: number[] }> = {
+    sentry: {}, scatter: { metric: 'timeBought', seeds: [1, 2] }, cannon: { kinds: ['brute'] }, mortar: { metric: 'farHarm', gap: true }, tesla: { metric: 'marked' }, vent: { gap: true },
   };
   for (const [kind, n] of Object.entries(niche) as [TurretKind, (typeof niche)[TurretKind]][]) {
     const roi = upgradeRoi(kind, { ...n, nights: n.kinds ? [5] : [3, 5, 7], ms: 60_000 });

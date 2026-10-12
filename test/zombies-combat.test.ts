@@ -64,10 +64,12 @@ test('a plated zombie\'s plate comes off every round, unless the round pierces a
   const plated = addZombie(w, 'plated', X, Y + 200, 1000);
   shootOnce(w, p, DOWN);
   near(1000 - plated.hp, (GUNS.pistol.damage - ZOMBIES.plated.plate) * ON_HORDE);
-  const piercer = spawnAt(w, X + 300, Y);
+  // A fresh night on the same lane, so the second zombie too walks straight up the line of fire.
+  const w2 = nightWorld();
+  const piercer = spawnAt(w2, X, Y);
   piercer.perks = { 1: 'piercing' };
-  const bare = addZombie(w, 'plated', X + 300, Y + 200, 1000);
-  shootOnce(w, piercer, DOWN);
+  const bare = addZombie(w2, 'plated', X, Y + 200, 1000);
+  shootOnce(w2, piercer, DOWN);
   near(1000 - bare.hp, GUNS.pistol.damage * ON_HORDE, 'an armor-piercing round takes no notice of the plate');
 });
 

@@ -13,3 +13,4 @@ import './summit.ts';
 import './harborlife.ts';
 import './quarry.ts';
 import './plaza.ts';
+import './outpost.ts';

@@ -56,6 +56,8 @@ const coreCell = (w: World) => Math.floor(MAPS[w.map].siege!.core.x / ZOM.cell);
  */
 export function playFort(s: FortSetup): FortRun {
   const w = createWorld('ZOM', s.seed ?? 1, 'outpost');
+  // The lane stands on open ground: the Outpost's own scenery (its wire, tents and wrecks) is cleared, so the numbers measure the buildings, not the map.
+  w.walls = [];
   const run = w.run!;
   const ms = s.ms ?? 90_000, night = s.night, c = coreCell(w);
   run.night = night;

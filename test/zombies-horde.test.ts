@@ -117,9 +117,9 @@ test('no zombie bite takes more than a third of a player, however late the night
 test('a zombie turns on a squad player it can see close by and bites at its own pace', () => {
   const w = nightWorld();
   w.run!.core.hp = 1e9;
-  const p = spawnAt(w, 800, 800);
+  const p = spawnAt(w, 800, 1600);
   const before = hpOf(p);
-  addZombie(w, 'walker', 800 + ZOMBIES.walker.aggroPx - 10, 800);
+  addZombie(w, 'walker', 800 + ZOMBIES.walker.aggroPx - 10, 1600);
   // It walks the last hundred px at a pace and heading of its own, so the first bite lands a little after the first second.
   stepFor(w, 1500);
   assert.ok(Math.abs(before - hpOf(p) - ZOMBIES.walker.damage * ZOM.playerBite.mul) < 1e-9, 'one bite on its arrival, at the share a bite takes off a player');

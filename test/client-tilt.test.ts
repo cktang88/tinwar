@@ -115,11 +115,13 @@ test('crates show their wear, a squad wall its upgrade, and a spike strip lies f
   assert.equal(standsUp({ kind: 'wall', cx: 0, cy: 0, hp: 10 } as never), true);
 });
 
-test('Outpost keeps the look its shapes gave it: blocky walls sandstone, long walls concrete', () => {
-  const kinds = new Map(wallSolids(MAPS.outpost.walls.map((w) => ({ ...w, built: false }))).map((s) => [`${s.w}x${s.h}`, s.kind]));
-  assert.equal(kinds.get('100x100'), 'sandstone');
-  assert.equal(kinds.get('150x50'), 'concrete');
-  assert.equal(kinds.get('50x200'), 'concrete');
+test('Outpost walls wear their own materials: the HESCO ring, its towers and the sandbag nests', () => {
+  const solids = wallSolids(MAPS.outpost.walls.map((w) => ({ ...w, built: false })));
+  const kindAt = (x: number, y: number) => solids.find((s) => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h)?.kind;
+  assert.equal(kindAt(700, 625), 'ophesco', 'the wire');
+  assert.equal(kindAt(600, 600), 'optower', 'a corner watchtower');
+  assert.equal(kindAt(1075, 1075), 'opbags', 'a fallback nest');
+  assert.ok(solids.every((s) => s.kind.startsWith('op')), 'every wall is the theme\'s own');
 });
 
 test('a static map\'s ground baked ahead in slices is taken whole by the cache, which then bakes nothing itself', async () => {
