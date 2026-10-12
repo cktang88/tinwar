@@ -5,7 +5,8 @@ import { intercept, MUZZLE_PX } from '../../shared/sim/ballistics.ts';
 export { intercept, MUZZLE_PX };
 import type { Point } from './nav.ts';
 
-export type AimState = { angle: number; spin: number; want: number; err: number };
+/** `sway`: the idle sway (see `swayAt` in motor.ts) already in `want`, so the next tick's sway replaces it rather than piling on. */
+export type AimState = { angle: number; spin: number; want: number; err: number; sway?: number };
 
 /** `leadMul` is how this bot judges this target's lead: 1 leads exactly, below under-leads, drawn once per engagement as a person's read of one target. */
 export type Engagement = { id: number; x: number; y: number; vx: number; vy: number; acquiredTick: number; noticeAtTick: number; leadMul: number; at?: number };
@@ -19,6 +20,8 @@ export const HANDS = {
   calm: { omega: 9, zeta: 0.9, maxSpin: 240 * DEG, maxAccel: 2_500 * DEG },
   /** Caught off-angle by an enemy it has just seen (one come round its cover, or at its back): a quick turn of the head, not yet an aimed flick. */
   startle: { omega: 16, zeta: 0.8, maxSpin: 500 * DEG, maxAccel: 5_000 * DEG },
+  /** Looking round with nobody about (a lane from its spot, a sound): an unhurried sweep, never a snap. */
+  scan: { omega: 4, zeta: 1, maxSpin: 70 * DEG, maxAccel: 300 * DEG },
 } as const satisfies Record<string, Hand>;
 
 const BOT_AIM = {
@@ -81,19 +84,21 @@ export const sharpnessAgainst = (target: PlayerView) =>
  * - `readsHeld`: the odds it reads an angle as held (and does not peek it); `oddsShift`: added to its temper's `takesOdds` (lower takes worse fights);
  *   `flankMul`: its temper's odds of going round; `flankRead`: the odds a think notices its cover blown (someone come round it).
  * - `abilityOdds`: the odds a think uses an ability whose moment has come.
+ * - `fear`: how scared it is (see `FEAR`), the root of a green player's worst habits: it opens fire from too far, sprays in a panic, keeps
+ *   its distance rather than push, and runs from fire rather than reposition. Pressure (rounds cracking past, a hit, low health) raises it.
  */
 export type SkillTier = 'rookie' | 'regular' | 'veteran';
 export type SkillKnobs = {
   aimMul: number; reactMul: number; turnMul: number; lagMul: number; lead: { mean: number; spread: number };
-  sprayMul: number; patienceMul: number; readsHeld: number; oddsShift: number; flankMul: number; flankRead: number; abilityOdds: number;
+  sprayMul: number; patienceMul: number; readsHeld: number; oddsShift: number; flankMul: number; flankRead: number; abilityOdds: number; fear: number;
 };
 export type Skill = { tier: SkillTier; value: number };
 
 export const BOT_SKILL = {
   bands: { rookie: 0.5, regular: 0.75, veteran: 1 },
-  rookie: { aimMul: 2.6, reactMul: 1.35, turnMul: 0.7, lagMul: 3, lead: { mean: 0.8, spread: 0.3 }, sprayMul: 1.8, patienceMul: 0.5, readsHeld: 0.35, oddsShift: -0.3, flankMul: 0.4, flankRead: 0.35, abilityOdds: 0.5 },
-  regular: { aimMul: 1.35, reactMul: 1.12, turnMul: 0.88, lagMul: 1.6, lead: { mean: 0.9, spread: 0.2 }, sprayMul: 1.3, patienceMul: 0.8, readsHeld: 0.75, oddsShift: -0.1, flankMul: 0.8, flankRead: 0.7, abilityOdds: 0.8 },
-  veteran: { aimMul: 1, reactMul: 1, turnMul: 1, lagMul: 1, lead: BOT_AIM.leadJudgment, sprayMul: 1, patienceMul: 1, readsHeld: 1, oddsShift: 0, flankMul: 1, flankRead: 1, abilityOdds: 1 },
+  rookie: { aimMul: 2.6, reactMul: 1.35, turnMul: 0.7, lagMul: 3, lead: { mean: 0.8, spread: 0.3 }, sprayMul: 1.8, patienceMul: 0.5, readsHeld: 0.35, oddsShift: -0.3, flankMul: 0.4, flankRead: 0.35, abilityOdds: 0.5, fear: 1 },
+  regular: { aimMul: 1.35, reactMul: 1.12, turnMul: 0.88, lagMul: 1.6, lead: { mean: 0.9, spread: 0.2 }, sprayMul: 1.3, patienceMul: 0.8, readsHeld: 0.75, oddsShift: -0.1, flankMul: 0.8, flankRead: 0.7, abilityOdds: 0.8, fear: 0.3 },
+  veteran: { aimMul: 1, reactMul: 1, turnMul: 1, lagMul: 1, lead: BOT_AIM.leadJudgment, sprayMul: 1, patienceMul: 1, readsHeld: 1, oddsShift: 0, flankMul: 1, flankRead: 1, abilityOdds: 1, fear: 0 },
 } as const satisfies { bands: Record<SkillTier, number> } & Record<SkillTier, SkillKnobs>;
 
 export const tierOf = (value: number): SkillTier => (value < BOT_SKILL.bands.rookie ? 'rookie' : value < BOT_SKILL.bands.regular ? 'regular' : 'veteran');
@@ -128,6 +133,26 @@ export function skillKnobs(skill: Skill = VETERAN): SkillKnobs {
   if (v <= regularMid) return mixKnobs(BOT_SKILL.rookie, BOT_SKILL.regular, (v - rookieMid) / (regularMid - rookieMid));
   return mixKnobs(BOT_SKILL.regular, BOT_SKILL.veteran, (v - regularMid) / (bands.regular - regularMid));
 }
+
+/**
+ * Fear (`SkillKnobs.fear`) as it plays out. A scared bot's fear right now is its skill's `fear` times a share that grows with pressure
+ * (`fearNow`): `calm` of it with nothing on it, all of it pinned, hit or hurt. Then:
+ * - `judge`: it misjudges range, opening fire on an enemy out to `1 + judge x fear` times as far as a cool head would (past its gun's
+ *   reach, rounds that fall short) and reading its cone as good enough as if he stood that much nearer;
+ * - `spray`, `patience`: it holds each tap `1 + spray x fear` times longer and waits `1 - patience x fear` as long on its bloom;
+ * - `band`: it settles `1 + band x fear` times as far off as its gun's ideal, head-on and hold distances (its skill's fear, not the
+ *   moment's: it keeps its distance, a scared SMG hanging back at mid range; the farthest it lets a fight sit is a cool head's);
+ * - `push`: its temper's odds of pushing a man, times `1 - push x fear`;
+ * - `panic`: shot at in cover, the odds it runs for it (`panic x fear`) rather than shifting, peeking another way or going round.
+ * A veteran's fear is 0, so it plays as it always has.
+ */
+export const FEAR = { calm: 0.6, judge: 0.6, spray: 0.5, patience: 0.4, band: 0.25, push: 0.5, panic: 0.8 } as const;
+/** How much pressure a bot is under, 0 to 1: rounds cracking past (`suppression`), a hit in the last 1.5 s, health under half. */
+export function stressOf(suppression: number, hitAgoMs: number, hpFrac: number): number {
+  return Math.min(1, 0.6 * Math.min(1, suppression / 0.5) + (hitAgoMs <= 1500 ? 0.5 : 0) + Math.max(0, 0.5 - hpFrac));
+}
+/** Its fear right now (see `FEAR`): none for a veteran whatever the pressure. */
+export const fearNow = (k: SkillKnobs, stress: number): number => (k.fear === 0 ? 0 : k.fear * (FEAR.calm + (1 - FEAR.calm) * Math.max(0, Math.min(1, stress))));
 
 /** The sharpness a bot of skill `k` brings against a target of row `s`; a veteran's is the row itself. */
 export function skilled(s: Sharpness, k: SkillKnobs): Sharpness {
@@ -214,10 +239,11 @@ export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['fragGrenade', '
 /** Aimed before use: the throws, the knife, the shield, and the claymore, which is set facing the enemy. */
 const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'radar', 'knife', 'engineer', 'claymore']);
 
-export type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
+/** `sway`: the idle sway added into `want` (see `AimState.sway`); none on an aimed look. */
+export type Look = { want: number; spin: number; hand: Hand; d: number; err: number; sway?: number };
 
 export function aimAndTrigger(before: AimState, look: Look, wantsFire: boolean, wanted: AbilityId | null, shots: number): { aim: AimState; fire: boolean; ability: boolean; shots: number } {
-  const aim = turn({ ...before, err: look.err }, look.want, look.spin, look.hand, TICK_MS);
+  const aim = { ...turn({ ...before, err: look.err }, look.want, look.spin, look.hand, TICK_MS), sway: look.sway };
   const aimed = onTarget(aim, look.d);
   const fire = wantsFire && aimed;
   return { aim, fire, ability: wanted !== null && (aimed || !AIMED_ABILITIES.has(wanted)), shots: shots + (fire ? 1 : 0) };

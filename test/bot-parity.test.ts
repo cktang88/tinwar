@@ -81,8 +81,8 @@ test('bots and people hit each other alike: who is hit never changes the damage'
 });
 
 test('skill is a bot\'s brain only: rookies, regulars and veterans carry a person\'s gun and body stats, through a fight and their respawns', () => {
-  // The knobs are the AI's (aim, reaction, hand, lead, trigger discipline, tactics, ability use), never a stat the sim reads.
-  const knobs = ['aimMul', 'reactMul', 'turnMul', 'lagMul', 'lead', 'sprayMul', 'patienceMul', 'readsHeld', 'oddsShift', 'flankMul', 'flankRead', 'abilityOdds'];
+  // The knobs are the AI's (aim, reaction, hand, lead, trigger discipline, tactics, ability use, fear), never a stat the sim reads.
+  const knobs = ['aimMul', 'reactMul', 'turnMul', 'lagMul', 'lead', 'sprayMul', 'patienceMul', 'readsHeld', 'oddsShift', 'flankMul', 'flankRead', 'abilityOdds', 'fear'];
   for (const tier of ['rookie', 'regular', 'veteran'] as const) assert.deepEqual(Object.keys(BOT_SKILL[tier]).sort(), [...knobs].sort(), tier);
   const w = createWorld('FFA', 11, 'plaza');
   const r = () => rand(w);

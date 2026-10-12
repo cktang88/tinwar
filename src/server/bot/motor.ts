@@ -5,7 +5,7 @@ import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
 import { coolSpray, coolsAfter, sprayCap } from '../../shared/sim/trigger.ts';
-import { aimAndTrigger, aimSigma, bearingSpin, BOT_SKILL, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, skilled, slowHand, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
+import { aimAndTrigger, aimSigma, bearingSpin, BOT_SKILL, FEAR, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, skilled, slowHand, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
 import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type BotArena, type StandingLeaf } from './arena.ts';
 import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
 import type { MapDoor } from '../../shared/geom.ts';
@@ -50,6 +50,8 @@ export type Motor = {
   dodge?: Dodge | null;
   /** What the last think decided, which `motorTick` carries out every tick until the next think. */
   hold?: Hold | null;
+  /** Standing with nothing to look at: the way it looks round (a lane open from where it stands, or a sound), kept until `until` (see `scanPoint`). */
+  scan?: { at: Point; until: number } | null;
 };
 
 type Keys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
@@ -59,8 +61,8 @@ type Keys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
  * taken him in), down its route, or at a bearing fixed when it decided (a throw). `sigma` is a spray's shake.
  */
 export type Gaze =
-  | { k: 'point'; at: Point; minPx: number; hand: Hand; sigma: number; fire: boolean; follow?: boolean }
-  | { k: 'ahead' }
+  | { k: 'point'; at: Point; minPx: number; hand: Hand; sigma: number; fire: boolean; follow?: boolean; sway?: number }
+  | { k: 'ahead'; sway?: number }
   | { k: 'fixed'; want: number; d: number; hand: Hand; err?: number };
 
 /**
@@ -95,6 +97,8 @@ export type Hold = {
   wakeOnFire: boolean;
   /** It was pre-aiming an angle with nobody in sight (see `watchPoint`), so one who shows there is taken in quickly (`PRE_AIMED_REACT`). */
   watching?: boolean;
+  /** A scared bot's misjudged range (`FEAR.judge`): it fires on an enemy out to this many times its gun's reach, and reads him this much nearer. */
+  judge?: number;
   /** Whether it stood at `to` when it decided, so only arriving there later wakes it to plan the next move. */
   arrived: boolean;
   /** The nav grid it routed on (a barrel going up or coming back makes a new one), and the door on its way and whether it stood open. */
@@ -726,17 +730,70 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): Drive 
   };
 }
 
-/** How the gun points this tick for a `Gaze` (see there); `fire` whether it means to shoot there. */
-function gazeLook(g: Gaze, me: Point, mine: Point, before: AimState, route: Motor['route'], rand: () => number, follow: Point | null = null): { look: Look; fire: boolean } {
-  const rest = { want: before.want, spin: 0, d: 300 };
+/**
+ * The idle sway of a bot's gun, as a person's mouse hand never holds dead still: a slow sweep across the way it looks and a smaller,
+ * quicker wander on top, three sines at the bot's own frequencies and phases (hashed from its id, so a replay is exact and the random
+ * stream untouched), at most `SWAY_HZ` and summing to at most 1. Times its amplitude, the offset from where it means to look, and its rate (rad/s).
+ */
+const SWAY_PARTS = [{ k: 0.65, hz: [0.08, 0.14] }, { k: 0.25, hz: [0.25, 0.4] }, { k: 0.1, hz: [0.55, 0.85] }] as const;
+export function swayAt(id: number, tick: number): { off: number; rate: number } {
+  const t = tick / WORLD.tickHz;
+  let off = 0, rate = 0;
+  SWAY_PARTS.forEach((p, i) => {
+    const w = 2 * Math.PI * (p.hz[0] + (p.hz[1] - p.hz[0]) * lane(id, 10 + i)), ph = 2 * Math.PI * lane(id, 20 + i);
+    off += p.k * Math.sin(w * t + ph);
+    rate += p.k * w * Math.cos(w * t + ph);
+  });
+  return { off, rate };
+}
+const DEG = Math.PI / 180;
+/**
+ * How far a bot's gun sways (rad, see `swayAt`) with nobody to shoot: a few degrees holding an angle or a spot, wider walking (looking
+ * round the way it goes), widest scanning a lane from where it stands. At most about 30 degrees a second and never a snap: slower than a
+ * person sweeps a screen, so it widens its sight box (`botSight`) only as a person looking round would. Taken in, the aim model has it.
+ */
+export const SWAY = { hold: 3.5 * DEG, walk: 9 * DEG, scan: 16 * DEG } as const;
+/** Standing with nothing to look at, it looks down a lane this long that is open from where it stands, for `SCAN_MS` before the next. */
+const SCAN_LANE_PX = 420;
+const SCAN_MS: readonly [number, number] = [2500, 5500];
+const SCAN_LANES = 12;
+
+/**
+ * Where a bot standing with nothing to look at looks: a sound it heard, else one of the lanes open from where it stands (within a
+ * quarter turn and a bit of where it looks now, if any), kept a few seconds, as a person checks the angles round his spot.
+ */
+function scanPoint(m: Motor, v: Perception, c: IntentCtx, before: AimState): Motor['scan'] {
+  if (m.scan && v.tick < m.scan.until && (!v.lead || dist(v.lead, m.scan.at) < 1)) return m.scan;
+  const until = v.tick + Math.round(between(SCAN_MS, c.rand) / TICK_MS);
+  if (v.lead && dist(v.lead, v.me) > LOOK_HOLD_INSIDE_PX) return { at: { x: v.lead.x, y: v.lead.y }, until };
+  const lanes: Point[] = [];
+  for (let i = 0; i < SCAN_LANES; i++) {
+    const a = (i / SCAN_LANES) * 2 * Math.PI;
+    const at = { x: v.me.x + Math.cos(a) * SCAN_LANE_PX, y: v.me.y + Math.sin(a) * SCAN_LANE_PX };
+    if (clearShot(v.solids, v.me, at)) lanes.push(at);
+  }
+  const near = lanes.filter((p) => Math.abs(wrapAngle(Math.atan2(p.y - v.me.y, p.x - v.me.x) - before.angle)) < Math.PI * 0.6);
+  const pool = near.length ? near : lanes;
+  return pool.length ? { at: pool[Math.floor(c.rand() * pool.length)]!, until } : null;
+}
+
+/** How the gun points this tick for a `Gaze` (see there); `fire` whether it means to shoot there. `clock` is its id and the tick, for its sway. */
+function gazeLook(g: Gaze, me: Point, mine: Point, before: AimState, route: Motor['route'], rand: () => number, follow: Point | null = null, clock: { id: number; tick: number } | null = null): { look: Look; fire: boolean } {
+  // Where it meant to look last tick, less the sway it added then.
+  const rest = { want: before.want - (before.sway ?? 0), spin: 0, d: 300 };
+  const swayed = (look: Look, amp: number | undefined): Look => {
+    if (!amp || !clock) return look;
+    const s = swayAt(clock.id, clock.tick);
+    return { ...look, want: look.want + s.off * amp, spin: look.spin + s.rate * amp, sway: s.off * amp };
+  };
   switch (g.k) {
-    case 'ahead': return { look: { ...(lookAt(routeAhead(me, route), me, mine) ?? rest), hand: HANDS.calm, err: before.err }, fire: false };
+    case 'ahead': return { look: swayed({ ...(lookAt(routeAhead(me, route), me, mine) ?? rest), hand: HANDS.calm, err: before.err }, g.sway), fire: false };
     case 'fixed': return { look: { want: g.want, spin: 0, d: g.d, hand: g.hand, err: g.err ?? before.err }, fire: false };
     case 'point': {
       const err = g.sigma > 0 ? drift(before.err, g.sigma, TICK_MS, rand) : before.err;
       const at = lookAt(g.follow && follow ? follow : g.at, me, mine, g.minPx);
-      if (!at) return { look: { ...rest, hand: g.hand, err: before.err }, fire: false };
-      return { look: { ...at, want: at.want + (g.sigma > 0 ? err : 0), hand: g.hand, err: g.sigma > 0 ? err : before.err }, fire: g.fire };
+      if (!at) return { look: swayed({ ...rest, hand: g.hand, err: before.err }, g.sway), fire: false };
+      return { look: swayed({ ...at, want: at.want + (g.sigma > 0 ? err : 0), hand: g.hand, err: g.sigma > 0 ? err : before.err }, g.sway), fire: g.fire };
     }
   }
 }
@@ -814,6 +871,9 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const detour = crawling ? { side: (m.detour?.side === 1 ? -1 : 1) as 1 | -1, until: v.tick + CRAWL.detourTicks } : m.detour;
   const drive = keysToward({ ...m, detour }, me, way.at, v.tick);
   const gun = GUNS[me.gun];
+  // A scared bot misjudges range (`FEAR.judge`): it opens fire from further than its gun reaches, and reads its cone as fit sooner.
+  const fear = c.fear ?? 0;
+  const judge = 1 + FEAR.judge * fear;
 
   // Shot at from off its screen, it turns to where the rounds come from before it fights on (`unseenShooter`): a quick turn, as on a startle.
   const turnTo = unseenShooter(v);
@@ -828,9 +888,16 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   // With nobody in sight but someone about, it pre-aims where he would come from (`watchPoint`: the edge of the cover he is behind, or the
   // way a shot came), whatever it is doing, as a person keeps his crosshair on the angle rather than on his own feet.
   const watch = !t ? c.tac?.watch ?? null : null;
-  const faceAt = t?.p ?? turnTo ?? watch ?? s.face ?? v.lastSeen ?? (aimsAtLead(v.lead, me) ? v.lead : null);
+  const facing = t?.p ?? turnTo ?? watch ?? s.face ?? v.lastSeen ?? (aimsAtLead(v.lead, me) ? v.lead : null);
+  // Standing with nothing to look at, it looks round the lanes open from where it stands (or toward a sound), as a person checks his angles.
+  const standing = to === null || dist(me, to) < ARRIVED_PX * 2;
+  const scan = !facing && standing ? scanPoint(m, v, c, before) : null;
+  const faceAt = facing ?? scan?.at ?? null;
   const startled = turnTo !== null || (t !== undefined && faceAt === t.p && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) > STARTLE_RAD);
-  let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? slowHand(HANDS.startle, c.skill?.turnMul) : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
+  // Its gun sways a little with nobody to shoot (`SWAY`): never on an enemy in sight, nor on a startled turn toward fire.
+  const sway = t !== undefined || turnTo !== null ? 0 : !faceAt ? SWAY.walk : !!scan && faceAt === scan.at ? SWAY.scan : SWAY.hold;
+  const scanning = !!scan && faceAt === scan.at;
+  let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? slowHand(HANDS.startle, c.skill?.turnMul) : scanning ? HANDS.scan : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p, ...(sway && { sway }) } : { k: 'ahead', sway };
   const barrels = seenBarrels(snap.barrels);
   const props = seenProps(snap.props);
   let track: Hold['track'] = null;
@@ -856,8 +923,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   let look: Look, wantsFire: boolean;
   if (tracking) {
     look = trackLook(engaged!, me, mine, me.gun, track!.sharp, v.tick, before, c.rand, track!.shoot);
-    wantsFire = track!.shoot !== null || (t!.d < gun.range * 0.95 && track!.fire);
-  } else ({ look, fire: wantsFire } = gazeLook(gaze, me, mine, before, way.route, c.rand));
+    wantsFire = track!.shoot !== null || (t!.d < gun.range * 0.95 * judge && track!.fire);
+  } else ({ look, fire: wantsFire } = gazeLook(gaze, me, mine, before, way.route, c.rand, null, { id: me.id, tick: v.tick }));
 
   let throwAt: { x: number; y: number; err: number } | null = null;
   if (tracking) {
@@ -903,18 +970,20 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   }
   if (turn) {
     const g = turn.gaze as Extract<Gaze, { k: 'fixed' }>;
-    look = { ...look, want: g.want, spin: 0, d: g.d, hand: g.hand, err: g.err ?? look.err };
+    look = { ...look, want: g.want, spin: 0, d: g.d, hand: g.hand, err: g.err ?? look.err, sway: undefined };
     if (turn.holdFire) wantsFire = false;
   }
   // A planted gun moving off its spot between shots lets go of the trigger: its next round waits until it has stopped again.
   const stillToFire = style.k === 'plant' && !!dodge && !dodge.stop;
   if (stillToFire && anyKey(keys)) wantsFire = false;
   // A rookie waits less on its bloom (`patienceMul`) and holds each tap longer (`sprayMul`): it sprays more and taps less.
-  const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul * (c.skill?.patienceMul ?? 1), snap.self.perks, snap.self.suppression, c.skill?.sprayMul, me.kind);
+  // Scared, it sprays in a panic too (`FEAR.spray`, `FEAR.patience`): longer taps, less waiting on its bloom.
+  const panicSpray = 1 + FEAR.spray * fear, panicWait = 1 - FEAR.patience * fear;
+  const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul * (c.skill?.patienceMul ?? 1) * panicWait, snap.self.perks, snap.self.suppression, (c.skill?.sprayMul ?? 1) * panicSpray, me.kind);
   // Being shot, or the enemy about to walk out of its sight: the round goes now, bloom or not.
   const urgent = v.underFire || (t !== undefined && breaksSight(me, engaged, v.solids));
   const own = ownBloom(rhythm, me.gun, m.tap, snap.self.ammo, v.tick, snap.self.mag);
-  const rests = resting(rhythm, me.gun, own, { d: t?.d ?? null, still: !anyKey(keys), lateral: crossing(me, engaged), urgent, settle: snap.self.settle ?? 0, settleMs: snap.self.settleMs ?? 0 }, m.tap, v.tick);
+  const rests = resting(rhythm, me.gun, own, { d: t ? t.d / judge : null, still: !anyKey(keys), lateral: crossing(me, engaged), urgent, settle: snap.self.settle ?? 0, settleMs: snap.self.settleMs ?? 0 }, m.tap, v.tick);
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, wanted, m.shots);
   const tap = nextTap(rhythm, fire, m.tap, v.tick, own, snap.self.ammo);
   const angle = aim.angle, aimDist = Math.max(1, look.d);
@@ -940,13 +1009,13 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     tick: v.tick, to, at: heading === null && way.at !== routed.at ? way.at : null, heading, keys: keys !== drive.keys ? keys : null,
     gaze, track, turn, ability: wanted, stillToFire, reload: reloadWish, sprint: sprintWish && wanted === null, mag: snap.self.mag, rhythm, settleMs: snap.self.settleMs ?? 0, urgent,
     wakeAt: Math.min(Infinity, ...timers), wakeOnFire: style.k === 'plant' && fighting !== undefined, arrived: to !== null && dist(me, to) < ARRIVED_PX * 2,
-    nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors), ...(watch && faceAt === watch && { watching: true }),
+    nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors), ...(watch && faceAt === watch && { watching: true }), ...(judge !== 1 && { judge }),
   };
   return {
     input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false, sprint },
     motor: {
       ...walked(m, me, way.at, drive, way.route, v.tick, way.replanned, crawling),
-      stance, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }),
+      stance, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }), scan,
       ...((dodge || m.dodge) && { dodge }), hold,
     },
   };
@@ -1020,18 +1089,18 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
     if (tick >= engaged.noticeAtTick) {
       look = trackLook(engaged, me, mine, me.gun, h.track.sharp, tick, before, rand, h.track.shoot);
       d = dist(foe, me);
-      wantsFire = h.track.shoot !== null || (d < GUNS[me.gun].range * 0.95 && h.track.fire);
-    } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, foe));
-  } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, foe));
+      wantsFire = h.track.shoot !== null || (d < GUNS[me.gun].range * 0.95 * (h.judge ?? 1) && h.track.fire);
+    } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, foe, { id: me.id, tick }));
+  } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, foe, { id: me.id, tick }));
   if (h.turn) {
     const g = h.turn.gaze as Extract<Gaze, { k: 'fixed' }>;
-    look = { ...look, want: g.want, spin: 0, d: g.d, hand: g.hand, err: g.err ?? look.err };
+    look = { ...look, want: g.want, spin: 0, d: g.d, hand: g.hand, err: g.err ?? look.err, sway: undefined };
     if (h.turn.holdFire) wantsFire = false;
   }
   if (h.stillToFire && anyKey(keys)) wantsFire = false;
   const own = ownBloom(h.rhythm, me.gun, m.tap, b.ammo, tick, h.mag);
   const settleMs = h.settleMs ?? 0;
-  const rests = resting(h.rhythm, me.gun, own, { d, still: !anyKey(keys), lateral: crossing(me, engaged), urgent: !!h.urgent, settle: settleShare(b.settleLeftMs ?? 0, settleMs), settleMs }, m.tap, tick);
+  const rests = resting(h.rhythm, me.gun, own, { d: d === null ? null : d / (h.judge ?? 1), still: !anyKey(keys), lateral: crossing(me, engaged), urgent: !!h.urgent, settle: settleShare(b.settleLeftMs ?? 0, settleMs), settleMs }, m.tap, tick);
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, b.abilityReady ? h.ability : null, m.shots);
   const tap = nextTap(h.rhythm, fire, m.tap, tick, own, b.ammo);
   const reload = !fire && b.ammo < h.mag && !b.reloading && h.reload;

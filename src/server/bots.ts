@@ -2,7 +2,7 @@ import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type Bui
 import type { InputState, Loadout, Snapshot } from '../shared/protocol.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
-import { skillFor, skillKnobs, skillOf, type Skill } from './bot/aim.ts';
+import { fearNow, skillFor, skillKnobs, skillOf, stressOf, TICK_MS as BOT_TICK_MS, type Skill } from './bot/aim.ts';
 import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, skilledPersona, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { act, freshMotor, type Motor } from './bot/motor.ts';
 import { royaleThink } from './bot/royale.ts';
@@ -107,8 +107,10 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   // What it read off each enemy it saw, whom it shoots first, and where it pre-aims (see tactics.ts); a fresh life starts a fresh read.
   const { view, tactics } = readTactics(mem.intent ? mem.tactics ?? null : null, perceived.view, awareness);
   const skill = skillKnobs(mem.skill);
-  const persona = skilledPersona(PERSONALITIES[mem.persona], skill);
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)), tac: tactics, skill };
+  // Its fear right now (a rookie's grows under pressure; a veteran has none): see `FEAR`.
+  const fear = fearNow(skill, stressOf(snap.self.suppression, (snap.tick - awareness.hitTick) * BOT_TICK_MS, view.hpFrac));
+  const persona = skilledPersona(PERSONALITIES[mem.persona], skill, fear);
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)), tac: tactics, skill, ...(fear > 0 && { fear }) };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   return { input, pick: choice, mem: { ...mem, intent, awareness, motor, tactics } };

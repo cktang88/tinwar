@@ -1,3 +1,4 @@
+import { WORLD } from '../../shared/defs.ts';
 import type { MapDoor } from '../../shared/geom.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
 import { clearShot, isOpen, type NavGrid, type Point } from './nav.ts';
@@ -8,6 +9,8 @@ export type CoverIndex = { bucket: number; n: number; cells: CoverPoint[][] };
 
 const BEARINGS = 16;
 const STANDOFF = 6;
+/** Extra standoffs tried, in turn, for a cover point whose nav cell is closed (see `coverIndex`). */
+const STANDOFF_TRIES = [0, 8, 16] as const;
 const SPACING = 50;
 const SHIELD_PX = 90;
 const BUCKET_PX = 250;
@@ -54,12 +57,17 @@ export function coverIndex(nav: NavGrid, cover: readonly Rect[], radius: number,
   const cells: CoverPoint[][] = Array.from({ length: n * n }, () => []);
   const off = radius + STANDOFF;
   for (const r of cover) {
-    for (const [a, b] of offsetEdges(r, off)) {
+    // A point whose nav cell the wall's clearance closes (the grid is coarser than the standoff) is stood a little further out instead.
+    const lines = STANDOFF_TRIES.map((extra) => offsetEdges(r, off + extra));
+    lines[0]!.forEach(([a, b], j) => {
       const len = Math.hypot(b.x - a.x, b.y - a.y);
       const count = Math.max(1, Math.round(len / SPACING));
       for (let i = 0; i <= count; i++) {
-        const p = { x: a.x + ((b.x - a.x) * i) / count, y: a.y + ((b.y - a.y) * i) / count };
-        if (!isOpen(nav, p) || (doors.length && inDoorway(doors, p))) continue;
+        const at = (k: number) => { const [a2, b2] = lines[k]![j]!; return { x: a2.x + ((b2.x - a2.x) * i) / count, y: a2.y + ((b2.y - a2.y) * i) / count }; };
+        const k = STANDOFF_TRIES.findIndex((_, k) => isOpen(nav, at(k)));
+        if (k < 0) continue;
+        const p = at(k);
+        if (doors.length && inDoorway(doors, p)) continue;
         // A ray SHIELD_PX long can only meet what lies within SHIELD_PX, and `clearShot` finds that through the walls' grid.
         let shieldedBearings = 0;
         for (let k = 0; k < BEARINGS; k++) {
@@ -70,7 +78,7 @@ export function coverIndex(nav: NavGrid, cover: readonly Rect[], radius: number,
         const bx = Math.min(n - 1, Math.floor(p.x / BUCKET_PX)), by = Math.min(n - 1, Math.floor(p.y / BUCKET_PX));
         cells[by * n + bx]!.push({ ...p, shieldedBearings });
       }
-    }
+    });
   }
   return { bucket: BUCKET_PX, n, cells };
 }
@@ -90,6 +98,41 @@ export function coverNear(index: CoverIndex, at: Point, within: number): CoverPo
   return out;
 }
 
+/**
+ * A sliver more than a body's radius (a round hits anywhere within it): a spot is cover only when the whole body, and this much round it,
+ * is out of a shooter's line (a shoulder past the corner is a target a person clips). A wider margin hides it from angles no one could clip
+ * it from and leaves it fewer, deeper spots, and bots that fight from cover far less.
+ */
+export const BODY_MARGIN_PX = 3;
+/** How far short of its spot a bot may pull up (the motor's arrival slack): a cover spot must also hide it there, on the way in. */
+const ARRIVE_SLACK_PX = 14;
+const BODY_SAMPLES = [-1, -0.5, 0, 0.5, 1] as const;
+
+/**
+ * Whether any of a body at `at` (its radius and `margin` round it) lies in a clear line from `from`: the line to its centre, and to
+ * points across it at right angles to the line, out to its edge, as a round grazing a shoulder flies. A centre hidden behind a corner
+ * with a shoulder past it is exposed.
+ */
+export function bodyExposed(solids: readonly Rect[], at: Point, from: Point, margin = BODY_MARGIN_PX): boolean {
+  const dx = at.x - from.x, dy = at.y - from.y, d = Math.hypot(dx, dy);
+  if (d < 1) return true;
+  const px = -dy / d, py = dx / d, r = WORLD.playerRadius + margin;
+  return BODY_SAMPLES.some((k) => clearShot(solids, from, { x: at.x + px * r * k, y: at.y + py * r * k }));
+}
+
+/** Whether a body at `at` is wholly hidden from every one of `threats` (see `bodyExposed`). */
+export const bodyHidden = (solids: readonly Rect[], at: Point, threats: readonly Point[], margin = BODY_MARGIN_PX) =>
+  threats.every((t) => !bodyExposed(solids, at, t, margin));
+
+/** Its spot and the place it would pull up on the way in from `me`, `ARRIVE_SLACK_PX` short, both wholly hidden from every threat. */
+function hidesBody(solids: readonly Rect[], c: Point, me: Point, threats: readonly Point[]): boolean {
+  if (!bodyHidden(solids, c, threats)) return false;
+  const d = Math.hypot(me.x - c.x, me.y - c.y);
+  if (d < ARRIVE_SLACK_PX) return true;
+  const short = { x: c.x + ((me.x - c.x) / d) * ARRIVE_SLACK_PX, y: c.y + ((me.y - c.y) / d) * ARRIVE_SLACK_PX };
+  return bodyHidden(solids, short, threats, 0);
+}
+
 function peekFrom(nav: NavGrid, solids: readonly Rect[], spot: Point, threat: Point): Point | null {
   const a = Math.atan2(threat.y - spot.y, threat.x - spot.x);
   for (const step of PEEK_STEPS) {
@@ -105,7 +148,7 @@ type CoverPick = { spot: CoverPoint; peek: Point | null };
 
 export function pickCover(
   index: CoverIndex, nav: NavGrid, solids: readonly Rect[], me: Point, threats: readonly Point[],
-  opts: { reach: number; range: number; peek: boolean; taken?: readonly Point[]; takenPx?: number },
+  opts: { reach: number; range: number; peek: boolean; taken?: readonly Point[]; takenPx?: number; nearest?: boolean },
 ): CoverPick | null {
   const main = threats[0];
   if (!main) return null;
@@ -115,11 +158,12 @@ export function pickCover(
     if (opts.taken?.some((t) => Math.hypot(t.x - c.x, t.y - c.y) < (opts.takenPx ?? TAKEN_PX))) continue;
     const toMain = Math.hypot(main.x - c.x, main.y - c.y);
     const walk = Math.hypot(c.x - me.x, c.y - me.y);
-    ranked.push({ c, score: opts.peek ? walk + Math.abs(toMain - opts.range) * 0.7 : walk - toMain * 0.5 });
+    // `nearest`: the closest spot that hides it (a tuck out of a line it is being shot down), whatever its range.
+    ranked.push({ c, score: opts.nearest ? walk : opts.peek ? walk + Math.abs(toMain - opts.range) * 0.7 : walk - toMain * 0.5 });
   }
   ranked.sort((x, y) => x.score - y.score);
   for (const { c } of ranked) {
-    if (threats.some((t) => clearShot(solids, c, t))) continue;
+    if (!hidesBody(solids, c, me, threats)) continue;
     const peek = opts.peek ? peekFrom(nav, solids, c, main) : null;
     if (!opts.peek || peek) return { spot: c, peek };
   }

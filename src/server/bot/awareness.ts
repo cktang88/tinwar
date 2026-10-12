@@ -46,6 +46,9 @@ export type Perception = {
   shotAt?: ShotAt | null;
   /** Enemies in sight that hit it or fired its way lately (`SHOOTER_MS`): the ones it answers first, ahead of the one it was fighting. */
   shooters?: readonly number[];
+  /** The tick it was last hit, and by whom (lately, `SHOOTER_MS`), seen or not: a hit where it thought itself hidden is a spot that is not. */
+  hitTick?: number;
+  hitBy?: { owner: number; tick: number } | null;
 };
 
 const FORGET_MS = 8000;
@@ -179,7 +182,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
       threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS || snap.self.suppression >= SUPPRESSED_UNDER_FIRE, zones: snap.zones, solids, allies: mates,
-      shotAt, ...(shooters.length && { shooters }),
+      shotAt, ...(shooters.length && { shooters }), hitTick, hitBy,
     },
   };
 }

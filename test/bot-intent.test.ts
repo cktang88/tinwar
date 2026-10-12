@@ -181,7 +181,8 @@ test('a bot hears gunfire it cannot see within its (superhuman) earshot, roughly
 
 test('a hurt bot leaves the hiding spot a teammate is already in', () => {
   const w = emptyWorld('TDM');
-  setWalls(w, [pillarWest]);
+  // Tall enough to hide two whole bodies side by side: on a 200 px pillar the room left beside a mate is under a body, only a shoulder-out corner.
+  setWalls(w, [{ ...pillarWest, y: 850, h: 300 }]);
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' }, team: 'red' });
   spawnAt(w, 1500, 1000, { team: 'blue' });
   if (bot.life.k === 'alive') bot.life.hp = 10;
@@ -217,7 +218,8 @@ test('a peek that nobody answers stays out, and one that draws fire tucks back i
   setWalls(w, [{ x: 1040, y: 850, w: 30, h: 120 }]);
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   const enemy = spawnAt(w, 1500, 1000);
-  const out = startIntent({ k: 'peekAndHide', target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek', phaseUntil: 10 }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);
+  // Its hide spot keeps all of it behind the wall (at 940 a shoulder would show past the wall's end, and that cover reads as blown).
+  const out = startIntent({ k: 'peekAndHide', target: enemy.id, spot: { x: 1000, y: 910 }, peek: { x: 1000, y: 1000 }, phase: 'peek', phaseUntil: 10 }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);
   const quiet = decide(w, bot.id, out, { tick: 10 });
   assert.ok(quiet.k === 'peekAndHide' && quiet.phase === 'peek', 'unanswered: keeps shooting');
   const shot = decide(w, bot.id, out, { tick: 10, aware: { ...freshAwareness(), hitTick: 10 } });

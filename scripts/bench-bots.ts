@@ -8,7 +8,8 @@ import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { choosePick, effectiveStats, levelForScore, pendingPick } from '../src/shared/sim/stats.ts';
+import { choosePick, easedSpread, effectiveStats, levelForScore, pendingPick } from '../src/shared/sim/stats.ts';
+import { GUN_BAND } from '../src/server/bot/intent.ts';
 import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { BOT_SKILL, skillOf, type SkillTier } from '../src/server/bot/aim.ts';
@@ -196,7 +197,7 @@ for (const skill of isMain && minutes > 0 ? ROOM_SKILLS : []) {
  * (`strafe`) and never shoots back and never dies. Every round the bot fires is at him, so its share of rounds that miss is its aim alone
  * (its reaction, hand, tracking, lead and trigger discipline), as it would play a fight on its own gun.
  */
-export function aimRange(skill: RoomSkill, seed: number, opts: { range: number; strafe: boolean; seconds: number }): { rounds: number; hits: number } {
+export function aimRange(skill: RoomSkill, seed: number, opts: { range: number; strafe: boolean; seconds: number }): { rounds: number; hits: number; far: number; short: number; cone: number } {
   const w: World = createWorld('FFA', seed, 'plaza');
   w.walls = []; w.crates = []; w.barrels = []; w.props = [];
   const r = () => rand(w);
@@ -205,7 +206,7 @@ export function aimRange(skill: RoomSkill, seed: number, opts: { range: number; 
   const bots = new Map<number, BotMemory>([[bot.id, botMemoryFor(skill, r)]]);
   const human = addPlayer(w, 'human', HUMAN_LOADOUT, { kind: 'human', at: { x: 2000 + opts.range, y: 2000 } });
   if (human.life.k === 'alive') human.life.shieldUntil = -Infinity;
-  let rounds = 0, hits = 0, dir = 1, flipAt = 0;
+  let rounds = 0, hits = 0, far = 0, short = 0, cone = 0, dir = 1, flipAt = 0;
   const ticks = Math.round((opts.seconds * 1000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
     thinkBots(w, bots, r, { picks: false });
@@ -215,13 +216,21 @@ export function aimRange(skill: RoomSkill, seed: number, opts: { range: number; 
     setInput(w, human.id, w.tick, { ...IDLE_INPUT, up: opts.strafe && dir < 0, down: opts.strafe && dir > 0, left: away > opts.range + 60 && human.x > bot.x, right: away < opts.range - 60 && human.x > bot.x });
     step(w, TICK_MS);
     for (const e of w.events) {
-      if (e.e === 'shot' && e.owner === bot.id) rounds += GUNS[e.gun].pellets;
+      if (e.e === 'shot' && e.owner === bot.id) {
+        rounds += GUNS[e.gun].pellets;
+        // Rounds wasted past the gun's fighting band (the farthest it means to let a fight sit), and the cone each left in (degrees).
+        const d = Math.hypot(human.x - e.x, human.y - e.y);
+        if (d > GUN_BAND[e.gun][2]) far += GUNS[e.gun].pellets;
+        // Past its gun's reach the round falls short: wasted outright.
+        if (d > effectiveStats(bot).range + WORLD.playerRadius) short += GUNS[e.gun].pellets;
+        if (bot.life.k === 'alive') cone += easedSpread(bot.life.spreadHist) * (180 / Math.PI) * GUNS[e.gun].pellets;
+      }
       if (e.e === 'dmg' && e.kind === 'player' && e.victim === human.id && e.attacker === bot.id) hits++;
     }
     if (human.life.k === 'alive') human.life.hp = effectiveStats(human).maxHp;
     if (canRespawn(w, bot.id)) respawn(w, bot.id, loadout);
   }
-  return { rounds, hits };
+  return { rounds, hits, far, short, cone };
 }
 
 /**
@@ -280,12 +289,13 @@ const rangeAt = process.argv.indexOf('--aim-range');
 if (isMain && rangeAt >= 0) {
   const secs = Number(process.argv[rangeAt + 1] ?? 60);
   console.log(`\naim range: one bot against a human who never shoots back, ${secs} s x ${seeds} seeds (a random gun each seed); share of its rounds that miss`);
-  for (const [range, strafe] of [[250, false], [450, false], [250, true], [450, true]] as const) {
+  console.log('  (past band: share of its rounds fired from beyond its gun\'s fighting band; short: fired from past its reach; cone: the mean spread they left in, degrees)');
+  for (const [range, strafe] of [[250, false], [450, false], [250, true], [450, true], [700, false], [900, false]] as const) {
     const row: string[] = [];
     for (const skill of ['rookie', 'regular', 'veteran'] as const) {
-      let rounds = 0, hits = 0;
-      for (let seed = 1; seed <= seeds; seed++) { const x = aimRange(skill, seed, { range, strafe, seconds: secs }); rounds += x.rounds; hits += x.hits; }
-      row.push(`${skill} ${(100 * (1 - hits / Math.max(1, rounds))).toFixed(1)}% of ${rounds}`);
+      let rounds = 0, hits = 0, far = 0, short = 0, cone = 0;
+      for (let seed = 1; seed <= seeds; seed++) { const x = aimRange(skill, seed, { range, strafe, seconds: secs }); rounds += x.rounds; hits += x.hits; far += x.far; short += x.short; cone += x.cone; }
+      row.push(`${skill} ${(100 * (1 - hits / Math.max(1, rounds))).toFixed(1)}% of ${rounds} (past band ${(100 * far / Math.max(1, rounds)).toFixed(0)}%, short ${(100 * short / Math.max(1, rounds)).toFixed(1)}%, cone ${(cone / Math.max(1, rounds)).toFixed(2)})`);
     }
     console.log(`  ${String(range).padStart(3)} px ${strafe ? 'strafing' : 'standing'}  ${row.join('  ')}`);
   }

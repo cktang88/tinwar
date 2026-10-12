@@ -5,10 +5,11 @@ import { WORLD } from '../src/shared/defs.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { createWorld, rand, type World } from '../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { aimSigma, BOT_SKILL, engage, handFor, HANDS, sharpnessAgainst, SHARPNESS, skilled, skillFor, skillKnobs, skillOf, slowHand, VETERAN, type Engagement } from '../src/server/bot/aim.ts';
+import { aimSigma, BOT_SKILL, engage, fearNow, handFor, HANDS, sharpnessAgainst, SHARPNESS, skilled, skillFor, skillKnobs, skillOf, slowHand, VETERAN, type Engagement, type Skill } from '../src/server/bot/aim.ts';
 import { PERSONALITIES, skilledPersona } from '../src/server/bot/intent.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
-import { duels } from '../scripts/bench-bots.ts';
+import { aimRange, duels } from '../scripts/bench-bots.ts';
+import { effectiveStats } from '../src/shared/sim/stats.ts';
 
 const NAMES = Array.from({ length: 40 }, (_, i) => `player_${i}`);
 
@@ -103,4 +104,42 @@ test('seeded bench: the scripted human beats rookies more easily than veterans, 
   const kd = (x: typeof rookie) => x.k / Math.max(1, x.d);
   assert.ok(kd(rookie) > 1.5 * kd(veteran), `K/D ${kd(rookie).toFixed(2)} (rookies) vs ${kd(veteran).toFixed(2)} (veterans)`);
   assert.ok(rookie.dmg < veteran.dmg, `damage taken ${rookie.dmg.toFixed(0)} vs ${veteran.dmg.toFixed(0)}`);
+});
+
+test('scared, a rookie opens fire from further off than a veteran with the same gun: past its reach, rounds that fall short', () => {
+  /** The rounds a bot on an SMG fires in 3 s at a man held 1.15 times its reach off (he never shoots back). */
+  const rounds = (skill: Skill, seed: number) => {
+    const w = createWorld('FFA', seed, 'plaza');
+    w.walls = []; w.crates = []; w.barrels = []; w.props = [];
+    const r = () => rand(w);
+    const bot = addPlayer(w, 'bot', { weapon: 'smg', armor: 'none', color: 'red' }, { at: { x: 2000, y: 2000 } });
+    const human = addPlayer(w, 'human', { weapon: 'assault', armor: 'none', color: 'blue' }, { kind: 'human', at: { x: 2600, y: 2000 } });
+    if (human.life.k === 'alive') human.life.shieldUntil = -Infinity;
+    const off = effectiveStats(bot).range * 1.15;
+    const mems = new Map<number, BotMemory>([[bot.id, { ...newBotMemory(r, { skill }), persona: 'cautious' }]]);
+    let n = 0;
+    for (let t = 0; t < 90; t++) {
+      thinkBots(w, mems, r, { picks: false, respawn: false });
+      human.x = bot.x + off; human.y = bot.y;
+      step(w, 1000 / WORLD.tickHz);
+      n += w.events.filter((e) => e.e === 'shot' && e.owner === bot.id).length;
+    }
+    return n;
+  };
+  const seeds = [1, 2, 3, 4];
+  const rookie = seeds.reduce((a, s) => a + rounds(skillOf(0.1), s), 0), veteran = seeds.reduce((a, s) => a + rounds(VETERAN, s), 0);
+  assert.equal(veteran, 0, 'a veteran waits until he is in reach');
+  assert.ok(rookie > 10, `a rookie fires ${rookie} rounds at a man out of its reach`);
+  // A veteran knows no fear; a rookie's grows under pressure.
+  assert.equal(fearNow(skillKnobs(VETERAN), 1), 0);
+  assert.ok(fearNow(skillKnobs(skillOf(0.1)), 1) > fearNow(skillKnobs(skillOf(0.1)), 0), 'more scared under fire');
+});
+
+test('a rookie sprays longer than a veteran, so its rounds leave in a wider cone and miss more (aim range, seeded)', () => {
+  const sum = (skill: 'rookie' | 'veteran') => [1, 2, 3, 4, 5, 6].map((seed) => aimRange(skill, seed, { range: 450, strafe: false, seconds: 30 }))
+    .reduce((a, x) => ({ rounds: a.rounds + x.rounds, hits: a.hits + x.hits, cone: a.cone + x.cone }), { rounds: 0, hits: 0, cone: 0 });
+  const rookie = sum('rookie'), veteran = sum('veteran');
+  const cone = (x: typeof rookie) => x.cone / Math.max(1, x.rounds), miss = (x: typeof rookie) => 1 - x.hits / Math.max(1, x.rounds);
+  assert.ok(cone(rookie) > 1.08 * cone(veteran), `mean cone ${cone(rookie).toFixed(2)} (rookies) vs ${cone(veteran).toFixed(2)} degrees (veterans)`);
+  assert.ok(miss(rookie) > miss(veteran), `misses ${(100 * miss(rookie)).toFixed(0)}% vs ${(100 * miss(veteran)).toFixed(0)}%`);
 });

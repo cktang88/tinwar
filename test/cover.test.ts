@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
-import { bearingIndex, coverIndex, pickCover } from '../src/server/bot/cover.ts';
+import { bearingIndex, bodyExposed, coverIndex, pickCover } from '../src/server/bot/cover.ts';
 import { clearShot, navGrid } from '../src/server/bot/nav.ts';
 
 const R = WORLD.playerRadius;
@@ -45,11 +45,28 @@ test('no cover is offered beyond reach or in an open field', () => {
 });
 
 test('cover is judged against the live cover, so a spot behind a crate that broke is not offered', () => {
-  const crate = { x: 1000, y: 978, w: 44, h: 44 };
-  const { nav, index } = setup([crate]);
+  // Two crates stacked: one alone (44 px) is narrower than a body (48 px), so it hides none wholly (see the shoulder test below).
+  const crates = [{ x: 1000, y: 956, w: 44, h: 44 }, { x: 1000, y: 1000, w: 44, h: 44 }];
+  const { nav, index } = setup(crates);
   const threat = { x: 1600, y: 1000 };
-  assert.ok(pickCover(index, nav, [crate], { x: 800, y: 1000 }, [threat], { reach: 400, range: 500, peek: false }), 'the standing crate is cover');
-  assert.equal(pickCover(index, nav, [], { x: 800, y: 1000 }, [threat], { reach: 400, range: 500, peek: false }), null, 'the broken crate is not');
+  assert.ok(pickCover(index, nav, crates, { x: 800, y: 1000 }, [threat], { reach: 400, range: 500, peek: false }), 'the standing crates are cover');
+  assert.equal(pickCover(index, nav, [], { x: 800, y: 1000 }, [threat], { reach: 400, range: 500, peek: false }), null, 'the broken crates are not');
+});
+
+test('cover hides the whole body, a margin round it, from the threat: no shoulder past the corner, nor behind a lone crate narrower than a body', () => {
+  const { nav, index, rects } = setup();
+  // At an angle past the pillar's south end: the corner spot hides a bot's centre from him but not its shoulder.
+  const threat = { x: 1600, y: 1095 };
+  const corner = { x: pillar.x - R - 6, y: pillar.y + pillar.h };
+  assert.ok(!clearShot(rects, corner, threat) && bodyExposed(rects, corner, threat), 'the corner spot shows him a shoulder');
+  for (const from of [{ x: 700, y: 1000 }, { x: 700, y: 1150 }, { x: 900, y: 850 }]) {
+    const pick = pickCover(index, nav, rects, from, [threat], { reach: 500, range: 500, peek: false });
+    assert.ok(pick, `found cover from (${from.x}, ${from.y})`);
+    assert.ok(!bodyExposed(rects, pick.spot, threat), `no part of a body at ${JSON.stringify(pick.spot)} is in his line`);
+  }
+  const crate = [{ x: 1000, y: 978, w: 44, h: 44 }];
+  const lone = setup(crate);
+  assert.equal(pickCover(lone.index, lone.nav, crate, { x: 800, y: 1000 }, [{ x: 1600, y: 1000 }], { reach: 400, range: 500, peek: false }), null, 'a lone crate hides no body wholly');
 });
 
 test('each cover point records the bearings its wall shields: a west-face spot blocks shots from the east and not from the west', () => {

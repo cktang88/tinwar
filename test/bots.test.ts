@@ -152,7 +152,7 @@ test('a bot\'s movement keys hold for a while instead of flickering tick to tick
 test('a bot stepping out from cover onto the target it hid from fires at once, while one meeting it again in the open reacts afresh', () => {
   const firstShot = (k: 'peekAndHide' | 'engage') => {
     const w = emptyWorld();
-    // Its spot is behind a wall from him; its peek, a step south, is not.
+    // Its spot is behind a wall from him, all of it (at 940 a shoulder would show past the wall's end); its peek, a step south, is not.
     setWalls(w, [{ x: 1040, y: 850, w: 30, h: 120 }]);
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     const enemy = spawnAt(w, 1400, 1000);
@@ -160,7 +160,7 @@ test('a bot stepping out from cover onto the target it hid from fires at once, w
     const r = seeded(4);
     const mem = newBotMemory(r);
     const plan = k === 'peekAndHide'
-      ? { k, target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 }
+      ? { k, target: enemy.id, spot: { x: 1000, y: 910 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 }
       : { k, target: enemy.id };
     const lostLongAgo = { ...mem.motor, engaged: { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: 0, noticeAtTick: 5, leadMul: 1 }, engagedSeen: 10 };
     return botThink(snapshotFor(w, bot.id), arenaFor(w), { ...mem, persona: 'cautious', intent: { ...plan, since: w.tick, holdUntil: 1e9 }, motor: lostLongAgo }, r).input.fire;

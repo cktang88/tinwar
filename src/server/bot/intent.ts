@@ -1,9 +1,9 @@
 import { GUNS, type GunId } from '../../shared/defs.ts';
 import type { ZoneView } from '../../shared/protocol.ts';
-import { TICK_MS, type SkillKnobs } from './aim.ts';
+import { FEAR, TICK_MS, type SkillKnobs } from './aim.ts';
 import { doorLanes, openSpot, type BotArena } from './arena.ts';
 import { aimsAtLead, type Perception, type Threat } from './awareness.ts';
-import { coverNear, pickCover } from './cover.ts';
+import { bodyExposed, coverNear, pickCover } from './cover.ts';
 import { between, clearShot, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
 import type { Supply } from './supplies.ts';
 import { fightOdds, holdsAngle, type Tactics } from './tactics.ts';
@@ -33,6 +33,8 @@ export type Personality = {
    * instead, and a fight it is in that sinks `ODDS_SLACK` below them it leaves. A hothead takes worse fights than a careful one.
    */
   takesOdds: number;
+  /** A scared bot's distance (`FEAR.band`): its gun's head-on, ideal and hold distances times this (not the farthest it lets a fight sit). */
+  keepOff?: number;
 };
 
 export const PERSONALITIES: Record<PersonalityId, Personality> = {
@@ -42,12 +44,16 @@ export const PERSONALITIES: Record<PersonalityId, Personality> = {
 };
 
 /**
- * A temper played at a skill (`BOT_SKILL` in aim.ts): a rookie takes worse fights (`oddsShift`), goes round less (`flankMul`). Its slower
- * reaction and hand are in its aim (`skilled`). A veteran's temper is the temper itself.
+ * A temper played at a skill (`BOT_SKILL` in aim.ts): a rookie takes worse fights (`oddsShift`), goes round less (`flankMul`), and its fear
+ * (`FEAR`) keeps it further off (`band`, by its skill's fear) and, the more so under pressure (`fear`, its fear right now), off pushing a man.
+ * Its slower reaction and hand are in its aim (`skilled`). A veteran's temper is the temper itself.
  */
-export function skilledPersona(p: Personality, k: SkillKnobs | undefined): Personality {
-  if (!k || (k.oddsShift === 0 && k.flankMul === 1)) return p;
-  return { ...p, takesOdds: p.takesOdds + k.oddsShift, flankOdds: p.flankOdds * k.flankMul };
+export function skilledPersona(p: Personality, k: SkillKnobs | undefined, fear = 0): Personality {
+  if (!k || (k.oddsShift === 0 && k.flankMul === 1 && k.fear === 0)) return p;
+  return {
+    ...p, takesOdds: p.takesOdds + k.oddsShift, flankOdds: p.flankOdds * k.flankMul,
+    ...(k.fear > 0 && { keepOff: 1 + FEAR.band * k.fear }), pushOdds: p.pushOdds * (1 - FEAR.push * fear),
+  };
 }
 
 /** Whether a bot of this skill reads it this think (a check a veteran always makes); draws from the random stream only below a veteran. */
@@ -75,8 +81,8 @@ const HOLD_OF_IDEAL = 0.5;
 export const bandFor = (gun: GunId, p: Personality): Band => {
   const [headOn, ideal, max, rush] = GUN_BAND[gun];
   const rushes = rush === 'rush';
-  const k = p.rangeMul;
-  return { headOn: headOn * k, ideal: ideal * k, max: max * k, hold: rushes ? 0 : Math.max(headOn, ideal * HOLD_OF_IDEAL) * k, rushes };
+  const k = p.rangeMul, off = p.keepOff ?? 1;
+  return { headOn: headOn * k * off, ideal: ideal * k * off, max: max * k, hold: rushes ? 0 : Math.max(headOn, ideal * HOLD_OF_IDEAL) * k * off, rushes };
 };
 
 /** A number in [0, 1) that is the same for one bot every time, so a squad fans out the same way each time without spending the random stream. */
@@ -120,6 +126,8 @@ export type IntentCtx = {
   tac?: Tactics;
   /** Its skill's knobs (`BOT_SKILL` in aim.ts); absent, a veteran's. `persona` already carries the skill's share of the temper (`skilledPersona`). */
   skill?: SkillKnobs;
+  /** Its fear right now (`fearNow` in aim.ts): 0, or absent, for a cool head. */
+  fear?: number;
 };
 
 /** The ticks since this bot last planned (1 when it plans every tick). */
@@ -350,7 +358,7 @@ const coverSpot = (cur: Intent): Point | null =>
 const coverBlown: Interrupt = (cur, v, c) => {
   const spot = coverSpot(cur);
   if (!spot) return null;
-  const open = v.threats.filter((t) => clearShot(v.solids, spot, t.p));
+  const open = v.threats.filter((t) => bodyExposed(v.solids, spot, t.p));
   const t = open[0];
   // A rookie is slower to see that someone has come round its cover: it notices on a think only at its skill's odds.
   if (!t || !reads(c, c.skill?.flankRead)) return null;
@@ -369,6 +377,100 @@ const coverBlown: Interrupt = (cur, v, c) => {
   if (c.band.rushes && t.d < c.band.max) return { k: 'engage', target: t.p.id };
   const next = peekPlan(v, c, t, all) ?? (all.length > 1 ? peekPlan(v, c, t) : null);
   return next && next.k === 'peekAndHide' && dist(next.spot, spot) > ARRIVED_PX ? next : { k: 'engage', target: t.p.id };
+};
+
+/** A hit this soon after it took up a spot came on the way in, not at the spot. */
+const HIT_REACT_MS = 250;
+/** How long it sits pinned in one spot (rounds cracking past it, its cover chewed) before it moves: a second and a bit, by lane. */
+const PINNED_MS: readonly [number, number] = [900, 1400];
+/** Within this of its spot it is holding it (not still walking in). */
+const AT_SPOT_PX = 40;
+/** How far it looks for a tuck out of a line it is being shot down, and for another bit of cover to shift to. */
+const TUCK_PX = 160;
+const SHIFT_PX = 300;
+/** Another spot must be this far from the one it holds to count as moving. */
+const MOVED_PX = 24;
+
+/** The spot an intent sits at once there: a hide, a held angle, a reload or a heal behind cover, or a post. A peek is a peek. */
+function sitsAt(cur: Intent): { spot: Point; since: number } | null {
+  switch (cur.k) {
+    case 'hold': case 'reloadInCover': return { spot: cur.spot, since: cur.since };
+    case 'retreatAndHeal': return cur.spot ? { spot: cur.spot, since: cur.since } : null;
+    case 'takePosition': return { spot: cur.spot, since: cur.since };
+    case 'peekAndHide': return cur.phase === 'hide' ? { spot: cur.spot, since: cur.phaseSince ?? cur.since } : null;
+    default: return null;
+  }
+}
+
+/** Where the fire on it comes from, as far as it can tell: one it sees shooting it, the one who hit it as last seen, where a round at it came from. */
+function fireFrom(v: Perception, c: IntentCtx): { id: number; at: Point; t: Threat | undefined } | null {
+  const shooter = v.threats.find((t) => v.shooters?.includes(t.p.id));
+  if (shooter) return { id: shooter.p.id, at: pos(shooter), t: shooter };
+  const by = v.hitBy?.owner;
+  const sighting = by !== undefined ? c.tac?.seen.find((s) => s.id === by) : undefined;
+  if (v.shotAt && (v.tick - v.shotAt.tick) * TICK_MS < 1500) return { id: v.shotAt.owner, at: { x: v.shotAt.x, y: v.shotAt.y }, t: undefined };
+  if (sighting && by !== undefined) return { id: by, at: { x: sighting.x, y: sighting.y }, t: undefined };
+  const t = v.threats[0];
+  if (t) return { id: t.p.id, at: pos(t), t };
+  return v.lastSeen && (v.tick - v.lastSeen.seenTick) * TICK_MS < 3000 ? { id: v.lastSeen.id, at: { x: v.lastSeen.x, y: v.lastSeen.y }, t: undefined } : null;
+}
+
+/** Cover from `from` (and every enemy it sees) other than where it stands: the nearest (a tuck) or the best by its usual reckoning. */
+function otherCover(v: Perception, c: IntentCtx, from: Point, here: Point, opts: { reach: number; nearest?: boolean; peek?: boolean }) {
+  const threats = [from, ...v.threats.map(pos).filter((p) => dist(p, from) > 1)];
+  const taken = [...v.allies, here];
+  return pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, threats, { reach: opts.reach, range: c.band.ideal, peek: !!opts.peek, taken, takenPx: MOVED_PX, nearest: opts.nearest });
+}
+
+/**
+ * Taking fire where it sits behind cover: a person does not sit there and soak it. Hit where it thought itself hidden (a shoulder past the
+ * corner), it tucks into the nearest spot that hides all of it from him at once; pinned (rounds cracking past for a second or so with
+ * nothing landing), it does something about it by its temper: pushes a man caught reloading or hurt, peeks him from another angle, goes
+ * round, or shifts to other cover. A scared bot (`FEAR.panic`, a rookie under fire) runs for it instead. The new intent's own clock is
+ * its hysteresis: it reacts again only once settled in the next spot, so it never shuttles between two.
+ */
+const answerFireInCover: Interrupt = (cur, v, c) => {
+  const sits = sitsAt(cur);
+  // At a post with an enemy in sight, the fight is `engageOnSight`'s.
+  if (!sits || !v.underFire || dist(v.me, sits.spot) > AT_SPOT_PX || (cur.k === 'takePosition' && v.threats.length > 0)) return null;
+  const sinceMs = (v.tick - sits.since) * TICK_MS;
+  const hit = v.hitTick !== undefined && v.hitTick >= sits.since && (v.tick - v.hitTick) * TICK_MS <= 500 && sinceMs >= HIT_REACT_MS;
+  const pinnedMs = PINNED_MS[0] + (PINNED_MS[1] - PINNED_MS[0]) * lane(v.me.id, sits.since);
+  if (!hit && sinceMs < pinnedMs) return null;
+  const fire = fireFrom(v, c);
+  if (!fire) return null;
+  const here = { x: v.me.x, y: v.me.y };
+  const fear = c.fear ?? 0;
+  const hold = (spot: Point): Plan => ({ k: 'hold', target: fire.id, spot, watch: fire.at, until: c.tick + ticks(between(HOLD_MS, c.rand)) });
+  // Scared, it runs: to cover well away from him, or straight away from him with none.
+  if (fear > 0 && c.rand() < FEAR.panic * fear) {
+    const spot = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [fire.at], { reach: RETREAT_REACH_PX, range: 0, peek: false, taken: [...v.allies, here], takenPx: AT_SPOT_PX * 2 })?.spot ?? null;
+    return { k: 'retreatAndHeal', spot, threat: fire.at };
+  }
+  if (hit && bodyExposed(v.solids, v.me, fire.at)) {
+    // Hit where it thought itself hidden: it tucks in where all of it is out of his line.
+    const tuck = otherCover(v, c, fire.at, here, { reach: TUCK_PX, nearest: true });
+    if (tuck) return cur.k === 'reloadInCover' || cur.k === 'retreatAndHeal' ? { ...cur, spot: tuck.spot, threat: fire.at } : hold(tuck.spot);
+  }
+  // Pinned (or hit with no tuck to hand): it does something about it.
+  const t = fire.t;
+  const odds = t ? oddsOn(v, c, t) : null;
+  const seen = c.tac?.seen.find((s) => s.id === fire.id);
+  const caught = (odds !== null && odds > POKE_ODDS) || (seen?.reloadEnd !== null && seen?.reloadEnd !== undefined && seen.reloadEnd > v.tick);
+  if (caught && c.rand() < c.persona.pushOdds) return t ? { k: 'engage', target: t.p.id } : { ...searchPlan(v, c, fire.at), committed: true };
+  if (c.rand() < c.persona.peekOdds + POKE_MORE) {
+    const peek = otherCover(v, c, fire.at, here, { reach: COVER_REACH_PX, peek: true });
+    if (peek?.peek && dist(peek.spot, here) > MOVED_PX) {
+      const travel = (dist(v.me, peek.spot) / v.self.speed) * 1000;
+      return { k: 'peekAndHide', target: fire.id, spot: peek.spot, peek: peek.peek, phase: 'hide', phaseUntil: c.tick + ticks(travel + between(c.persona.hideMs, c.rand)) };
+    }
+  }
+  const outgunned = odds !== null && odds < c.persona.takesOdds;
+  if (c.rand() < c.persona.flankOdds + (outgunned ? 0.3 : 0)) return flankPlan(v, c, fire.id, fire.at);
+  const shift = otherCover(v, c, fire.at, here, { reach: SHIFT_PX });
+  if (shift) return cur.k === 'reloadInCover' || cur.k === 'retreatAndHeal' ? { ...cur, spot: shift.spot, threat: fire.at } : hold(shift.spot);
+  // No other cover about: it goes round him rather than wait to be dug out.
+  return flankPlan(v, c, fire.id, fire.at);
 };
 
 const engageOnSight: Interrupt = (cur, v, c) => {
@@ -427,7 +529,7 @@ const leaveTurnedFight: Interrupt = (cur, v, c) => {
  */
 const outOfReach = (v: Perception, t: Threat) => t.d > GUNS[v.me.gun].range;
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, leaveTurnedFight, engageOnSight, fetchSupplies, investigateGunfire];
+const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, answerFireInCover, leaveTurnedFight, engageOnSight, fetchSupplies, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
