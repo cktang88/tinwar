@@ -265,7 +265,7 @@ export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }>
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, armor: ARMORS[p.loadout.armor].points, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, knock: null, pressUntil: -Infinity, hits: [],
+    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, aliveSince: now, scoreCarry: 0, dash: null, knock: null, pressUntil: -Infinity, hits: [],
     suppression: 0, suppressedAt: -Infinity, golden: false,
     sprint: false, settleLeft: 0, sprintEndAt: -Infinity, spreadHist: [], spreadShot: 0, rushUntil: -Infinity, windUntil: -Infinity, windUsed: false, tracks: {},
   };
@@ -361,6 +361,36 @@ function catchUpMul(w: World, p: Player): number {
   if (others.length === 0) return 1;
   const average = others.reduce((sum, o) => sum + o.level, 0) / others.length;
   return p.level < average ? WORLD.catchUpMul : 1;
+}
+
+/**
+ * Every `WORLD.aliveScoreMs` a life lasts pays `WORLD.aliveScore` (a third of a kill), with the catch-up bonus like any score, so a careful
+ * player still climbs the ladder. The versus modes only, while the round is on: Zombies has its own economy and the range none.
+ */
+export function payAlive(w: World, p: Player) {
+  const life = p.life;
+  if (life.k !== 'alive' || w.run || w.range || w.match.k !== 'playing') return;
+  while (w.now - life.aliveSince >= WORLD.aliveScoreMs) {
+    life.aliveSince += WORLD.aliveScoreMs;
+    const before = p.score;
+    addScore(w, p, WORLD.aliveScore);
+    w.events.push({ e: 'gain', id: p.id, from: 'alive', xp: p.score - before });
+  }
+}
+
+/**
+ * Pays `p` for `dealt` health taken off an enemy (`WORLD.damageScore` a point, with the catch-up bonus), carrying any fraction to the next
+ * hit. The versus modes only: Zombies pays for its kills, and the range for nothing.
+ */
+export function payDamage(w: World, p: Player, dealt: number) {
+  const life = p.life;
+  if (life.k !== 'alive' || dealt <= 0 || w.run || w.range) return;
+  life.scoreCarry += dealt * WORLD.damageScore * catchUpMul(w, p);
+  const whole = Math.floor(life.scoreCarry + 1e-9);
+  if (whole <= 0) return;
+  life.scoreCarry -= whole;
+  p.score += whole;
+  p.level = Math.max(p.level, levelForScore(p.score));
 }
 
 export function addScore(w: World, p: Player, amount: number) {

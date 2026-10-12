@@ -6,7 +6,7 @@ import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, spawnAt } from './helpers.ts';
+import { emptyWorld, medalPay, spawnAt } from './helpers.ts';
 
 /** `killer` finishes `victim` with one big blow, and the kill event that follows. */
 function slay(w: World, killer: Player, victim: Player): Extract<GameEvent, { e: 'kill' }> {
@@ -51,10 +51,14 @@ test('ending a long streak pays a shutdown bonus and tells everyone the streak i
   assert.equal(hero.lifeKills, STREAK.shutdownAt);
   const seen = snapshotFor(w, stopper.id).players.find((p) => p.id === hero.id);
   assert.equal(seen?.streak, STREAK.shutdownAt, 'others see the streak');
+  // Level with the hero, so no catch-up bonus rides on the damage.
+  stopper.level = hero.level;
   const before = stopper.score;
   const ev = slay(w, stopper, hero);
   assert.equal(ev.ended, STREAK.shutdownAt);
-  assert.equal(stopper.score - before, WORLD.killScore + STREAK.shutdownScore, 'the shutdown medal pays the bonus');
+  // The kill pays the 100 damage it did, and the shutdown medal its bonus (with any other medal the kill earned).
+  assert.ok(w.events.some((e) => e.e === 'medal' && e.medal === 'shutdown'), 'the shutdown medal');
+  assert.equal(stopper.score - before, WORLD.killScore + medalPay(w.events, stopper.id), 'the shutdown medal pays the bonus');
 });
 
 test('your killer becomes your nemesis, and killing them back pays revenge once', () => {
@@ -67,7 +71,8 @@ test('your killer becomes your nemesis, and killing them back pays revenge once'
   const before = b.score;
   const ev = slay(w, b, a);
   assert.equal(ev.revenge, true);
-  assert.equal(b.score - before, WORLD.killScore + STREAK.revengeScore);
+  assert.ok(w.events.some((e) => e.e === 'medal' && e.medal === 'revenge'), 'the revenge medal');
+  assert.equal(b.score - before, WORLD.killScore + medalPay(w.events, b.id));
   assert.equal(b.nemesis, null, 'revenge settles the score');
   assert.equal(a.nemesis, b.id, 'and the victim now holds the grudge');
 });

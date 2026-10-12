@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WORLD } from '../src/shared/defs.ts';
+import { MEDALS } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -8,7 +8,7 @@ import { choosePick } from '../src/shared/sim/stats.ts';
 import { createWorld } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, grantPerks, medalPay, offerPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
-test('killing a hunted player pays the bounty on top of the kill score, and the kill says so', () => {
+test('killing a hunted player pays the bounty on top of the damage, and the kill says so', () => {
   const w = emptyWorld();
   w.firstBlood = true;
   const a = spawnAt(w, 500, 500);
@@ -26,8 +26,9 @@ test('killing a hunted player pays the bounty on top of the kill score, and the 
     const medals = events.flatMap((e) => (e.e === 'medal' ? [e.medal] : []));
     return { gained: a.score - before - medalPay(events.filter((e) => e.e === 'medal' && e.medal !== 'bounty'), a.id), bounty: kill?.e === 'kill' && kill.bounty, paid: medals.includes('bounty') };
   };
-  assert.deepEqual(killOne('pistol'), { gained: WORLD.killScore, bounty: false, paid: false });
-  assert.deepEqual(killOne('executioner'), { gained: WORLD.killScore + WORLD.bountyScore, bounty: true, paid: true }, 'the bounty medal pays the bounty');
+  // Each victim stands on 1 health, so the kill's damage pays 1.
+  assert.deepEqual(killOne('pistol'), { gained: 1, bounty: false, paid: false });
+  assert.deepEqual(killOne('executioner'), { gained: 1 + MEDALS.bounty.score, bounty: true, paid: true }, 'the bounty medal pays the bounty');
 });
 
 test('every enemy sees a hunted player on the minimap as a ping; teammates see an ally, not a threat', () => {

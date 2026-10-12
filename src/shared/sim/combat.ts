@@ -1,4 +1,4 @@
-import { armorBlock, GUNS, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
+import { armorBlock, EASY_MODE, GUNS, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
 import { blastDoors } from './doors.ts';
 import { INTERP_DELAY_MS, roundPasses, type Team } from '../protocol.ts';
 import { flightSec, flownAfter } from './ballistics.ts';
@@ -13,7 +13,7 @@ import { blastTargets, targetHits } from './targets.ts';
 import { damageZombie } from './run.ts';
 import { blastShove, bulletShove, shovePlayer, shoveZombie } from './knock.ts';
 import { blastOnZombie, holdZombie, roundOnZombie, turretHit, zombieShove } from './zomroles.ts';
-import { addScore, effectiveStats, falloffMul, falloffStretchFor, hasPerk, isHunted, PERK_RULES } from './stats.ts';
+import { addScore, effectiveStats, falloffMul, falloffStretchFor, hasPerk, isHunted, payDamage, PERK_RULES } from './stats.ts';
 import { braceShoveMul, sneakMul, topUp } from './zomperks.ts';
 import { areFriends, barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
@@ -63,6 +63,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
   if (src.via === 'blast' && hasPerk(victim, 'demolitions')) amount *= PERK_RULES.demolitions.takenMul;
+  if (a?.kind === 'bot' && victim.easy) amount *= EASY_MODE.botDamage;
   if (w.now < life.windUntil) amount *= PERK_RULES.secondWind.damageMul;
   const felt = amount;
   if (!src.piercing) ({ amount, points: life.armor } = armorBlock(victim.loadout.armor, life.armor, amount));
@@ -73,6 +74,9 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   const dealt = before - Math.max(0, life.hp);
   if (a && a.id !== victim.id) {
     life.hits.push({ by: a.id, at: w.now, dealt });
+    // Damage pays both ways: the attacker for what they did, the victim for what they took and lived through (`WORLD.damageScore`).
+    payDamage(w, a, dealt);
+    if (life.hp > 0) payDamage(w, victim, dealt);
     perkOnHit(w, a, felt, amount > 0 ? dealt / amount : 0, victim);
     // Recon shows whoever hurt its holder on their minimap, as a Tracker mark does; a Ninja never shows.
     if (hasPerk(victim, 'recon') && !hasPerk(a, 'ninja')) life.tracks[a.id] = w.now + PERK_RULES.recon.ms;
@@ -149,19 +153,18 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
     e: 'kill', killer: named?.name ?? '', victim: victim.name, killerId: named?.id ?? null, victimId: victim.id, weapon: label, bounty,
     assisters: assisters.map((p) => p.id), ...(knock && { knock: true as const }), ended, revenge,
   });
-  for (const p of assisters) addScore(w, p, WORLD.assistScore);
   if (!credited) return;
   credited.kills++;
   if (credited.life.k === 'dead') {
     // A kill landed after its maker died (a grenade, a claymore, a slow round): the life it belongs to was paid when it ended, so this one
     // is paid on its own record; it extends no streak and earns no medal for a life that is over.
-    w.lifeRecords.push({ id: credited.id, name: credited.name, kills: 1, score: WORLD.killScore, died: false });
+    w.lifeRecords.push({ id: credited.id, name: credited.name, kills: 1, score: 0, died: false });
     MODES[w.mode].onKill(w, credited, victim);
     return;
   }
   credited.lifeKills++;
   if (revenge) credited.nemesis = null;
-  addScore(w, credited, WORLD.killScore);
+  // A kill pays nothing flat: its damage already paid (`payDamage`); its medals, bounty and streak bonuses pay on top.
   // Every medal one kill earns is paid and announced, however many there are.
   // Kaboom and the chain's kills are for the one who set the barrel off, not for whoever is credited with a victim the barrel finished.
   const barrel = how.chain !== undefined && credited === killer && credited.id !== victim.id;

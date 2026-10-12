@@ -114,7 +114,7 @@ test('a player finished by their own blast gives the kill, bounty and team point
   assert.equal(victim.life.k, 'dead');
   assert.ok(kill?.e === 'kill');
   assert.deepEqual({ killerId: kill.killerId, bounty: kill.bounty }, { killerId: most.id, bounty: true });
-  assert.deepEqual({ kills: most.kills, score: most.score, red: w.teamScore.red }, { kills: 1, score: WORLD.killScore + medalPay(w.events, most.id), red: 1 });
+  assert.deepEqual({ kills: most.kills, score: most.score, red: w.teamScore.red }, { kills: 1, score: 50 + medalPay(w.events, most.id), red: 1 }, 'paid its 50 damage and its medals');
   assert.deepEqual(w.events.flatMap((e) => (e.e === 'medal' ? [e.medal] : [])), ['firstBlood', 'longShot', 'bounty'], 'the bounty is paid as its medal');
   assert.deepEqual({ kills: less.kills, victimKills: victim.kills }, { kills: 0, victimKills: 0 });
 });

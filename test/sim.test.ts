@@ -4,7 +4,7 @@ import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, MEDALS, WORLD, type ArmorId
 import { MAPS } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { explode } from '../src/shared/sim/combat.ts';
+import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
 import { createWorld, rand, type Player } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
@@ -64,14 +64,15 @@ test('walls stop bullets', () => {
   assert.ok(hpOf(b) < WORLD.baseHp, 'same shot without the wall hits');
 });
 
-test('kills award killScore and open picks at the level thresholds', () => {
+test('kills pay their damage and open picks at the level thresholds', () => {
   const w = emptyWorld();
   w.firstBlood = true;
   const a = spawnAt(w, 500, 500);
+  // A kill from full health pays its 100 damage (`WORLD.damageScore`).
   const killOne = () => {
     const v = spawnAt(w, 650, 500);
-    if (v.life.k === 'alive') v.life.hp = 1;
-    shootOnce(w, a, 0);
+    if (v.life.k === 'alive') v.life.shieldUntil = -Infinity;
+    damagePlayer(w, v, 10_000, { attacker: a, team: null, label: 'test', piercing: true, via: 'bullet', fromX: a.x, fromY: a.y });
     assert.equal(v.life.k, 'dead');
   };
   killOne();
@@ -82,7 +83,7 @@ test('kills award killScore and open picks at the level thresholds', () => {
   assert.equal(self.kills, 1);
 
   killOne();
-  assert.equal(a.score, 2 * WORLD.killScore + MEDALS.doubleKill.score + MEDALS.doubleTap.score, 'a second kill this soon is a double, and from the same magazine a Double Tap');
+  assert.equal(a.score, 2 * WORLD.killScore + MEDALS.doubleKill.score, 'a second kill this soon is a double');
   while (a.score < LEVELS[1].score) killOne();
   assert.deepEqual([a.level, snapshotFor(w, a.id).self.pending], [1, { level: 1, k: 'perk', tier: 1 }], 'the attachment comes first');
   while (a.score < LEVELS[2].score) killOne();

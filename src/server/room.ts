@@ -2,6 +2,7 @@ import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
 import { CAREER_PAY, CAREER_TIERS, GUN_IDS, GUNS, MAX_LEVEL, NIGHTS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, rotationMap, type MapId } from '../shared/maps.ts';
+import { applyCheat, cheatFor } from './cheats.ts';
 import { FRIEND_INVITE_SHOWN_MS, parseClientMsg, type ClientMsg, type FriendAction, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
@@ -412,6 +413,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         client.lastChatAt = now;
         const p = world.players.get(id);
         if (!p) return;
+        // A cheat code is applied and told only to its typist, never shown in chat (see cheats.ts).
+        const cheat = cheatFor(msg.text);
+        if (cheat) { send(client.ws, { t: 'chat', from: '', text: applyCheat(p, cheat), team: null }); return; }
         const text = moderator.mask(msg.text);
         for (const c of joined()) send(c.ws, { t: 'chat', from: p.name, text, team: p.team });
         return;

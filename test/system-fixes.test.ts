@@ -285,3 +285,36 @@ test('client: movement prediction drops sprint on a quick click, as the server d
   pred = predictInput(pred, { seq: 2, input: { ...IDLE_INPUT, right: true, sprint: true, shots: 1 }, dtMs: TICK_MS, ability: null }, [], pace, 0, 6000);
   assert.ok(Math.abs(pred.afterNewest!.x - x1 - (200 * TICK_MS) / 1000) < 0.01, `walk pace on the click's tick (${pred.afterNewest!.x - x1})`);
 });
+
+test('chat cheats: a code works for its typist only, never shows in chat, and lives only on the server', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const { createRoom } = await import('../src/server/room.ts');
+  const { fakeSocket, PISTOL } = await import('./helpers.ts');
+  const { LEVELS, WORLD } = await import('../src/shared/defs.ts');
+  const { damagePlayer } = await import('../src/shared/sim/combat.ts');
+  const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as Parameters<typeof createRoom>[3];
+  const room = createRoom('c-x', 'FFA', 1, accounts);
+  const a = fakeSocket(), b = fakeSocket();
+  try {
+    for (const s of [a, b]) room.connect(s.socket);
+    a.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5 });
+    b.send({ t: 'join', name: 'Ben', loadout: PISTOL, aspect: 1.5 });
+    const ann = room.world.players.get((a.sent.find((m) => m.t === 'welcome') as { id: number }).id)!;
+    a.send({ t: 'chat', text: '!levelup' });
+    assert.equal(ann.level, 1, 'one level up');
+    assert.ok(ann.score >= LEVELS[1]!.score);
+    assert.ok(!b.sent.some((m) => m.t === 'chat' && m.text.includes('levelup')), 'nobody else sees the code');
+    await new Promise((r) => setTimeout(r, 1100));
+    a.send({ t: 'chat', text: '!EasyMode ' });
+    assert.equal(ann.easy, true);
+    const bot = [...room.world.players.values()].find((p) => p.kind === 'bot')!;
+    if (ann.life.k === 'alive') { ann.life.shieldUntil = -Infinity; ann.life.hp = 100; }
+    damagePlayer(room.world, ann, 40, { attacker: bot, team: bot.team, label: 'test', piercing: true, via: 'bullet', fromX: bot.x, fromY: bot.y });
+    assert.ok(ann.life.k === 'alive' && Math.abs(ann.life.hp - 80) < 1e-9, `half of a bot's 40 (hp ${ann.life.k === 'alive' ? ann.life.hp : 0})`);
+    assert.ok(WORLD.baseHp === 100);
+  } finally {
+    room.close(); a.close(); b.close();
+  }
+  const client = readdirSync('src/client').filter((f) => f.endsWith('.ts')).map((f) => readFileSync(`src/client/${f}`, 'utf8')).join('\n');
+  assert.ok(!client.includes('!levelup') && !client.includes('!easymode') && !client.includes('cheats.ts'), 'no code or cheat module in the page');
+});

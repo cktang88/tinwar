@@ -12,7 +12,7 @@ import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCall
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, settleShare, spreadFor, sprintWanted, easeDownTicks, easeSpread, easedSpread } from './sim/stats.ts';
+import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, payAlive, PERK_RULES, resetProgress, rushMul, settleShare, spreadFor, sprintWanted, easeDownTicks, easeSpread, easedSpread } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { crateRect, freshFeats, friendSpawn, IDLE_INPUT, newId, solidRects, spawnPoint, unfriend, friendsOf, type Bullet, type Player, type World } from './sim/world.ts';
 
@@ -182,7 +182,7 @@ export function step(w: World, dtMs: number): void {
   w.now += dtMs;
   w.tick++;
   const dt = dtMs / 1000;
-  for (const p of playersThisTick(w)) tickPlayer(w, p, dtMs);
+  for (const p of playersThisTick(w)) { tickPlayer(w, p, dtMs); payAlive(w, p); }
   tickDoors(w, dtMs);
   for (const p of w.players.values()) pingHunted(w, p);
   tickBullets(w, dt);

@@ -420,6 +420,9 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
 export type PlayerKind = (typeof PLAYER_KINDS)[number];
+/** Easy mode, a chat cheat: the share of a bot's damage that reaches its player. */
+export const EASY_MODE = { botDamage: 0.5 } as const;
+
 export type Pick = { k: 'perk'; tier: Tier; /** The tier-2 perks offered this life (`TIER2_OFFER` of the pool, drawn at spawn); absent means the whole tier. */ offer?: readonly PerkId[] } | { k: 'evolve' };
 export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
@@ -429,8 +432,8 @@ export const LEVELS = [
   // and the second around the sixth or seventh, with the attachment before the first and the two perks between them, so a
   // pick comes about every kill. Set on the score a life really has after each kill, medals included
   // (scripts/level-scale.ts prints it, and test/balance.test.ts holds it).
-  { score: 0, pick: null }, { score: 220, pick: { k: 'perk', tier: 1 } }, { score: 450, pick: { k: 'evolve' } },
-  { score: 700, pick: { k: 'perk', tier: 2 } }, { score: 900, pick: { k: 'perk', tier: 3 } }, { score: 1100, pick: { k: 'evolve' } },
+  { score: 0, pick: null }, { score: 240, pick: { k: 'perk', tier: 1 } }, { score: 500, pick: { k: 'evolve' } },
+  { score: 770, pick: { k: 'perk', tier: 2 } }, { score: 990, pick: { k: 'perk', tier: 3 } }, { score: 1210, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
 type Attachment = (typeof PERK_TIERS)[1][number];
@@ -556,6 +559,9 @@ export const MEDALS: Record<MedalId, { name: string; desc: string; score: number
   arsonist: { name: 'Arsonist', desc: 'Kill with a burning oil slick you spilled', score: 40, tier: 'bronze' },
   picasso: { name: 'Picasso', desc: 'Splatter a paint can over an enemy', score: 25, tier: 'bronze' },
 };
+/** Every medal pays this share of the score it lists: 40% less than it once did, now that damage and staying alive pay too. */
+export const MEDAL_PAY = 0.6;
+for (const m of Object.values(MEDALS)) m.score = Math.round(m.score * MEDAL_PAY);
 /** The streak at which each streak medal is earned. */
 export const STREAK_MEDALS: readonly (readonly [number, MedalId])[] = [[3, 'onFire'], [5, 'rampage'], [8, 'unstoppable'], [12, 'untouchable'], [20, 'legendary']];
 /** The chain of kills each multi-kill medal names, from the second kill. */
@@ -731,9 +737,18 @@ export const WORLD = {
   viewRadius: 700,
   crateHp: 40,
   crateScore: 10,
+  /**
+   * Score for damage: this much per point of health taken off an enemy, so a kill from full health comes to 100 (its damage), and 37 on one
+   * enemy and 63 on another count the same as one kill. It replaces a flat kill score and assists: whoever does the damage is paid for it.
+   * Damage taken from an enemy pays the same (a lethal hit's score dies with the life).
+   */
+  damageScore: 1,
+  /** What a kill from full health comes to: its 100 damage (`baseHp` x `damageScore`). Paid as damage, never flat; a yardstick for the ladder. */
   killScore: 100,
   bountyScore: 150,
-  assistScore: 50,
+  /** Staying alive pays too: `aliveScore` (a third of a kill) for every `aliveScoreMs` of a life, in the versus modes. */
+  aliveScore: 33,
+  aliveScoreMs: 30_000,
   /** Score multiplier while your level trails the other living players' average. */
   catchUpMul: 1.5,
   respawnMs: 3000,

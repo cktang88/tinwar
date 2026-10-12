@@ -31,6 +31,10 @@ export type Life =
     lastDamageAt: number;
     lastMoveAt: number;
     shieldUntil: number;
+    /** When this life was last paid for staying alive (see `WORLD.aliveScore`); it starts at the spawn. */
+    aliveSince: number;
+    /** Damage score not yet a whole point (see `payDamage`), so chip damage is never lost to rounding. */
+    scoreCarry: number;
     dash: Dash | null;
     /** A shove from a hit still bleeding off, in px/s (see `KNOCK`); moves the body through the same collision as a step. */
     knock: Knock | null;
@@ -109,6 +113,8 @@ export type Player = {
   abilityReadyAt: number;
   /** Until when an enemy's radar sensor has this player on everyone's minimap (see `RADAR`); 0 for never. */
   taggedUntil: number;
+  /** Easy mode (a chat cheat, see the server's cheats.ts): bots deal this player `EASY_MODE.botDamage` of their damage. */
+  easy?: boolean;
   /** The tier-2 perks this life's pick offers, drawn from the world's rng at spawn. */
   tier2Offer: readonly PerkId[];
 };

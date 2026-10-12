@@ -6,31 +6,31 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, grantPerks, hpOf, offerPerks, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, hpOf, medalPay, offerPerks, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+import type { GameEvent } from '../src/shared/protocol.ts';
 
 const pendingOf = (w: World, p: Player) => snapshotFor(w, p.id).self.pending;
 const gunOf = (w: World, p: Player) => snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.gun;
 
-test('four quick kills and ten crates in one life open the attachment, the first evolve and the tier-2 perk, the evolve offered first', () => {
+test('five quick kills from full health and ten crates in one life open the attachment, the first evolve and the tier-2 perk, the evolve offered first', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  for (let i = 0; i < 4; i++) {
+  const events: { e: string }[] = [];
+  for (let i = 0; i < 5; i++) {
     const v = spawnAt(w, 650, 500);
-    if (v.life.k === 'alive') v.life.hp = 1;
-    shootOnce(w, a, 0);
+    if (v.life.k === 'alive') v.life.shieldUntil = -Infinity;
+    damagePlayer(w, v, 10_000, { attacker: a, team: null, label: 'test', piercing: true, via: 'bullet', fromX: a.x, fromY: a.y });
     assert.equal(v.life.k, 'dead');
+    events.push(...w.events);
+    w.events.length = 0;
     w.players.delete(v.id);
   }
-  press(w, a, { reload: true });
-  run(w, GUNS.pistol.reloadMs + 100);
-  press(w, a, {});
   for (let i = 0; i < 10; i++) {
     w.crates.push({ id: 900 + i, x: 600, y: 478, size: 44, hp: 1, respawnAt: null });
     shootOnce(w, a, 0);
   }
-  // The second kill from the pistol's first magazine is a Double Tap as well.
-  const medals = ['firstBlood', 'doubleKill', 'doubleTap', 'tripleKill', 'onFire', 'quadKill'] as const;
-  assert.equal(a.score, 4 * WORLD.killScore + medals.reduce((s, m) => s + MEDALS[m].score, 0) + 10 * WORLD.crateScore, 'four quick kills earn their medals too');
+  // Each kill pays its 100 damage (`WORLD.damageScore`), and the quick ones their medals.
+  assert.equal(a.score, 5 * WORLD.killScore + medalPay(events as GameEvent[], a.id) + 10 * WORLD.crateScore, 'five quick kills earn their damage and medals');
   assert.equal(a.level, 3, 'past the tier-2 perk, short of the ability');
   assert.deepEqual(pendingOf(w, a), { level: 2, k: 'evolve' }, 'the evolve comes before the unchosen attachment');
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
@@ -39,7 +39,7 @@ test('four quick kills and ten crates in one life open the attachment, the first
   assert.deepEqual(pendingOf(w, a), { level: 3, k: 'perk', tier: 2, offer: a.tier2Offer }, 'then the tier-2 perk');
 });
 
-test('a life of bare kills, with only the streak medals, opens its picks at kills 3, 5, 7, 8 and 10; medals bring them sooner', () => {
+test('a life of bare kills, with only the streak medals, opens its picks at kills 3, 5, 8 and 9; medals bring them sooner', () => {
   const w = emptyWorld();
   w.firstBlood = true;
   const a = spawnAt(w, 500, 500);
@@ -52,7 +52,7 @@ test('a life of bare kills, with only the streak medals, opens its picks at kill
     w.players.delete(v.id);
     while (reachedAt.length < a.level) reachedAt.push(kill);
   }
-  assert.deepEqual(reachedAt, [3, 5, 7, 8, 10]);
+  assert.deepEqual(reachedAt, [3, 5, 8, 9]);
   assert.ok(LEVELS[2]!.score > 4 * WORLD.killScore, 'the first evolve takes more than four bare kills');
 });
 
@@ -164,9 +164,12 @@ test('score is multiplied while your level trails the other living players\' ave
       if (!o.alive) p.life = { k: 'dead', respawnAt: Infinity };
     });
     const v = spawnAt(w, 650, 500);
-    if (v.life.k === 'alive') v.life.hp = 1;
+    if (v.life.k === 'alive') v.life.shieldUntil = -Infinity;
+    // Damage pays while the victim still stands, so the victim counts among the living: at the shooter's own level, it moves no average.
+    v.level = myLevel;
     w.firstBlood = true;
-    shootOnce(w, a, 0);
+    // A kill from full health: its 100 damage is the score (`WORLD.damageScore`).
+    damagePlayer(w, v, 10_000, { attacker: a, team: null, label: 'test', piercing: true, via: 'bullet', fromX: a.x, fromY: a.y });
     return a.score;
   };
   const boosted = Math.round(WORLD.killScore * WORLD.catchUpMul);
@@ -268,7 +271,7 @@ test('nothing in flight hurts a player once the round is over', () => {
   assert.equal(hpOf(b), WORLD.baseHp);
 });
 
-test('another attacker who took 30% of the victim\'s health gets the assist score, and the kill names them', () => {
+test('everyone is paid the damage they did; an attacker who took 30% of the victim\'s health is named as an assist', () => {
   const w = emptyWorld();
   const helper = spawnAt(w, 500, 500);
   const chipper = spawnAt(w, 500, 900);
@@ -281,7 +284,8 @@ test('another attacker who took 30% of the victim\'s health gets the assist scor
   hit(killer, 100);
   const k = w.events.find((e) => e.e === 'kill');
   assert.deepEqual(k?.e === 'kill' && k.assisters, [helper.id]);
-  assert.deepEqual([helper.score, chipper.score, killer.score], [WORLD.assistScore, 0, WORLD.killScore]);
+  // Score is the damage each did: the helper's 30, the chipper's 29, and the killer's last 41 of the victim's 100.
+  assert.deepEqual([helper.score, chipper.score, killer.score], [30, 29, 41]);
 });
 
 test('a pick is taken only for the open level: a stale or skipped-ahead pick is refused and changes nothing', () => {

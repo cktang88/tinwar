@@ -369,7 +369,7 @@ function drawAssist({ ctx, s, now }: Hud, at: Point) {
   const k = (now - assist.born) / ASSIST_MS;
   if (k < 0 || k >= 1) return;
   ctx.globalAlpha = 1 - k * k;
-  outlined(ctx, `+${WORLD.assistScore} assist`, at.x, at.y - 30 - 16 * k, TYPE.body, PALETTE.gold, 800);
+  outlined(ctx, 'assist', at.x, at.y - 30 - 16 * k, TYPE.body, PALETTE.gold, 800);
   ctx.globalAlpha = 1;
 }
 

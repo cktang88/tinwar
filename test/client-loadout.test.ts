@@ -43,9 +43,9 @@ test('every slot has a short label, a name and what it does', () => {
 });
 
 test('the progress line says what is next and how far, in words', () => {
-  assert.deepEqual(progressLine(0, 120, null), { level: 1, text: 'Next: Attachment · 120 / 220', next: 'Attachment', frac: 120 / 220, pick: false });
-  assert.equal(progressLine(1, 300, null).text, 'Next: Evolve · 300 / 450');
-  assert.equal(progressLine(3, 760, null).text, 'Next: Ability · 760 / 900');
+  assert.deepEqual(progressLine(0, 120, null), { level: 1, text: 'Next: Attachment · 120 / 240', next: 'Attachment', frac: 120 / 240, pick: false });
+  assert.equal(progressLine(1, 300, null).text, 'Next: Evolve · 300 / 500');
+  assert.equal(progressLine(3, 800, null).text, 'Next: Ability · 800 / 990');
   assert.equal(progressLine(3, 760, { level: 3, k: 'perk', tier: 2 }).text, 'Pick a perk', 'a waiting pick says so');
   assert.deepEqual(progressLine(5, 1340, null), { level: 6, text: 'Score 1340', next: null, frac: 1, pick: false });
 });
@@ -97,7 +97,7 @@ const ALL = { me: { gun: 'phantom' as const, level: 5, score: 1340, hunted: true
 test('drawn with nothing unlocked, the HUD shows the progress line and no slots', () => {
   const texts = draw(snap({ me: { level: 0, score: 120 } })).map((d) => d.text);
   assert.deepEqual(drawnLoadout().slots, []);
-  assert.ok(texts.includes('Attachment · 120 / 220'), 'the next unlock in words');
+  assert.ok(texts.includes('Attachment · 120 / 240'), 'the next unlock in words');
   assert.ok(!texts.some((t) => /^at \d+$/.test(t)), 'no "at 900" lock note');
 });
 
