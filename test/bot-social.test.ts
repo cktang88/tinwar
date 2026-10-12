@@ -14,6 +14,7 @@ import { makeModerator } from '../src/server/moderation.ts';
 import {
   bankLine, CAPS, cleanLine, freshSpin, LINES, makeSocial, noteHumanChat, noteHumanEmote, socialHoldsFire, socialTick, spareTruce, styled, traitsFor, typo,
   watchSpin, threatened, clearAlong, type GoofKind, type LineSource, type Social,
+  FOLLOWUP_GAP_MS,
 } from '../src/server/bot/social.ts';
 import { emptyWorld, spawnAt } from './helpers.ts';
 
@@ -275,16 +276,33 @@ function session(seed: number, minutes: number) {
 
 test('a seeded room: a few lines and emotes, most bots silent, the caps kept, no goof under threat', () => {
   const minutes = 4;
-  const { mems, rec, unsafe } = session(3, minutes);
+  const { w, mems, rec, unsafe } = session(3, minutes);
   const said = new Set(rec.lines.map((l) => l.id));
   assert.ok(rec.lines.length + rec.emotes.length > 0, 'somebody says or does something');
   assert.ok(rec.lines.length / minutes < 3, `lines a minute: ${rec.lines.length / minutes}`);
   assert.ok(rec.emotes.length / minutes < 4, `emotes a minute: ${rec.emotes.length / minutes}`);
-  assert.ok(said.size <= mems.size * 0.4, `most bots never type: ${said.size}/${mems.size} did`);
-  for (let i = 1; i < rec.lines.length; i++) assert.ok(rec.lines[i]!.t - rec.lines[i - 1]!.t >= CAPS.lobbyGapMs, 'a line in the lobby per 6 s at most');
+  assert.ok(said.size < mems.size / 2, `most bots never type: ${said.size}/${mems.size} did`);
+  // A quiet bot may say something once in a long while, as a quiet person does, but never chats.
+  for (const id of mems.keys()) {
+    const p = w.players.get(id)!;
+    if (traitsFor(p.name).soc >= 0.5) continue;
+    const n = rec.lines.filter((l) => l.id === id).length;
+    assert.ok(n <= 1, `quiet ${p.name} said ${n} lines`);
+  }
+  // A line in the lobby per 6 s at most, but for a bot's own quick follow-up to the line it just said (a burst of two, as people type).
+  for (let i = 1; i < rec.lines.length; i++) {
+    const a = rec.lines[i - 1]!, b = rec.lines[i]!;
+    const followUp = a.id === b.id && b.t - a.t >= FOLLOWUP_GAP_MS;
+    assert.ok(followUp || b.t - a.t >= CAPS.lobbyGapMs, `a line in the lobby per 6 s at most: ${a.text} then ${b.text} ${b.t - a.t} ms apart`);
+  }
   for (const id of said) {
     const mine = rec.lines.filter((l) => l.id === id).map((l) => l.t);
-    for (let i = 1; i < mine.length; i++) assert.ok(mine[i]! - mine[i - 1]! >= CAPS.gapMs, 'a line per bot per 20 s at most');
+    // A line per bot per 20 s at most, but for one quick follow-up straight after a line (never a chain of them).
+    for (let i = 1; i < mine.length; i++) {
+      const gap = mine[i]! - mine[i - 1]!;
+      const followUp = gap >= FOLLOWUP_GAP_MS && gap <= 4000 + TICK_MS && (i < 2 || mine[i - 1]! - mine[i - 2]! >= CAPS.gapMs);
+      assert.ok(followUp || gap >= CAPS.gapMs, `a line per bot per 20 s at most (${gap} ms)`);
+    }
     for (const t of mine) assert.ok(mine.filter((x) => x > t - 60_000 && x <= t).length <= CAPS.perMin);
   }
   for (const id of new Set(rec.emotes.map((e) => e.id))) {

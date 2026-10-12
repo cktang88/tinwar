@@ -405,7 +405,7 @@ export type SocialOut = { emote(id: number, e: EmoteId): boolean; chat(id: numbe
 
 const RECENT_MS = 5 * 60_000;
 /** A follow-up line comes this long after the line before it, at the least (and at most `FOLLOWUP_MAX_MS`). */
-const FOLLOWUP_GAP_MS = 1500;
+export const FOLLOWUP_GAP_MS = 1500;
 const FOLLOWUP_MAX_MS = 4000;
 const MULTI_MS = 3500;
 const VICTIM_MS = 20_000;
