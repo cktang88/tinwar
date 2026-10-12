@@ -48,8 +48,8 @@ export const MOODS: Readonly<Record<string, Mood>> = {
   causeway: { name: 'harbour night', dusk: 0.94, ambient: [0.264, 0.352, 0.528], gain: 1.34, glow: 1.25, fog: FOG_SEA, wet: 0.6 },
   // Plaza: a sunset plaza, rose and amber, the lamps just coming on.
   plaza: { name: 'plaza sunset', dusk: 0.62, ambient: [0.68, 0.54, 0.6], gain: 1.1, glow: 1.15, fog: { rgb: [1, 0.72, 0.5], density: 0.16, scale: 700, drift: [8, 3] } },
-  // Old Town: a cold night, a hand of lamps in the lanes, a ground mist.
-  oldtown: { name: 'old town night', dusk: 0.92, ambient: [0.264, 0.326, 0.51], gain: 1.34, glow: 1.2, fog: { rgb: [0.5, 0.58, 0.7], density: 0.34, scale: 480, drift: [10, 4] }, wet: 0.25 },
+  // Old Town: dusk after a wedding, a violet sky going out, lamplit windows and lanterns in the lanes, a mist off the canal.
+  oldtown: { name: 'old town dusk', dusk: 0.8, ambient: [0.42, 0.38, 0.6], gain: 1.3, glow: 1.25, fog: { rgb: [0.62, 0.58, 0.78], density: 0.24, scale: 520, drift: [10, 4] }, wet: 0.3 },
   // Quarry: a stormy afternoon, grey and cold, rain on the rock; the day map, so lights stay an accent.
   quarry: { name: 'quarry storm', dusk: 0.3, ambient: [0.56, 0.62, 0.72], gain: 1, glow: 0.9, fog: { rgb: [0.7, 0.76, 0.82], density: 0.28, scale: 800, drift: [26, 8] }, wet: 0.7, rain: 0.55, lightning: 1 },
   // The Night Market: a rainy night, neon and lanterns bloom on wet pavement.

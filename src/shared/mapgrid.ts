@@ -74,6 +74,11 @@ const LEGEND: Record<string, Cell> = {
   '!': { ...FLOOR, layers: ['qplant'] },
   ':': { ...FLOOR, layers: ['qcabin'] },
   ';': { ...FLOOR, layers: ['qshed'] },
+  /** Old Town: half-timbered house wall, dressed stone (church, quay, town wall), furniture, stall or fence or bench. */
+  '5': { ...FLOOR, layers: ['otwall'] },
+  '6': { ...FLOOR, layers: ['otstone'] },
+  '*': { ...FLOOR, layers: ['otfurn'] },
+  '8': { ...FLOOR, layers: ['otstall'] },
   c: { ...FLOOR, crate: true },
   /** An explosive barrel. */
   b: { ...FLOOR, barrel: true },
@@ -148,7 +153,7 @@ export function gridMap(name: string, text: string, theme?: MapDef['theme']): Ma
     name,
     ...(theme && { theme }),
     size,
-    walls: [...walls('concrete'), ...walls('sandstone'), ...walls('planter'), ...walls('stall'), ...walls('shopfront'), ...walls('stack'), ...walls('cart'), ...walls('shrine'), ...walls('gallery'), ...walls('marble'), ...walls('vitrine'), ...walls('plinth'), ...walls('counter'), ...walls('hull'), ...walls('tower'), ...walls('bulkhead'), ...walls('rack'), ...walls('water'), ...walls('hedge'), ...walls('pond'), ...walls('parkstone'), ...walls('trunk'), ...walls('bench'), ...walls('play'), ...walls('hangar'), ...walls('cinder'), ...walls('sbags'), ...walls('gse'), ...walls('bunk'), ...walls('pallet'), ...walls('jersey'), ...walls('terminus'), ...walls('ironwork'), ...walls('boxcar'), ...walls('sleepers'), ...walls('kiosk'), ...walls('coalheap'), ...walls('timber'), ...walls('hearth'), ...walls('bartop'), ...walls('drift'), ...walls('machine'), ...walls('embwall'), ...walls('embglass'), ...walls('embfurn'), ...walls('embrack'), ...walls('embhedge'), ...walls('rubble'), ...walls('scrap'), ...walls('qledge'), ...walls('qblock'), ...walls('qplant'), ...walls('qcabin'), ...walls('qshed')],
+    walls: [...walls('concrete'), ...walls('sandstone'), ...walls('planter'), ...walls('stall'), ...walls('shopfront'), ...walls('stack'), ...walls('cart'), ...walls('shrine'), ...walls('gallery'), ...walls('marble'), ...walls('vitrine'), ...walls('plinth'), ...walls('counter'), ...walls('hull'), ...walls('tower'), ...walls('bulkhead'), ...walls('rack'), ...walls('water'), ...walls('hedge'), ...walls('pond'), ...walls('parkstone'), ...walls('trunk'), ...walls('bench'), ...walls('play'), ...walls('hangar'), ...walls('cinder'), ...walls('sbags'), ...walls('gse'), ...walls('bunk'), ...walls('pallet'), ...walls('jersey'), ...walls('terminus'), ...walls('ironwork'), ...walls('boxcar'), ...walls('sleepers'), ...walls('kiosk'), ...walls('coalheap'), ...walls('timber'), ...walls('hearth'), ...walls('bartop'), ...walls('drift'), ...walls('machine'), ...walls('embwall'), ...walls('embglass'), ...walls('embfurn'), ...walls('embrack'), ...walls('embhedge'), ...walls('rubble'), ...walls('scrap'), ...walls('qledge'), ...walls('qblock'), ...walls('qplant'), ...walls('qcabin'), ...walls('qshed'), ...walls('otwall'), ...walls('otstone'), ...walls('otfurn'), ...walls('otstall')],
     zones: [zoneA, { x: size / 2, y: size / 2 }, turn(zoneA)],
     spawns: { red: mergeCells(layerAt('red')), blue: mergeCells(layerAt('blue')), ffa: mergeCells(layerAt('ffa')) },
     crates: [...westCrates, ...westCrates.map(turn)],

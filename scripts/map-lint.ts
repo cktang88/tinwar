@@ -82,15 +82,18 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   return null;
 }
 
-/** Each wall material gets its own bit, 2 ** index in order of first sight, so no two materials share a key (up to 52 of them). */
-const MATERIAL_BITS = new Map<string, number>();
-export function materialKey(material: string): number {
-  let k = MATERIAL_BITS.get(material);
-  if (k === undefined) {
-    if (MATERIAL_BITS.size >= 52) throw new Error('map-lint: more than 52 wall materials; widen asymmetryOf to bigint');
-    MATERIAL_BITS.set(material, (k = 2 ** MATERIAL_BITS.size));
-  }
-  return k;
+/** Each wall material gets its own bit, 2 ** index in order of first sight, so no two materials share a key. A table per map keeps the bits
+ * few enough (52 at most) that the float sums in `asymmetryOf` stay exact however many materials the maps use between them. */
+export function materialKeys(): (material: string) => number {
+  const bits = new Map<string, number>();
+  return (material) => {
+    let k = bits.get(material);
+    if (k === undefined) {
+      if (bits.size >= 52) throw new Error('map-lint: more than 52 wall materials on one map; widen asymmetryOf to bigint');
+      bits.set(material, (k = 2 ** bits.size));
+    }
+    return k;
+  };
 }
 const SPAWN_KEY = { red: 1, blue: 2, ffa: 4 } as const;
 const swapTeams = (k: number) => (k & SPAWN_KEY.ffa) | (k & SPAWN_KEY.red ? SPAWN_KEY.blue : 0) | (k & SPAWN_KEY.blue ? SPAWN_KEY.red : 0);
@@ -208,6 +211,7 @@ export function lintMap(def: MapDef): string[] {
     }
   }
 
+  const materialKey = materialKeys();
   const walls = asymmetryOf(def.walls.map((r) => ({ r, key: materialKey(r.material) })), (k) => k, def.size);
   if (walls) problems.push(`walls are not the same after a half turn around ${where(walls)}`);
   const spawns = asymmetryOf(spawnSides.flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
