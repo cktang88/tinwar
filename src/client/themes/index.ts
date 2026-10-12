@@ -10,3 +10,4 @@ import './embassy.ts';
 import './wasteland.ts';
 import './summit.ts';
 import './harborlife.ts';
+import './plaza.ts';

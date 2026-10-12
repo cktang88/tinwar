@@ -8,28 +8,6 @@ import type { Geometry } from '../mapgeo.ts';
 import { arcWall, hexKiosk, place } from '../shapes.ts';
 import { roomDoor, roomRoof, roomWalls, type RoomSpec } from './roomkit.ts';
 
-/* ---------------------------------------------------------------- plaza */
-
-const OFFICE: RoomSpec = { id: 'office', x: 150, y: 1400, w: 450, h: 400, material: 'sandstone', height: 15, gaps: [{ side: 'n', at: 300, w: 150 }, { side: 's', at: 300, w: 150 }, { side: 'e', at: 1550, w: 150 }] };
-const STORE: RoomSpec = { id: 'store', x: 150, y: 5200, w: 450, h: 650, material: 'concrete', height: 16, gaps: [{ side: 'n', at: 300, w: 150 }, { side: 'e', at: 5350, w: 150 }, { side: 'e', at: 5650, w: 150 }] };
-
-export const PLAZA_GEO: Geometry = {
-  polys: [
-    ...roomWalls(OFFICE), ...roomWalls(STORE),
-    ...place(hexKiosk, { x: 1625, y: 3325 }, 'kiosk', { id: 'hexkiosk' }),
-    ...place(arcWall, { x: 1350, y: 2700, scale: 0.45 }, 'concrete', { id: 'arcwall' }),
-  ],
-  doors: [
-    roomDoor(OFFICE, OFFICE.gaps[0]!, 'office-n', { kind: 'swing', material: 'wood', hinge: 'start' }),
-    roomDoor(OFFICE, OFFICE.gaps[1]!, 'office-s', { kind: 'swing', material: 'wood', hinge: 'end' }),
-    roomDoor(OFFICE, OFFICE.gaps[2]!, 'office-e', { kind: 'double-swing', material: 'wood', glow: '#ffd9a0' }),
-    roomDoor(STORE, STORE.gaps[0]!, 'store-n', { kind: 'swing', material: 'metal', hinge: 'start' }),
-    roomDoor(STORE, STORE.gaps[1]!, 'store-e1', { kind: 'double-slide', material: 'metal', closeMs: 1800 }),
-    roomDoor(STORE, STORE.gaps[2]!, 'store-e2', { kind: 'double-slide', material: 'metal', closeMs: 1800 }),
-  ],
-  roofs: [roomRoof(OFFICE, 'office', 'tar'), roomRoof(STORE, 'store', 'corrugated')],
-};
-
 /* -------------------------------------------------------------- old town */
 
 /** Buildings of the old town's street grid are 500 px shells with 100 px gaps in each wall; these get doors and roofs. */
