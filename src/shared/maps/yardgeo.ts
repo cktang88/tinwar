@@ -54,25 +54,3 @@ export const OLDTOWN_GEO: Geometry = {
     { id: 'hall', material: 'tile', points: poly.rect(1200, 3800, 500, 500) },
   ],
 };
-
-/* ---------------------------------------------------------------- quarry */
-
-export const QUARRY_GEO: Geometry = {
-  polys: [
-    make(poly.circle(2075, 3300, 130, 24), 'tank', { id: 'silo', height: 52, shape: 'roundTank' }),
-    ...place(arcWall, { x: 1450, y: 3550, scale: 0.5, rot: Math.PI }, 'rock', { id: 'retaining' }),
-  ],
-  doors: [
-    { id: 'office-e', kind: 'double-swing', x: 725, y: 1350, w: 150, axis: 'v', material: 'wood' },
-    { id: 'office-s', kind: 'swing', x: 400, y: 1775, w: 150, axis: 'h', hinge: 'start', material: 'wood' },
-    { id: 'shed-n', kind: 'double-slide', x: 1250, y: 4225, w: 150, axis: 'h', material: 'metal', closeMs: 1800 },
-    { id: 'shed-e', kind: 'swing', x: 1575, y: 4400, w: 150, axis: 'v', hinge: 'start', material: 'wood' },
-    { id: 'works-n', kind: 'double-swing', x: 550, y: 4925, w: 150, axis: 'h', material: 'metal' },
-    { id: 'works-e', kind: 'double-slide', x: 875, y: 5050, w: 150, axis: 'v', material: 'metal', closeMs: 1800 },
-  ],
-  roofs: [
-    { id: 'office', material: 'tar', points: poly.rect(200, 1200, 550, 600) },
-    { id: 'shed', material: 'corrugated', points: poly.rect(1000, 4200, 600, 500) },
-    { id: 'works', material: 'metal', points: poly.rect(300, 4900, 600, 500) },
-  ],
-};
