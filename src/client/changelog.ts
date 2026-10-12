@@ -8,7 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-12',
     items: [
-      'Your spray blooms half as wide and settles twice as fast (bots keep the old bloom), no zombie bite takes more than a third of your health, and bots shot behind cover tuck in fully or move, look around when idle, and rookies panic-spray from too far',
+      'Your spray blooms half as wide and settles twice as fast (bots keep the old bloom), no zombie bite takes more than a third of your health, and bots shot behind cover tuck in fully or move, look around when idle, and rookies panic-spray from too far; each bot now moves, reacts and reloads its own way, stops to look round, holds grudges, warms up, tilts and gets bored, and none tracks you through walls',
     ],
   },
   {

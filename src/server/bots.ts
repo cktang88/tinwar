@@ -3,7 +3,8 @@ import type { InputState, Loadout, Snapshot } from '../shared/protocol.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { fearNow, skillFor, skillKnobs, skillOf, stressOf, TICK_MS as BOT_TICK_MS, type Skill } from './bot/aim.ts';
-import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, skilledPersona, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
+import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, skilledPersona, startIntent, tilted, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
+import { habitCtx, liveHabits, nemesisIn, type Habits } from './bot/habits.ts';
 import { act, freshMotor, type Motor } from './bot/motor.ts';
 import { royaleThink } from './bot/royale.ts';
 import { supplyFor } from './bot/supplies.ts';
@@ -22,6 +23,8 @@ export type BotMemory = {
   beat?: Beat;
   /** How it last saw each enemy, and where it pre-aims (see tactics.ts); fresh each life. */
   tactics?: Tactics;
+  /** Its style, grudges and moods across its lives (see bot/habits.ts): made on its first think in versus play. */
+  habits?: Habits;
   /** The zombies a squad bot has lately had in sight (see siege.ts). */
   siege?: SiegeMemory;
   /**
@@ -102,18 +105,28 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   if (snap.run) return { ...siegeThink(snap, snap.run, me, arena, mem, rand), pick: choice };
   if (snap.royale) return { ...royaleThink(snap, snap.royale, me, arena, mem, rand), pick: choice };
 
-  const perceived = perceive(snap, arena, me, mem.awareness);
+  // Its habits: a fresh life reads the last one's end (who killed it), and a hit names who is hurting it (see bot/habits.ts).
+  const kills = snap.events.flatMap((e) => (e.e === 'kill' && e.killerId === me.id ? [e.victimId] : []));
+  const seenAt = (id: number) => { const c = mem.awareness.contacts.find((x) => x.id === id); return c ? { x: c.x, y: c.y } : null; };
+  const before = mem.habits ?? liveHabits(undefined, me.name, mem.skill, mem.persona, snap.tick, me, false, null, seenAt, []);
+  const hold = mem.motor.hold;
+  const habit = habitCtx(before, me.name, snap.tick, !!hold && !hold.track && hold.gaze.k === 'point' && hold.gaze.fire, Math.floor(mem.motor.shots / Math.max(1, snap.self.mag)));
+  // Busy (fighting someone, reloading), it may overlook a man at the edge of its screen (see `Attention`).
+  const busy = snap.self.reloading || (mem.motor.engaged !== null && snap.tick - mem.motor.engagedSeen < 20);
+  const perceived = perceive(snap, arena, me, mem.awareness, { busy, miss: habit.style.miss, engaged: mem.motor.engaged?.id ?? null, nemesis: nemesisIn(habit, snap.players.map((p) => ({ p }))), rand });
   const { awareness } = perceived;
+  const habits = liveHabits(before, me.name, mem.skill, mem.persona, snap.tick, me, mem.intent === null, awareness.hitBy, seenAt, kills);
   // What it read off each enemy it saw, whom it shoots first, and where it pre-aims (see tactics.ts); a fresh life starts a fresh read.
   const { view, tactics } = readTactics(mem.intent ? mem.tactics ?? null : null, perceived.view, awareness);
   const skill = skillKnobs(mem.skill);
   // Its fear right now (a rookie's grows under pressure; a veteran has none): see `FEAR`.
   const fear = fearNow(skill, stressOf(snap.self.suppression, (snap.tick - awareness.hitTick) * BOT_TICK_MS, view.hpFrac));
-  const persona = skilledPersona(PERSONALITIES[mem.persona], skill, fear);
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)), tac: tactics, skill, ...(fear > 0 && { fear }) };
+  const live = habitCtx(habits, me.name, snap.tick, habit.busy, Math.floor(mem.motor.shots / Math.max(1, snap.self.mag)));
+  const persona = tilted(skilledPersona(PERSONALITIES[mem.persona], skill, fear), live.mood.tilt);
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)), tac: tactics, skill, ...(fear > 0 && { fear }), habit: live };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
-  return { input, pick: choice, mem: { ...mem, intent, awareness, motor, tactics } };
+  return { input, pick: choice, mem: { ...mem, intent, awareness, motor, tactics, habits } };
 }
 
 export type TeamCounts = { red: number; blue: number };

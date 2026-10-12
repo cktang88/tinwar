@@ -134,17 +134,21 @@ test('a bot flanked in cover turns, fires back and gets off its spot within a pe
     // He first has his line from about 410 px off its side (his camera leans toward it), just past its own 16:9 screen's 394: it sees him
     // as he steps onto its screen, or turns on his first round, nine or ten ticks on (seven while bots saw a square view).
     assert.ok(r.face !== null && r.face <= 334, `${at}: faces him ${r.face}ms after he has a line`);
-    assert.ok(r.fire !== null && r.fire <= 600, `${at}: fires back ${r.fire}ms after`);
+    // Its reaction is a person's (lognormal, slower for a man off its aim, see `NOTICE` in aim.ts), so it has a tail: inside 0.7 s.
+    assert.ok(r.fire !== null && r.fire <= 700, `${at}: fires back ${r.fire}ms after`);
     assert.ok(r.move !== null && r.move <= 400, `${at}: off its spot ${r.move}ms after`);
-    assert.ok((r.still ?? 1) <= 0.5, `${at}: stood still ${((r.still ?? 1) * 100).toFixed(0)}% of the next 2 s`);
+    // Half the time at most, give or take a leg: a strafe leg it runs into its own cover it stands out until it turns (this sat at exactly
+    // 50% before bots had their own leg lengths and a lognormal reaction, which move where its legs fall).
+    assert.ok((r.still ?? 1) <= 0.6, `${at}: stood still ${((r.still ?? 1) * 100).toFixed(0)}% of the next 2 s`);
   }
 });
 
-test('a bot holding a spot turns on an enemy who steps out at its side without a 180-degree snap, but well inside half a second', () => {
+test('a bot holding a spot turns on an enemy who steps out at its side without a 180-degree snap, and fires inside 0.6 s', () => {
   for (const { gun, persona, side, r } of runs('side', ['pistol', 'assault'])) {
     const at = `${gun} ${persona} side ${side}`;
     // As above: he steps out about 410 px beside it, a few px off its 16:9 screen, so it takes him in a tick or two after he has his line.
     assert.ok(r.face !== null && r.face >= 150 && r.face <= 334, `${at}: faces him ${r.face}ms after he has a line`);
-    assert.ok(r.fire !== null && r.fire <= 500, `${at}: fires ${r.fire}ms after`);
+    // A man 90 degrees off its aim costs it a little more than one in front (`NOTICE.offAngleMs`): inside 0.6 s.
+    assert.ok(r.fire !== null && r.fire <= 600, `${at}: fires ${r.fire}ms after`);
   }
 });

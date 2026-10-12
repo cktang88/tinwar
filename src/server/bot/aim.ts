@@ -207,11 +207,49 @@ function leadJudgment(id: number, tick: number, judgment: { mean: number; spread
 /** Further than this a tick is a teleport, not a run: about three times the fastest dash. */
 const TELEPORT_PX_PER_TICK = 120;
 
-/** `reactMul` is the bot's own temper's share of the reaction time (`Personality.reactMul`). */
-export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number, reactMul = 1): Engagement {
+/**
+ * How long a person takes to take in an enemy, as the reaction-time literature has it: lognormal about a median of `medianMs` (log-sd
+ * `logSd`, so most come in a band round it and a few come late), times its sharpness, its temper's and its mood's share. On top:
+ * `busyMul` when it is already fighting someone else (a second choice to make, Hick's law), up to `offAngleMs` more for an enemy as far as
+ * behind it from where its gun points (scaled by the angle), and a startle of `surpriseMs` for one who appears this close (`surprisePx`).
+ * Capped at `capMul` times the median, so a slow one is slow, not absent.
+ */
+export const NOTICE = { medianMs: 260, logSd: 0.3, busyMul: 1.5, offAngleMs: 90, surprisePx: 220, surpriseMs: [100, 200], capMul: 3.5 } as const;
+/** What the moment adds to a reaction (see `NOTICE`): already fighting another, how far off its aim he is (rad), how far off he stands (px). */
+export type NoticeCue = { busy?: boolean; offRad?: number; d?: number };
+
+/** The standard normal quantile of `p` (Acklam's approximation, to about 1e-9): a normal draw from one uniform, as the flat draw it replaced took. */
+export function probit(p: number): number {
+  const q = Math.min(1 - 1e-12, Math.max(1e-12, p));
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239];
+  const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+  const c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+  const tail = (r: number) => (((((c[0]! * r + c[1]!) * r + c[2]!) * r + c[3]!) * r + c[4]!) * r + c[5]!) / ((((d[0]! * r + d[1]!) * r + d[2]!) * r + d[3]!) * r + 1);
+  if (q < 0.02425) return tail(Math.sqrt(-2 * Math.log(q)));
+  if (q > 1 - 0.02425) return -tail(Math.sqrt(-2 * Math.log(1 - q)));
+  const r = (q - 0.5) * (q - 0.5);
+  return ((((((a[0]! * r + a[1]!) * r + a[2]!) * r + a[3]!) * r + a[4]!) * r + a[5]!) * (q - 0.5)) / (((((b[0]! * r + b[1]!) * r + b[2]!) * r + b[3]!) * r + b[4]!) * r + 1);
+}
+
+/** A fresh reaction time, ms, by `NOTICE` (`mul` the sharpness, temper and mood shares together). */
+export function noticeDelayMs(mul: number, cue: NoticeCue, rand: () => number): number {
+  const median = NOTICE.medianMs * mul * (cue.busy ? NOTICE.busyMul : 1);
+  const base = Math.min(median * NOTICE.capMul, median * Math.exp(NOTICE.logSd * probit(rand())));
+  const angle = NOTICE.offAngleMs * Math.min(1, Math.abs(cue.offRad ?? 0) / Math.PI) * mul;
+  const close = cue.d !== undefined && cue.d < NOTICE.surprisePx ? NOTICE.surpriseMs[0] + rand() * (NOTICE.surpriseMs[1] - NOTICE.surpriseMs[0]) : 0;
+  return base + angle + close;
+}
+
+/**
+ * `reactMul` is the bot's own temper's share of the reaction time (`Personality.reactMul`). With a `cue` (a versus bot), it takes him in
+ * after a human-shaped reaction (`noticeDelayMs`); without one (a squad bot on the horde), after the flat `noticeMs` the horde was tuned on.
+ */
+export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number, reactMul = 1, cue?: NoticeCue): Engagement {
   if (!prev) {
     const [fastest, slowest] = BOT_AIM.noticeMs.map((ms) => ms * sharpness.reactionMul * reactMul);
-    const noticeAtTick = tick + Math.round((fastest + rand() * (slowest - fastest)) / TICK_MS);
+    const ms = cue ? noticeDelayMs(sharpness.reactionMul * reactMul, cue, rand) : fastest + rand() * (slowest - fastest);
+    const noticeAtTick = tick + Math.round(ms / TICK_MS);
     return { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: tick, noticeAtTick, leadMul: leadJudgment(enemy.id, tick, sharpness.lead), at: tick };
   }
   // Its read of his motion is over the time since it last looked (`at`), so a bot that looked away a few ticks does not read a burst of speed.

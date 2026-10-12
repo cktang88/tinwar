@@ -6,6 +6,7 @@ import { aimsAtLead, type Perception, type Threat } from './awareness.ts';
 import { bodyExposed, coverNear, pickCover } from './cover.ts';
 import { between, clearShot, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
 import type { Supply } from './supplies.ts';
+import type { HabitCtx } from './habits.ts';
 import { fightOdds, holdsAngle, type Tactics } from './tactics.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
@@ -56,6 +57,15 @@ export function skilledPersona(p: Personality, k: SkillKnobs | undefined, fear =
   };
 }
 
+/**
+ * A tilted bot (see `moodOf` in habits.ts: a few quick deaths) plays looser: it takes worse fights, pushes more and pokes from cover less.
+ * Its aim is no better for it (a tilted bot aims worse, see `Mood.aimMul`).
+ */
+export function tilted(p: Personality, tilt: number): Personality {
+  if (tilt <= 0) return p;
+  return { ...p, takesOdds: p.takesOdds - 0.25 * tilt, pushOdds: Math.min(1, p.pushOdds + 0.3 * tilt), peekOdds: p.peekOdds * (1 - 0.5 * tilt), flankOdds: p.flankOdds * (1 - 0.3 * tilt) };
+}
+
 /** Whether a bot of this skill reads it this think (a check a veteran always makes); draws from the random stream only below a veteran. */
 const reads = (c: IntentCtx, odds: number | undefined) => odds === undefined || odds >= 1 || c.rand() < odds;
 
@@ -94,8 +104,12 @@ export const lane = (id: number, salt = 0): number => {
 type Role = 'anchor' | 'rotate';
 export const roleFor = (id: number, team: string | null): Role | null => (team === null ? null : id % 3 === 0 ? 'anchor' : 'rotate');
 
+/**
+ * `idle`: a moment's pause on getting where it wandered to, until `until` (see `idleMoment`): it stands and looks round (`scan`), drifts a
+ * few steps (`wander`), or sits with its hands off the keys (`afk`).
+ */
 export type Plan =
-  | { k: 'patrol'; goal: Point }
+  | { k: 'patrol'; goal: Point; until?: number; idle?: 'scan' | 'wander' | 'afk' }
   | { k: 'takePosition'; spot: Point; facing: Point }
   | { k: 'engage'; target: number }
   /** `phaseSince` when the phase began; `waits` how many times it put off a peek into an angle the enemy holds (see `advancePeekPhase`). */
@@ -108,7 +122,7 @@ export type Plan =
   | { k: 'flank'; target: number; via: Point; lastKnown: Point; committed?: boolean }
   | { k: 'search'; at: Point; giveUpAt: number; committed?: boolean }
   /** Off to a pack on the floor (walking over it takes it) or a cabinet (`open`: it walks to `at`, against a face, and it opens as the bot comes in reach), with nobody to fight. */
-  | { k: 'resupply'; at: Point; id: number; open: boolean };
+  | { k: 'resupply'; at: Point; id: number; open: boolean; greedy?: boolean };
 
 export type Intent = Plan & { since: number; holdUntil: number };
 type IntentKind = Plan['k'];
@@ -128,6 +142,8 @@ export type IntentCtx = {
   skill?: SkillKnobs;
   /** Its fear right now (`fearNow` in aim.ts): 0, or absent, for a cool head. */
   fear?: number;
+  /** Its style, moods and grudges (habits.ts); absent in a test or a mode that gives it none, where it plays as every bot once did. */
+  habit?: HabitCtx;
 };
 
 /** The ticks since this bot last planned (1 when it plans every tick). */
@@ -160,6 +176,12 @@ const POKE_ANSWERED_MS = 250;
 const UNDER_FIRE_COVER_PX = 140;
 const SEARCH_MS = 5000;
 const GUNFIRE_PULL_PX = 2500;
+/**
+ * The odds gunfire draws an idle bot, by how far off it is: `near` within `nearPx`, falling to `far` at `GUNFIRE_PULL_PX` (none past it),
+ * times its temper's `pull`, and `busyMul` for one busy with something of its own (shooting crates, holding a spot). One decision per
+ * stretch of the map per `memoryMs`, so a running fight does not reroll its way into every bot in earshot.
+ */
+const GUNFIRE = { near: 0.8, nearPx: 600, far: 0.15, busyMul: 0.5, cellPx: 400, memoryMs: 8000 } as const;
 const FLANK_MS = 8000;
 const STALEMATE_MS = 6000;
 const ARRIVED_PX = 60;
@@ -268,6 +290,36 @@ function zoneToHold(v: Perception, c: IntentCtx): ZoneView | null {
   return pool.reduce<ZoneView | null>((best, z) => (best && dist(best, v.me) <= dist(z, v.me) ? best : z), null);
 }
 
+/** Within this of where its killer was, its hunt for him is done (it carries on as usual from there). */
+const REVENGE_NEAR_PX = 400;
+/** How long an idle moment lasts: a look round, a wander (and the stand after it), hands off the keys. */
+const IDLE_MS = { scan: [1000, 6000], wander: [2500, 6000], afk: [2000, 8000] } as const satisfies Record<string, readonly [number, number]>;
+const WANDER_PX = 160;
+/** Nothing has happened round it for this long (no hit, no enemy seen): it may go hands-off a moment. */
+const AFK_CALM_MS = 8000;
+
+/**
+ * Getting where it wandered to, a person seldom sets straight off for the next spot: it stands and looks round a while, drifts a few
+ * steps, or now and then takes its hands off the keys (never with anything about: a sound, a hit, an enemy lately seen). Its style's `idle`
+ * odds, more when bored. Null: it goes on at once.
+ */
+function idleMoment(v: Perception, c: IntentCtx): Plan | null {
+  const h = c.habit;
+  if (!h || v.threats.length > 0 || v.underFire || c.home) return null;
+  const bored = h.mood.boredom;
+  if (c.rand() >= Math.min(0.9, h.style.idle + 0.3 * bored)) return null;
+  const calm = !v.lead && (v.hitTick === undefined || (v.tick - v.hitTick) * TICK_MS > AFK_CALM_MS) && (!v.lastSeen || (v.tick - v.lastSeen.seenTick) * TICK_MS > AFK_CALM_MS);
+  const roll = c.rand();
+  const here = { x: v.me.x, y: v.me.y };
+  if (calm && roll < 0.05 + 0.1 * bored) return { k: 'patrol', goal: here, idle: 'afk', until: c.tick + ticks(between(IDLE_MS.afk, c.rand)) };
+  if (roll < 0.35 + 0.3 * bored * h.style.goof) {
+    const goal = openSpot(c.arena, c.rand, { at: here, r: WANDER_PX });
+    return { k: 'patrol', goal, idle: 'wander', until: c.tick + ticks(between(IDLE_MS.wander, c.rand)) };
+  }
+  // A bot that idles a lot also idles long.
+  return { k: 'patrol', goal: here, idle: 'scan', until: c.tick + ticks(between(IDLE_MS.scan, c.rand) * (0.6 + 0.8 * h.style.idle)) };
+}
+
 function idlePlan(v: Perception, c: IntentCtx): Plan {
   if (c.home) {
     const spots = coverNear(c.arena.cover, c.home.at, c.home.r);
@@ -280,6 +332,9 @@ function idlePlan(v: Perception, c: IntentCtx): Plan {
     const a = lane(v.me.id, 1) * Math.PI * 2, r = zone.r * ZONE_RING;
     return { k: 'takePosition', spot: openSpot(c.arena, c.rand, { at: { x: zone.x + Math.cos(a) * r, y: zone.y + Math.sin(a) * r }, r: 50 }), facing: centre };
   }
+  // It goes looking for whoever killed it last, where he was (see `Habits.nemesis`).
+  const grudge = c.habit?.nemesis;
+  if (grudge?.seek && c.role !== 'anchor' && dist(v.me, grudge.at) > REVENGE_NEAR_PX) return searchPlan(v, c, grudge.at);
   if (v.lead && c.role !== 'anchor') return searchPlan(v, c, v.lead);
   if (c.role === 'anchor' || (v.weapon === 'sniper' && c.persona.rangeMul > 1)) {
     const free = (ps: readonly Point[]) => { const apart = ps.filter((q) => v.allies.every((m) => dist(m, q) >= MATE_COVER_PX)); return apart.length ? apart : ps; };
@@ -337,6 +392,8 @@ const turnOnPursuerOrRehide: Interrupt = (cur, v, c) => {
 
 const reloadWhenDry: Interrupt = (cur, v, c) => {
   if (cur.k === 'reloadInCover' || cur.k === 'retreatAndHeal' || v.self.reloading || v.self.ammo > v.self.mag * LOW_AMMO) return null;
+  // A rookie's habit (`Style.forget`): this magazine it forgets, and fights on until it runs dry.
+  if (c.habit?.forgets && v.self.ammo > 0) return null;
   const near = v.threats[0];
   const recent = v.lastSeen !== null && v.tick - v.lastSeen.seenTick < ticks(3000) ? v.lastSeen : null;
   const threat = near ? pos(near) : recent;
@@ -477,6 +534,8 @@ const engageOnSight: Interrupt = (cur, v, c) => {
   const calm = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || cur.k === 'flank' || cur.k === 'resupply';
   const t = v.threats[0];
   if (!calm || !t) return null;
+  // Gone for a pack under his nose (see `fetchSupplies`): it grabs it first unless he is on top of it.
+  if (cur.k === 'resupply' && cur.greedy && t.d > CORNERED_PX) return null;
   // Holding a zone, it lets a far enemy walk by; not one shooting at it.
   if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > 400 && !v.underFire && v.shotAt?.owner !== t.p.id) return null;
   // A fight it would lose (outgunned, hurt, or one of two on it): it breaks his line and holds the angle instead of walking into it.
@@ -498,8 +557,20 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
   const idle = cur.k === 'patrol' || (cur.k === 'takePosition' && v.zones.length === 0);
   if (!idle || c.role === 'anchor' || !v.lead || v.lead.tick !== v.tick || dist(v.lead, v.me) > GUNFIRE_PULL_PX) return null;
   if (cur.k === 'takePosition' && dist(v.lead, cur.facing) < GUNFIRE_PULL_PX / 3) return null;
+  if (c.habit && !drawnBy(v, c, cur, v.lead)) return null;
   return searchPlan(v, c, v.lead);
 };
+
+/** Whether gunfire heard at `at` draws this bot (see `GUNFIRE`), hashed by the stretch of map and the moment, not drawn. */
+function drawnBy(v: Perception, c: IntentCtx, cur: Intent, at: Point): boolean {
+  const h = c.habit!;
+  const d = dist(at, v.me);
+  const near = d <= GUNFIRE.nearPx ? GUNFIRE.near : GUNFIRE.near + (GUNFIRE.far - GUNFIRE.near) * Math.min(1, (d - GUNFIRE.nearPx) / (GUNFIRE_PULL_PX - GUNFIRE.nearPx));
+  const busy = h.busy || cur.k === 'takePosition' || (cur.k === 'patrol' && cur.idle === 'afk');
+  const odds = Math.min(0.95, near * h.style.pull * (busy ? GUNFIRE.busyMul : 1));
+  const cell = Math.floor(at.x / GUNFIRE.cellPx) * 31 + Math.floor(at.y / GUNFIRE.cellPx) * 17 + (Math.floor(c.tick / ticks(GUNFIRE.memoryMs)) % 1000) * 13;
+  return lane(v.me.id, cell) < odds;
+}
 
 /**
  * Nobody to fight and short of health or rounds: it goes for the pack or cabinet it needs (supplies.ts), from a patrol, a post, a search, or a
@@ -507,19 +578,48 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
  */
 const fetchSupplies: Interrupt = (cur, v, c) => {
   const s = c.supply;
-  if (!s || v.threats.length > 0 || v.underFire) return null;
+  if (!s) return null;
+  if (v.threats.length > 0 || v.underFire) return greedyGrab(cur, v, c, s);
   const free = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || (cur.k === 'retreatAndHeal' && cur.spot === null);
   return free ? { k: 'resupply', at: s.at, id: s.id, open: s.open } : null;
 };
+
+/** A pack this near, with no enemy nearer than `GREED.clearPx` and its health above `GREED.hp`, may tempt it mid-fight. */
+const GREED = { px: 260, clearPx: 350, hp: 0.3, memoryMs: 5000 } as const;
+
+/**
+ * Greed: a pack close by in a fight, and some go for it anyway (its style's `greed`, a hothead most), one decision a pack every few
+ * seconds. A run already on stays on (see `engageOnSight`).
+ */
+function greedyGrab(cur: Intent, v: Perception, c: IntentCtx, s: Supply): Plan | null {
+  const h = c.habit;
+  if (!h || cur.k === 'resupply' || cur.k === 'retreatAndHeal' || cur.k === 'reloadInCover') return null;
+  if (s.open || dist(v.me, s.at) > GREED.px || v.hpFrac <= GREED.hp || v.threats.some((t) => t.d < GREED.clearPx)) return null;
+  if (lane(v.me.id, s.id * 3 + (Math.floor(c.tick / ticks(GREED.memoryMs)) % 1000) * 7) >= h.style.greed) return null;
+  return { k: 'resupply', at: s.at, id: s.id, open: s.open, greedy: true };
+}
 
 /**
  * A fight that has turned (a second enemy coming up on it, its health gone, his mate arriving): it breaks off to cover that hides it from
  * all of them before the newcomer gets on it, rather than fight one with another in its side. One nearly dead it finishes (see `fightOdds`).
  */
+/**
+ * Tunnel vision: whether it is fixed on `target` in this fight (one decision a fight, hashed, not drawn): its style's `tunnel` odds, more
+ * when tilted and more again on the man who last killed it. Fixed, it fights on past where it should break off and chases him when he goes.
+ */
+function tunnels(v: Perception, c: IntentCtx, target: number, since: number): boolean {
+  const h = c.habit;
+  if (!h) return false;
+  const odds = Math.min(0.9, h.style.tunnel + 0.35 * h.mood.tilt + (h.nemesis?.id === target ? 0.3 : 0));
+  return lane(v.me.id * 7 + target, since % 100_000) < odds;
+}
+
 const leaveTurnedFight: Interrupt = (cur, v, c) => {
   if (cur.k !== 'engage' && cur.k !== 'peekAndHide') return null;
   const t = v.threats.find((x) => x.p.id === cur.target) ?? v.threats[0];
   if (!t || !badFight(v, c, t, ODDS_SLACK)) return null;
+  // Fixed on him, it fights on past the point it should have broken off.
+  if (t.p.id === cur.target && tunnels(v, c, cur.target, cur.since)) return null;
   return holdPlan(v, c, t);
 };
 
@@ -533,12 +633,18 @@ const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
+    if (cur.until !== undefined) return c.tick < cur.until ? null : idlePlan(v, c);
     const next = idlePlan(v, c);
-    return next.k !== 'patrol' || dist(v.me, cur.goal) < ARRIVED_PX ? next : null;
+    const arrived = dist(v.me, cur.goal) < ARRIVED_PX;
+    // Only a goal it walked to: the placeholder a fresh life starts on (made this very think) is no arrival.
+    if (arrived && next.k === 'patrol' && cur.since < c.tick) return idleMoment(v, c) ?? next;
+    return next.k !== 'patrol' || arrived ? next : null;
   },
   takePosition: (_cur, v, c) => idlePlan(v, c),
   engage: (cur, v, c) => {
     const t = v.threats[0];
+    // Fixed on him (see `tunnels`), it runs after him where he went rather than play it safe.
+    if (!t && !justLost(v) && v.lastSeen?.id === cur.target && tunnels(v, c, cur.target, cur.since)) return { ...searchPlan(v, c, v.lastSeen), committed: true };
     if (!t) return justLost(v) ? null : lostSight(v, c, cur.target);
     // Outranged by a long gun that is hitting it: it does not trade in his lane but breaks his sight behind cover and works in from there.
     if (!c.band.rushes && v.underFire && t.d > c.band.max && GUN_BAND[t.p.gun][1] > c.band.max) {
@@ -604,7 +710,9 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   search: (cur, v, c) => {
     // Fresh news since it last planned (heard on a quick think in between counts too), not only news on this very tick.
     if (v.lead && dist(v.lead, cur.at) > 300 && cameRound(v.lead.tick, c)) return searchPlan(v, c, v.lead);
-    return dist(v.me, cur.at) < ARRIVED_PX * 1.5 || v.tick > cur.giveUpAt ? idlePlan(v, c) : null;
+    // Got there and found nobody: it may stand and look round a while, as on any arrival (see `idleMoment`).
+    if (dist(v.me, cur.at) < ARRIVED_PX * 1.5) return idleMoment(v, c) ?? idlePlan(v, c);
+    return v.tick > cur.giveUpAt ? idlePlan(v, c) : null;
   },
 };
 
