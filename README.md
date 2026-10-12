@@ -571,3 +571,27 @@ fly secrets set RESEND_API_KEY=re_... MAIL_FROM="Tinwar <no-reply@tinwar.io>" PU
 `MAIL_FROM` must be on a domain verified in Resend. To use SMTP instead, set `SMTP_URL` (for example `smtps://user:pass@smtp.example.com:465`) and `MAIL_FROM` in place of `RESEND_API_KEY`. `PUBLIC_URL` is where reset links point; it is never taken from a request's Host header. Never set `DEV_MAIL_LOG` in production (the server ignores it under `NODE_ENV=production`).
 
 Change `primary_region` and the volume region to the one nearest your players. A deploy restarts the machine and disconnects everyone, so deploy at quiet times.
+
+### Bot chat (optional LLM)
+
+Bots chat from a phrase bank (`src/server/bot/social.ts`). With an API key set, the chatty ones (about one bot in five) now and then have a line written by a small, fast model instead (`src/server/bot/llmchat.ts`). It covers kills, deaths, repeat deaths, round ends, being addressed, questions, idle banter, and short exchanges between bots (three bot lines in a row at most). **Without a key it is off** and bots use the bank only. Tests, benches and replays never use it.
+
+| Variable | Default | |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | unset | Uses the Anthropic API through the official SDK, model `claude-haiku-5-5` (no thinking, low effort, 30 tokens). Takes precedence when both keys are set. |
+| `OPENROUTER_API_KEY` | unset | Uses OpenRouter's `/api/v1/chat/completions` endpoint instead. |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Check that this exact id exists in OpenRouter's model list before relying on it. |
+| `LLM_CHAT_MAX_PER_MIN` | `6` | Calls per minute for the whole server. `0` turns the feature off. |
+| `LLM_CHAT_MAX_PER_DAY` | `2000` | Calls per day for the server process; the count resets on restart. `0` turns the feature off. |
+
+The model is asked for about 30% of a chatty bot's lines, with at most one call in flight per room. Each call has 2.5 s to answer. On a timeout, an error, a 429 or a refusal the bot says its bank line instead, and the writer backs off: 15 s doubling to 5 minutes, and at least a minute after a 429. An answer of `SKIP` means the bot stays silent.
+
+Every answer is checked twice. First it must be one line with no quotes, 1-5 words, and nothing about bots, AI, prompts or instructions. It must not copy more than three words of anyone's chat, and must not contain what someone asked to have said ("say ..."). When asked whether it is a bot, a bot may only brush the question off ("?", "bro what", "lmao", "huh"); anything else is silence. A personal question never gets a yes or no. After that the line goes through the same safety filter as every bot line. Recent chat is passed to the model as untrusted data in a fenced block. With `SKIRMISH_NETSTATS=1` the server's netstats line includes the call counters, and the writer logs one summary line per minute at most. Keys are never logged.
+
+On Fly, set one key as a secret, plus any of the optional settings:
+
+```bash
+fly secrets set ANTHROPIC_API_KEY=sk-ant-...
+# or: fly secrets set OPENROUTER_API_KEY=sk-or-... OPENROUTER_MODEL=anthropic/claude-haiku-5.5
+fly secrets set LLM_CHAT_MAX_PER_MIN=6 LLM_CHAT_MAX_PER_DAY=2000
+```

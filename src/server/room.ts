@@ -21,6 +21,7 @@ import { applyRangeMsg, isPractice } from './range.ts';
 import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { thinkBots } from './bot/tick.ts';
 import { makeSocial, noteHumanChat, noteHumanEmote, socialTick } from './bot/social.ts';
+import type { LlmChat } from './bot/llmchat.ts';
 import { newZomWatch, settleLeaver, watchZombies, type ZomDelta } from './zomcareer.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
@@ -69,7 +70,7 @@ export type RoomNetStats = { id: string; mode: ModeId; humans: number; players: 
 /** A kill event names the gun by its label; its class credits the weapon mastery tracks. */
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((g) => [GUNS[g].name, g]));
 
-export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES, newProfiles: WindowGate | null = null): Room {
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES, newProfiles: WindowGate | null = null, llmChat: LlmChat | null = null): Room {
   // SKIRMISH_MAP=geo-test starts the versus rooms on the geometry test range (dev only; it is in no rotation).
   const devMap = process.env.SKIRMISH_MAP;
   const world = createWorld(mode, seed, (devMap && devMap in MAPS && (mode === 'FFA' || mode === 'TDM' || mode === 'DOM') ? devMap : rotationMap(mode, seed, 0)) as MapId);
@@ -105,9 +106,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   /**
    * Bots' chat and emotes (bot/social.ts) go out the way people's do, under the same limits (timed by the world's clock, as the bots are)
-   * and through the same filter: a line the filter would mask is not sent at all.
+   * and through the same filter: a line the filter would mask is not sent at all. With an LLM writer (bot/llmchat.ts, only when the
+   * server has a key) a chatty bot's line now and then comes from it; without one, every line is the phrase bank's.
    */
-  const social = makeSocial({ moderator });
+  const isBotName = (name: string) => { for (const q of world.players.values()) if (q.name === name) return q.kind === 'bot'; return false; };
+  const social = makeSocial({ moderator, lines: llmChat?.forRoom(id, isBotName) });
   const botSaid = new Map<number, { chat: number; emote: number }>();
   const botGate = (id: number) => {
     let g = botSaid.get(id);

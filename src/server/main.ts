@@ -16,6 +16,7 @@ import { openProfiles, profileView, type GuestClaim, type Profiles } from './pro
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeFaultLog, makeKeyedLimiter, makeWindowGate, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
+import { llmChatFromEnv, type LlmChat } from './bot/llmchat.ts';
 import { layoutCount, warmLayouts } from './bot/arena.ts';
 import { navStats } from './bot/nav.ts';
 import { ROTATION } from '../shared/maps.ts';
@@ -25,7 +26,7 @@ import { planTicks } from './clock.ts';
  * `mailer` sends password-reset links (null or absent: email is not configured, and a reset request only logs that).
  * `publicUrl` is the origin those links point at (`PUBLIC_URL`); never taken from a request's Host header, which a client sets.
  */
-export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean; mailer?: Mailer | null; publicUrl?: string; deflate?: boolean };
+export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean; mailer?: Mailer | null; publicUrl?: string; deflate?: boolean; llmChat?: LlmChat | null };
 export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; deflate: boolean; close(): Promise<void> };
 
 /**
@@ -325,7 +326,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
   // Shared by every room, so hopping rooms does not reset it; in memory only (a restart resets it, which is fine).
   const newProfiles = makeWindowGate(limits.newProfileGapMs, limits.newProfilesPerDay, limits.newProfileWindowMs);
-  const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator, profiles, newProfiles);
+  const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator, profiles, newProfiles, opts.llmChat ?? null);
   const rooms = new Map<string, Room>(ROOM_MODES.map(([id, mode]) => [id, newRoom(id, mode, randomInt(2 ** 31))]));
   /** When each squad room last had a human in it; one empty for `squadIdleMs` closes. */
   const squadSeenAt = new Map<string, number>();
@@ -453,7 +454,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       load = { tickHz: +(tally.ticks / secs).toFixed(1), droppedTicks: tally.dropped, busy: +(tally.workMs / (end - tally.at)).toFixed(3), maxTickMs: +tally.maxMs.toFixed(1) };
       if (logNet) {
         const live = [...rooms.values()].map((r) => r.netStats()).filter((r) => r.humans > 0 || r.ticked > 0);
-        console.log('netstats ' + JSON.stringify({ t: Math.round(end), rooms: rooms.size, ...load, loopDelayP99: loopDelay ? +(loopDelay.percentile(99) / 1e6).toFixed(1) : null, loopDelayMax: loopDelay ? +(loopDelay.max / 1e6).toFixed(1) : null, gcMs: +gc.ms.toFixed(1), gcMax: +gc.max.toFixed(1), gcN: gc.n, heapMb: Math.round(process.memoryUsage().heapUsed / 1e6), nav: { ...navStats(), layouts: layoutCount() }, live }));
+        console.log('netstats ' + JSON.stringify({ t: Math.round(end), rooms: rooms.size, ...load, loopDelayP99: loopDelay ? +(loopDelay.percentile(99) / 1e6).toFixed(1) : null, loopDelayMax: loopDelay ? +(loopDelay.max / 1e6).toFixed(1) : null, gcMs: +gc.ms.toFixed(1), gcMax: +gc.max.toFixed(1), gcN: gc.n, heapMb: Math.round(process.memoryUsage().heapUsed / 1e6), nav: { ...navStats(), layouts: layoutCount() }, llm: opts.llmChat?.stats() ?? null, live }));
         loopDelay?.reset();
         Object.assign(gc, { ms: 0, max: 0, n: 0 });
       }
@@ -487,7 +488,9 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const dataDir = process.env.DATA_DIR ?? resolve(import.meta.dirname, '../../data');
   const mailer = mailerFromEnv(process.env);
   const publicUrl = process.env.PUBLIC_URL?.trim() || undefined;
-  const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1', mailer, publicUrl });
+  // Bots' occasional LLM-written chat: off without ANTHROPIC_API_KEY or OPENROUTER_API_KEY (bot/llmchat.ts).
+  const llmChat = llmChatFromEnv(process.env, { referer: publicUrl });
+  const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1', mailer, publicUrl, llmChat });
   console.log(`Tinwar listening on http://localhost:${server.port}`);
   if (!mailer) console.log('password-reset email is not configured (set RESEND_API_KEY and MAIL_FROM, or SMTP_URL and MAIL_FROM)');
   else {
