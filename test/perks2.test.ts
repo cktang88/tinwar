@@ -47,10 +47,10 @@ test('the tier-2 pool holds the three old perks and twelve new ones, each descri
   assert.ok(/magazine/.test(PERK_INFO.fastHands.desc) && /reload 25% faster/i.test(PERK_INFO.fastHands.desc));
 });
 
-test('the README names every tier-2 perk and documents sprint', () => {
-  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  for (const perk of TIER2) assert.ok(readme.includes(PERK_INFO[perk].name), `README lists ${PERK_INFO[perk].name}`);
-  assert.ok(/\| `?Shift`? \|/.test(readme) || /Shift/.test(readme), 'README documents Shift');
+test('the docs name every tier-2 perk and document sprint', () => {
+  const readme = ['COMBAT', 'PLAY'].map((d) => readFileSync(new URL(`../docs/${d}.md`, import.meta.url), 'utf8')).join('\n');
+  for (const perk of TIER2) assert.ok(readme.includes(PERK_INFO[perk].name), `the docs list ${PERK_INFO[perk].name}`);
+  assert.ok(/\| `?Shift`? \|/.test(readme) || /Shift/.test(readme), 'the docs document Shift');
   assert.ok(/sprint/i.test(readme));
 });
 

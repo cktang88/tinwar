@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node scripts/handling-table.ts [--markdown]   (--markdown prints the README's shorter table)
+// Usage: node scripts/handling-table.ts [--markdown]   (--markdown prints the shorter table in docs/COMBAT.md)
 // Every gun's build (weight, length, calibre) and the handling handling.ts works out from it: spread floor, walking sway, the bloom one
 // round kicks on average, the curve's shape, the rounds it takes to the cap and the first round's kick (shape x kick), how fast a held
 // trigger starts to grow it (first kick x rounds per second), its cap and how fast it decays, the standing share, the
@@ -40,7 +40,7 @@ function print(h: string[], r: string[][]) {
   }
   console.log('');
 }
-/** The README's table: the build and the handling a player feels. */
+/** The table in docs/COMBAT.md: the build and the handling a player feels. */
 const COMPACT = ['gun', 'kg', 'cm', 'calibre', 'floor°', 'sway°', 'kick°', 'shape', 'to cap', 'first°', 'growth°/s', 'cap°', 'decay°/s', 'settle ms', 'walk px/s', 'sprint px/s'];
 const pick = (h: string[], r: string[][]) => { const ix = COMPACT.map((c) => h.indexOf(c)); return [ix.map((i) => h[i]!), r.map((row) => ix.map((i) => row[i]!))] as const; };
 

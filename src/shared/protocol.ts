@@ -40,7 +40,7 @@ export const VIEW_ASPECT = { min: 1, max: 2.4 } as const;
 export const DEFAULT_VIEW_ASPECT = 16 / 9;
 /**
  * What bots see by: the typical 16:9 screen, leaned toward its aim as a person's camera is (`botSight` in server/bot/awareness.ts), so a
- * scoped bot sees far down its aim but no further beside or behind itself than a person's screen shows (View in the README).
+ * scoped bot sees far down its aim but no further beside or behind itself than a person's screen shows (View in docs/COMBAT.md).
  */
 export const BOT_VIEW_ASPECT = DEFAULT_VIEW_ASPECT;
 export const VIEW_PRELOAD_MARGIN = 64;

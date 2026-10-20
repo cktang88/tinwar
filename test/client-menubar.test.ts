@@ -101,7 +101,7 @@ test('What\'s new: 10 to 20 plain lines grouped by day, newest first, rendered w
   assert.ok(html.indexOf(dayLabel(dates[0]!)) < html.indexOf(dayLabel(dates.at(-1)!)), 'the newest day renders above the oldest');
   assert.equal(dayLabel('2026-10-09'), 'Oct 9');
   assert.equal(changelogHtml([{ date: '2026-01-02', items: ['<b>&'] }]).includes('&lt;b&gt;&amp;'), true, 'entries are escaped');
-  assert.match(read('README.md'), /src\/client\/changelog\.ts/, 'the README tells maintainers to keep it up to date');
+  assert.match(read('docs/ARCHITECTURE.md'), /src\/client\/changelog\.ts/, 'the docs tell maintainers to keep it up to date');
 });
 
 test('Discord: one constant, and the link stays hidden while it is empty', () => {
